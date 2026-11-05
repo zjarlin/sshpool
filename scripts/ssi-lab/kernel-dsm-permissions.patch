@@ -1,0 +1,52 @@
+--- a/arch/x86/kvm/mmu/mmu.c
++++ b/arch/x86/kvm/mmu/mmu.c
+@@ -3127,6 +3127,7 @@
+ 	bool host_writable = !fault || fault->map_writable;
+ 	bool prefetch = !fault || fault->prefetch;
+ 	bool write_fault = fault && fault->write;
++	unsigned int mapping_access = pte_access;
+ 
+ 	if (is_shadow_present_pte(*sptep)) {
+ 		if (prefetch && is_last_spte(*sptep, level) &&
+@@ -3160,7 +3161,13 @@
+ 		return RET_PF_EMULATE;
+ 	}
+ 
+-	wrprot = make_spte(vcpu, sp, slot, pte_access, gfn, pfn, *sptep, prefetch,
++	/* 客体权限用于反向映射记账，DSM 权限只限制本节点的硬件映射。 */
++#ifdef CONFIG_KVM_DSM
++	if (fault && vcpu->kvm->arch.dsm_enabled &&
++	    vcpu->arch.mmu->root_role.direct)
++		mapping_access &= fault->dsm_access;
++#endif
++	wrprot = make_spte(vcpu, sp, slot, mapping_access, gfn, pfn, *sptep, prefetch,
+ 			   false, host_writable, &spte);
+ 
+ 	if (*sptep == spte) {
+@@ -3193,6 +3200,12 @@
+ 	struct page *pages[PTE_PREFETCH_NUM];
+ 	struct kvm_memory_slot *slot;
+ 	int i;
++
++#ifdef CONFIG_KVM_DSM
++	/* 邻页没有经过 DSM 获取与锁定，不能按本地可写页直接预取。 */
++	if (vcpu->kvm->arch.dsm_enabled)
++		return false;
++#endif
+ 
+ 	if (WARN_ON_ONCE(nr_pages > PTE_PREFETCH_NUM))
+ 		return false;
+@@ -3558,12 +3571,7 @@
+ 	if (WARN_ON_ONCE(it.level != fault->goal_level))
+ 		return -EFAULT;
+ 
+-	ret = mmu_set_spte(vcpu, fault->slot, it.sptep,
+-#ifdef CONFIG_KVM_DSM
+-				   fault->dsm_access,
+-#else
+-				   ACC_ALL,
+-#endif
++	ret = mmu_set_spte(vcpu, fault->slot, it.sptep, ACC_ALL,
+ 			   base_gfn, fault->pfn, fault);
+ 	if (ret == RET_PF_SPURIOUS)
+ 		return ret;

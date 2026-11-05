@@ -25,5 +25,6 @@
 | [100-ssi-research.feature](100-ssi-research.feature) | 0 | 0 | 0 | 3 |
 | [110-pooled-linux.feature](110-pooled-linux.feature) | 0 | 0 | 0 | 7 |
 | [120-stateful-recovery.feature](120-stateful-recovery.feature) | 0 | 0 | 2 | 3 |
-| [130-ssi-lab.feature](130-ssi-lab.feature) | 4 | 0 | 0 | 1 |
-| 合计 | 25 | 7 | 17 | 15 |
+| [130-ssi-lab.feature](130-ssi-lab.feature) | 7 | 0 | 0 | 1 |
+| [140-ssi-workspace.feature](140-ssi-workspace.feature) | 1 | 1 | 1 | 0 |
+| 合计 | 29 | 8 | 18 | 15 |

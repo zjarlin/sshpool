@@ -1,0 +1,32 @@
+# 普通单节点 KVM 对照；经严格主机密钥校验的 OpenSSH 会话输出。
+# 本记录不能单独证明跨节点 SSH 成功。
+sshpool-ssi-guest
+6.12.115-0-virt
+4
+STRESS_START pid=482 online_cpus=4 bytes=4194304 rounds=8 allocations=2
+STRESS_ROUND allocation=0 round=0 counter=512
+STRESS_ROUND allocation=0 round=1 counter=1024
+STRESS_ROUND allocation=0 round=2 counter=1536
+STRESS_ROUND allocation=0 round=3 counter=2048
+STRESS_ROUND allocation=0 round=4 counter=2560
+STRESS_ROUND allocation=0 round=5 counter=3072
+STRESS_ROUND allocation=0 round=6 counter=3584
+STRESS_THREAD allocation=0 pid=482 tid=488 requested_cpu=2 observed_cpu=2
+STRESS_ROUND allocation=0 round=7 counter=4096
+STRESS_THREAD allocation=0 pid=482 tid=486 requested_cpu=0 observed_cpu=0
+STRESS_THREAD allocation=0 pid=482 tid=489 requested_cpu=3 observed_cpu=3
+STRESS_THREAD allocation=0 pid=482 tid=487 requested_cpu=1 observed_cpu=1
+STRESS_ROUND allocation=1 round=0 counter=512
+STRESS_ROUND allocation=1 round=1 counter=1024
+STRESS_ROUND allocation=1 round=2 counter=1536
+STRESS_ROUND allocation=1 round=3 counter=2048
+STRESS_ROUND allocation=1 round=4 counter=2560
+STRESS_ROUND allocation=1 round=5 counter=3072
+STRESS_ROUND allocation=1 round=6 counter=3584
+STRESS_THREAD allocation=1 pid=482 tid=493 requested_cpu=3 observed_cpu=3
+STRESS_THREAD allocation=1 pid=482 tid=491 requested_cpu=1 observed_cpu=1
+STRESS_THREAD allocation=1 pid=482 tid=492 requested_cpu=2 observed_cpu=2
+STRESS_ROUND allocation=1 round=7 counter=4096
+STRESS_THREAD allocation=1 pid=482 tid=490 requested_cpu=0 observed_cpu=0
+STRESS_PASS cpus=4 rounds=8 allocations=2 counter_per_allocation=4096 bytes=4194304
+STRESS_EXIT status=0

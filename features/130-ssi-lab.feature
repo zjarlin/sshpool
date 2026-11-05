@@ -39,6 +39,34 @@ Feature: 隔离的同 ISA 双节点 GiantVM 实验
     And 只有两个 CPU 在线时明确失败
     And 同时核查宿主页引用错误和进程崩溃日志
 
+  # evidence: docs/ssi-lab.md
+  @verified @p0
+  Scenario: DSM 授权不污染客体权限记账且不能绕过逐页授权
+    Given 固定版本的内核已应用页引用和权限修正
+    When 双节点客体反复读写同一批页面
+    Then 硬件映射权限不超过本次 DSM 授权
+    And 客体权限记账仍符合直接映射约定
+    And DSM 模式不安装未经获取的邻页预取映射
+    And 实际宿主日志没有权限不匹配或页引用告警
+
+  # evidence: docs/evidence/ssi-stress-20261105.txt
+  @verified @p0
+  Scenario: 同一批内存页反复在远端读写方之间交接
+    Given 四个客体 CPU 分属两个执行节点
+    When 两次分配内存并分别进行八轮换写入方和全量读取
+    Then 每个 CPU 校验全部页面的每个字
+    And 每次分配的共享原子计数为 4096
+    And 缺 CPU 缺轮次错误计数和不完整退出的日志被拒绝
+
+  # evidence: docs/ssi-lab.md
+  @verified @p0
+  Scenario: 三次全新客体启动有独立且完整的证据
+    Given 两个节点保留相同且确定的运行时
+    When 连续三次重新创建两个 QEMU 进程
+    Then 每次客体校验通过且两个 QEMU 正常退出
+    And 每次都记录双节点执行归属与宿主日志
+    And 不把三次测试称为长期稳定性证明
+
   @research @p0
   Scenario: 冷启动重复性和宿主内存安全
     Given 已记录上游与本地补丁的精确版本

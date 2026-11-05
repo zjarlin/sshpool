@@ -1,0 +1,28 @@
+# 单节点对照；Ubuntu 6.8.0-147-generic 宿主与客体，不能作为跨节点成功证据。
+STRESS_START pid=1 online_cpus=4 bytes=4194304 rounds=8 allocations=2
+STRESS_ROUND allocation=0 round=0 counter=512
+STRESS_ROUND allocation=0 round=1 counter=1024
+STRESS_ROUND allocation=0 round=2 counter=1536
+STRESS_ROUND allocation=0 round=3 counter=2048
+STRESS_ROUND allocation=0 round=4 counter=2560
+STRESS_ROUND allocation=0 round=5 counter=3072
+STRESS_ROUND allocation=0 round=6 counter=3584
+STRESS_ROUND allocation=0 round=7 counter=4096
+STRESS_THREAD allocation=0 pid=1 tid=101 requested_cpu=1 observed_cpu=1
+STRESS_THREAD allocation=0 pid=1 tid=102 requested_cpu=2 observed_cpu=2
+STRESS_THREAD allocation=0 pid=1 tid=100 requested_cpu=0 observed_cpu=0
+STRESS_THREAD allocation=0 pid=1 tid=103 requested_cpu=3 observed_cpu=3
+STRESS_ROUND allocation=1 round=0 counter=512
+STRESS_ROUND allocation=1 round=1 counter=1024
+STRESS_ROUND allocation=1 round=2 counter=1536
+STRESS_ROUND allocation=1 round=3 counter=2048
+STRESS_ROUND allocation=1 round=4 counter=2560
+STRESS_ROUND allocation=1 round=5 counter=3072
+STRESS_ROUND allocation=1 round=6 counter=3584
+STRESS_ROUND allocation=1 round=7 counter=4096
+STRESS_THREAD allocation=1 pid=1 tid=104 requested_cpu=0 observed_cpu=0
+STRESS_THREAD allocation=1 pid=1 tid=107 requested_cpu=3 observed_cpu=3
+STRESS_THREAD allocation=1 pid=1 tid=106 requested_cpu=2 observed_cpu=2
+STRESS_THREAD allocation=1 pid=1 tid=105 requested_cpu=1 observed_cpu=1
+STRESS_PASS cpus=4 rounds=8 allocations=2 counter_per_allocation=4096 bytes=4194304
+STRESS_EXIT status=0

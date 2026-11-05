@@ -1,0 +1,51 @@
+# 2026-11-05 pf2：双节点页面交接测试第一轮
+# 原版 Ubuntu 客体 6.8.0-147-generic；同一物理 ESXi 内两个 KVM 节点。
+# 本轮原始日志完整，无需去除串口交错消息；两个 QEMU 退出码均为 0。
+
+STRESS_START pid=1 online_cpus=4 bytes=4194304 rounds=8 allocations=2
+STRESS_ROUND allocation=0 round=0 counter=512
+STRESS_ROUND allocation=0 round=1 counter=1024
+STRESS_ROUND allocation=0 round=2 counter=1536
+STRESS_ROUND allocation=0 round=3 counter=2048
+STRESS_ROUND allocation=0 round=4 counter=2560
+STRESS_ROUND allocation=0 round=5 counter=3072
+STRESS_ROUND allocation=0 round=6 counter=3584
+STRESS_THREAD allocation=0 pid=1 tid=109 requested_cpu=3 observed_cpu=3
+STRESS_THREAD allocation=0 pid=1 tid=108 requested_cpu=2 observed_cpu=2
+STRESS_THREAD allocation=0 pid=1 tid=107 requested_cpu=1 observed_cpu=1
+STRESS_ROUND allocation=0 round=7 counter=4096
+STRESS_THREAD allocation=0 pid=1 tid=106 requested_cpu=0 observed_cpu=0
+STRESS_ROUND allocation=1 round=0 counter=512
+STRESS_ROUND allocation=1 round=1 counter=1024
+STRESS_ROUND allocation=1 round=2 counter=1536
+STRESS_ROUND allocation=1 round=3 counter=2048
+STRESS_ROUND allocation=1 round=4 counter=2560
+STRESS_ROUND allocation=1 round=5 counter=3072
+STRESS_ROUND allocation=1 round=6 counter=3584
+STRESS_THREAD allocation=1 pid=1 tid=112 requested_cpu=2 observed_cpu=2
+STRESS_THREAD allocation=1 pid=1 tid=113 requested_cpu=3 observed_cpu=3
+STRESS_THREAD allocation=1 pid=1 tid=111 requested_cpu=1 observed_cpu=1
+STRESS_ROUND allocation=1 round=7 counter=4096
+STRESS_THREAD allocation=1 pid=1 tid=110 requested_cpu=0 observed_cpu=0
+STRESS_PASS cpus=4 rounds=8 allocations=2 counter_per_allocation=4096 bytes=4194304
+STRESS_EXIT status=0
+
+# 节点 0 线程采样
+2026-11-05T11:12:57Z
+   1120    1122 CPU 0/KVM       00:01:32 Dl
+   1120    1123 CPU 1/KVM       00:01:55 Rl
+   1120    1124 CPU 2/KVM       00:00:00 Sl
+   1120    1125 CPU 3/KVM       00:00:00 Sl
+
+# 节点 1 线程采样
+2026-11-05T11:12:58Z
+   1046    1048 CPU 0/KVM       00:00:00 Sl
+   1046    1049 CPU 1/KVM       00:00:00 Sl
+   1046    1050 CPU 2/KVM       00:01:14 Rl
+   1046    1051 CPU 3/KVM       00:01:07 Rl
+
+# 运行时 SHA-256
+# 宿主内核 pf2
+8a7460f98785c260b90180c47314628bf5d985285c64e3161627c0814eec8026
+# 压力测试 initramfs
+6c58d1a5a85564bab552bc5358b6eb2adc06ee1a82c58830c8bb4f70787c1dfa

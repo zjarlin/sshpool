@@ -14,7 +14,7 @@ jobs=${JOBS:-4}
 make -C "$source_dir" O="$output_dir" x86_64_defconfig
 config="$source_dir/scripts/config"
 "$config" --file "$output_dir/.config" \
-    --set-str LOCALVERSION -sshpool-gvm-pf1 \
+    --set-str LOCALVERSION -sshpool-gvm-pf2 \
     --disable LOCALVERSION_AUTO \
     --enable KVM --enable KVM_INTEL \
     --enable KVM_DSM_IRQ_FORWARD --enable KVM_DSM \

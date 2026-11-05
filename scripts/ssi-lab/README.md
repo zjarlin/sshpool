@@ -26,15 +26,18 @@ git -C GVM-kernel rev-parse HEAD
 git -C GVM-qemu rev-parse HEAD
 ```
 
-## 两个本地修正
+## 本地修正
 
 `qemu-single-node-routing.patch` 修复单节点启动时，因路由 mutex 已初始化却没有第二节点连接，访问 `req_files[1]` 导致的段错误；只由分布式主节点广播路由。当前上游函数仍硬编码第二节点，本实验仅覆盖两个节点。
 
 `kernel-page-reference.patch` 将直接缺页处理的成功与重试路径统一到一次页引用释放。原成功路径遗漏清理，重试路径先经 `kvm_mmu_finish_page_fault()` 释放一次，再调用 `kvm_release_page_unused()` 重复释放。实验发现 GUP 页引用异常和宿主进程崩溃；修正的验证范围见实验记录，不能据此声称整个内核已安全。
 
+`kernel-dsm-permissions.patch` 保留 KVM 对客体权限的记账：直接映射记录 `ACC_ALL`，实际硬件页表权限再与本次 DSM 授权取交集。它也在 DSM 模式禁止没有逐页获取授权的邻页预取；没有删除或屏蔽原有权限告警。该补丁在页引用修正之后应用，新构建版本为 `7.1.0-rc3-sshpool-gvm-pf2`。
+
 ```sh
 patch -d GVM-qemu -p1 < scripts/ssi-lab/qemu-single-node-routing.patch
 patch -d GVM-kernel -p1 < scripts/ssi-lab/kernel-page-reference.patch
+patch -d GVM-kernel -p1 < scripts/ssi-lab/kernel-dsm-permissions.patch
 ```
 
 `.patch` 是上游 GPL 源码的修改：内核补丁为 GPL-2.0-only，QEMU 补丁为 GPL-2.0-or-later，许可证正文在 [COPYING.GPL-2.0](COPYING.GPL-2.0)。其余本目录原创脚本与测试程序遵循仓库 MIT。SSHPool 的 MIT 不改变 Linux/QEMU 的许可证。
@@ -88,3 +91,35 @@ bash ~/ssi/run-node.sh 1 192.0.2.10 192.0.2.11 > run-node1.log 2>&1
 验收需同时有客体 `PROOF_PASS cpus=4 shared_counter=512 memory_verified_bytes=33554432`、两个节点本地 vCPU 的执行记录、输入文件哈希及宿主内核日志。即使程序通过，也仅证明这个小规模测试；不证明内存容量超过任一节点、性能相加、物理故障恢复或数据库事务安全。
 
 用 `python3 scripts/ssi-lab/check-proof.py run-node0.log` 检查客体结果。PID 1 在失败后也会关机，因此 QEMU 退出状态为 0 不能替代此检查。节点侧用 `ps -eLo pid,tid,comm,time` 核对 `CPU 0/KVM` 到 `CPU 3/KVM` 的执行归属；脚本启用了线程名称。
+
+## 反复转移页面的测试
+
+`guest-stress.c` 使用与前述程序相同的静态构建和 initramfs 打包方法。将产物另外保存为 `guest-stress-initramfs.cpio.gz`，保留原始对照程序。它要求四 CPU、4 KiB 页面，两次 `mmap/munmap` 分配，每次对 4 MiB 内存进行八轮改写和全量校验。相邻页面由不同 CPU 写入，每轮改变写入方；每个 CPU 都以置换顺序读取全部页面，另有共享原子计数验证。
+
+```sh
+INITRAMFS="$HOME/ssi/guest-stress-initramfs.cpio.gz" \
+  bash ~/ssi/run-node.sh 0 192.0.2.10 192.0.2.11 > stress-node0.log 2>&1
+# 另一个节点使用相同 INITRAMFS，并把 NODE_INDEX 设置为 1。
+python3 scripts/ssi-lab/check-stress.py stress-node0.log
+python3 -m unittest discover -s scripts/ssi-lab -p 'test_*.py'
+```
+
+`GUEST_KERNEL` 可以显式选择另一份已核对哈希的发行版内核；默认仍为 `~/ssi/guest-vmlinuz`。更换内核或 initramfs 后必须先跑普通单节点对照。每次冷启动必须重新创建两边 QEMU，并保存各自退出码、线程时间、文件哈希和宿主内核日志；不要拼接多次运行的输出以凑成成功记录。4 MiB 测试只覆盖页面交接与一致性，不证明超单节点内存容量或长期稳定性。
+
+## 内存中的 OpenSSH 工作区
+
+`build-ssh-guest.py` 在新的 Linux 构建目录提取官方 Alpine virt 3.22.8 x86_64 ISO 中的内核、模块、BusyBox、OpenSSH 和运行库。先核对固定 ISO 哈希，构建不需要 root，不读取宿主业务文件。除了前述工具，还需要 `libarchive-tools squashfs-tools openssh-client binutils`。
+
+```sh
+python3 scripts/ssi-lab/build-ssh-guest.py \
+  --iso alpine-virt-3.22.8-x86_64.iso \
+  --authorized-key /path/to/explicit-client-key.pub \
+  --proof /path/to/static-x86_64-guest-stress \
+  --output /path/to/new-private-directory
+```
+
+输出含实验 SSH 主机私钥，应留在权限为 0700 的私有目录，不能提交到 GitHub。复制相同 `guest-vmlinuz` 和 `guest-ssh-initramfs.cpio.gz` 到两节点，并通过已认证管理通道核对 `guest-host-key.pub`。客户端配置 `HostKeyAlias` 和专用 `UserKnownHostsFile`；不要使用 `StrictHostKeyChecking=no`。同一个客体的主机密钥相同是预期行为。
+
+两边设置相同 `GUEST_KERNEL`、`INITRAMFS`、`SSH_PORT=22230` 和 `RUN_SECONDS=1800` 后调用 `run-node.sh`。只有节点零在 `127.0.0.1:22230` 接收转发，节点一不创建监听；两边 QEMU 的 PCI 设备布局保持一致。客体使用 QEMU 受限用户网络，仅接受显式 SSH 转发，不默认访问局域网。客户端通过节点零 `ProxyJump` 连接回环端口，shell 必须报告客体的内核、主机名与四 CPU。
+
+`guest-ssh-init.sh` 只运行 OpenSSH，关闭密码认证。`/bin/ssi-proof` 是同进程共享内存测试；SFTP 目标可用 `/tmp`。当前工作区关机即丢失，既没有持久磁盘，也没有 Docker 或数据库服务。`RUN_SECONDS` 范围为 1–3600，到时仅停止本次 QEMU 实验，不关闭宿主。

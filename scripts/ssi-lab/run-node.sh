@@ -30,15 +30,37 @@ fi
 runtime=${RUNTIME_DIR:-$HOME/ssi}
 qemu=${QEMU:-$runtime/qemu-system-x86_64}
 bios=${BIOS:-$runtime/pc-bios}
+initramfs=${INITRAMFS:-$runtime/guest-initramfs.cpio.gz}
+kernel=${GUEST_KERNEL:-$runtime/guest-vmlinuz}
+duration=${RUN_SECONDS:-900}
+ssh_port=${SSH_PORT:-0}
+if [[ ! "$duration" =~ ^[1-9][0-9]{0,3}$ ]] || (( duration > 3600 )); then
+    echo 'RUN_SECONDS must be between 1 and 3600' >&2
+    exit 2
+fi
+network=()
+if [[ "$ssh_port" != 0 ]]; then
+    if [[ ! "$ssh_port" =~ ^[1-9][0-9]{3,4}$ ]] || (( ssh_port < 1024 || ssh_port > 65535 )); then
+        echo 'SSH_PORT must be 0 or between 1024 and 65535' >&2
+        exit 2
+    fi
+    # 只在主节点回环暴露入口；用户网络隔离客体与宿主 LAN。
+    backend='user,id=sshpool,restrict=on'
+    if [[ "$node" == 0 ]]; then
+        backend+=",hostfwd=tcp:127.0.0.1:$ssh_port-:22"
+    fi
+    network=(-netdev "$backend" -device virtio-net-pci,disable-modern=on,vectors=0,netdev=sshpool,mac=52:54:00:53:53:01)
+fi
 # 控制串口调试日志的最大体积；超时只终止本次实验进程。
 ulimit -f 131072
-exec timeout --kill-after=5 900 "$qemu" \
+exec timeout --kill-after=5 "$duration" "$qemu" \
     -name "sshpool-ssi-node$node",debug-threads=on \
     -machine pc,accel=kvm,kernel-irqchip=split \
     -cpu qemu64,-x2apic \
     -smp 4 -m 256 \
     -nodefaults -display none -serial stdio -monitor none -no-reboot \
-    -L "$bios" -kernel "$runtime/guest-vmlinuz" \
-    -initrd "$runtime/guest-initramfs.cpio.gz" \
+    -L "$bios" -kernel "$kernel" \
+    -initrd "$initramfs" \
+    "${network[@]}" \
     -append 'console=ttyS0 rdinit=/init nokaslr panic=10 nox2apic' \
     -local-cpu "cpus=2,start=$((node * 2)),iplist=$peer0 $peer1"
