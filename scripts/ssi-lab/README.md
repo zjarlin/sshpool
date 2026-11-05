@@ -123,3 +123,7 @@ python3 scripts/ssi-lab/build-ssh-guest.py \
 两边设置相同 `GUEST_KERNEL`、`INITRAMFS`、`SSH_PORT=22230` 和 `RUN_SECONDS=1800` 后调用 `run-node.sh`。只有节点零在 `127.0.0.1:22230` 接收转发，节点一不创建监听；两边 QEMU 的 PCI 设备布局保持一致。客体使用 QEMU 受限用户网络，仅接受显式 SSH 转发，不默认访问局域网。客户端通过节点零 `ProxyJump` 连接回环端口，shell 必须报告客体的内核、主机名与四 CPU。
 
 `guest-ssh-init.sh` 只运行 OpenSSH，关闭密码认证。`/bin/ssi-proof` 是同进程共享内存测试；SFTP 目标可用 `/tmp`。当前工作区关机即丢失，既没有持久磁盘，也没有 Docker 或数据库服务。`RUN_SECONDS` 范围为 1–3600，到时仅停止本次 QEMU 实验，不关闭宿主。
+
+启动日志可先运行 `python3 scripts/ssi-lab/check-ssh-boot.py guest.log --host-log node0-kernel.log --host-log node1-kernel.log`。它会拒绝带内核告警、RCU 停顿或时钟/网络错误的就绪记录，但不替代完整 SSH、SFTP、执行归属与关机验收。宿主日志必须覆盖本轮全过程，不应截取掉告警。
+
+2026-11-05 的双节点 SSH 完整验收仍失败。首次公钥认证成功之后出现 RCU 停顿，且宿主出现脏页记账告警；尚未通过的 virtio 候选补丁单独留在 [experiments](experiments/README.md)，不要加入上面的默认构建步骤。

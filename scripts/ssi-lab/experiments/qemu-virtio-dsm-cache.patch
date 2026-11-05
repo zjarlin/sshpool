@@ -1,0 +1,135 @@
+--- a/system/physmem.c
++++ b/system/physmem.c
+@@ -3672,6 +3672,11 @@
+         cache->ptr = NULL;
+     }
+ 
++    /* DSM 页面不能通过长期缓存的本地指针绕过所有权获取。 */
++    if (kvm_enabled() && local_cpus != smp_cpus && !shm_path) {
++        cache->ptr = NULL;
++    }
++
+     cache->len = l;
+     cache->is_write = is_write;
+     return l;
+--- a/include/hw/virtio/virtio-access.h
++++ b/include/hw/virtio/virtio-access.h
+@@ -160,40 +160,74 @@
+                                                MemoryRegionCache *cache,
+                                                hwaddr pa)
+ {
+-    if (virtio_access_is_big_endian(vdev)) {
+-        return lduw_be_phys_cached(cache, pa);
+-    }
+-    return lduw_le_phys_cached(cache, pa);
++    uint16_t value = 0;
++    MemTxResult result;
++
++    /* 字节访问的慢路径会获取 DSM 页面；标量慢路径仍可能直读本地 RAM。 */
++    result = address_space_read_cached(cache, pa, &value, sizeof(value));
++    if (result != MEMTX_OK) {
++        virtio_error(vdev, "virtio: cached queue read failed");
++        return 0;
++    }
++    if (virtio_access_is_big_endian(vdev)) {
++        return be16_to_cpu(value);
++    }
++    return le16_to_cpu(value);
+ }
+ 
+ static inline uint32_t virtio_ldl_phys_cached(VirtIODevice *vdev,
+-                                              MemoryRegionCache *cache,
+-                                              hwaddr pa)
+-{
+-    if (virtio_access_is_big_endian(vdev)) {
+-        return ldl_be_phys_cached(cache, pa);
+-    }
+-    return ldl_le_phys_cached(cache, pa);
++                                               MemoryRegionCache *cache,
++                                               hwaddr pa)
++{
++    uint32_t value = 0;
++    MemTxResult result;
++
++    /* 字节访问的慢路径会获取 DSM 页面；标量慢路径仍可能直读本地 RAM。 */
++    result = address_space_read_cached(cache, pa, &value, sizeof(value));
++    if (result != MEMTX_OK) {
++        virtio_error(vdev, "virtio: cached queue read failed");
++        return 0;
++    }
++    if (virtio_access_is_big_endian(vdev)) {
++        return be32_to_cpu(value);
++    }
++    return le32_to_cpu(value);
+ }
+ 
+ static inline uint64_t virtio_ldq_phys_cached(VirtIODevice *vdev,
+-                                              MemoryRegionCache *cache,
+-                                              hwaddr pa)
+-{
+-    if (virtio_access_is_big_endian(vdev)) {
+-        return ldq_be_phys_cached(cache, pa);
+-    }
+-    return ldq_le_phys_cached(cache, pa);
++                                               MemoryRegionCache *cache,
++                                               hwaddr pa)
++{
++    uint64_t value = 0;
++    MemTxResult result;
++
++    /* 字节访问的慢路径会获取 DSM 页面；标量慢路径仍可能直读本地 RAM。 */
++    result = address_space_read_cached(cache, pa, &value, sizeof(value));
++    if (result != MEMTX_OK) {
++        virtio_error(vdev, "virtio: cached queue read failed");
++        return 0;
++    }
++    if (virtio_access_is_big_endian(vdev)) {
++        return be64_to_cpu(value);
++    }
++    return le64_to_cpu(value);
+ }
+ 
+ static inline void virtio_stw_phys_cached(VirtIODevice *vdev,
+                                           MemoryRegionCache *cache,
+                                           hwaddr pa, uint16_t value)
+ {
+-    if (virtio_access_is_big_endian(vdev)) {
+-        stw_be_phys_cached(cache, pa, value);
+-    } else {
+-        stw_le_phys_cached(cache, pa, value);
++    MemTxResult result;
++
++    if (virtio_access_is_big_endian(vdev)) {
++        value = cpu_to_be16(value);
++    } else {
++        value = cpu_to_le16(value);
++    }
++    /* 通过 DSM 感知的字节写入发布队列索引，避免仅改动本节点副本。 */
++    result = address_space_write_cached(cache, pa, &value, sizeof(value));
++    if (result != MEMTX_OK) {
++        virtio_error(vdev, "virtio: cached queue write failed");
+     }
+ }
+ 
+@@ -201,10 +235,17 @@
+                                           MemoryRegionCache *cache,
+                                           hwaddr pa, uint32_t value)
+ {
+-    if (virtio_access_is_big_endian(vdev)) {
+-        stl_be_phys_cached(cache, pa, value);
+-    } else {
+-        stl_le_phys_cached(cache, pa, value);
++    MemTxResult result;
++
++    if (virtio_access_is_big_endian(vdev)) {
++        value = cpu_to_be32(value);
++    } else {
++        value = cpu_to_le32(value);
++    }
++    /* 通过 DSM 感知的字节写入发布队列索引，避免仅改动本节点副本。 */
++    result = address_space_write_cached(cache, pa, &value, sizeof(value));
++    if (result != MEMTX_OK) {
++        virtio_error(vdev, "virtio: cached queue write failed");
+     }
+ }
+ 

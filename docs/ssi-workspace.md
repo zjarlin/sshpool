@@ -56,3 +56,23 @@ initramfs 包含每次新生成的主机密钥，因此不同构建不会得到�
 单节点对照没有上述网络错误。当前生成器改用发行版内建的 virtio PCI 总线和原版 `failover/net_failover/virtio_net` 模块，QEMU 选择 legacy virtio 与传统 INTx 中断，继续独立验证。没有忽略 EEPROM 校验或把无效 MAC 强行改回。宿主没有出现此前的页引用或权限告警，但这不能证明客体计时和调度正确，也不能据此部署数据库。
 
 后续必须验收从 SSH 会话启动的同一进程确实在两节点执行、文件传输闭环、客体时钟与计时器行为。Docker、持久磁盘、数据库、跨物理机、超单节点驻留内存和故障恢复仍然没有通过。
+
+## 后续网络实验：首次登录成功，完整场景仍失败
+
+同日继续测试的结果如下；脱敏输出见 [网络实验记录](evidence/ssi-ssh-network-20261105.txt)。
+
+| 组合 | 单节点 | 双节点 |
+| --- | --- | --- |
+| Alpine 内核 + virtio | SSH、内存测试、SFTP 通过 | 启动出现四 CPU 软锁死及 `hrtimer_forward` 告警，SSH 未通过 |
+| Ubuntu 内核 + virtio、原 QEMU | SSH、内存测试、SFTP、关机通过 | 四 CPU 上线、sshd 监听，但 virtio 控制队列报错，SSH 握手超时 |
+| Ubuntu 内核 + virtio、候选 QEMU 补丁 | SSH、内存测试、SFTP、关机通过 | SSH 认证成功并返回主机名；之后 RCU 停顿，压力测试与 SFTP 均未完成 |
+
+Ubuntu 对照使用此前内存测试的原版 `6.8.0-147-generic` 内核和同一 Alpine 用户态；该内核内建网络驱动，因此不加载 Alpine 模块。这里是缩小问题范围的对照，不是宣布旧内核已经解决稳定性。
+
+发现 virtio 队列缓存直接使用本地 RAM 指针，存在绕过 DSM 获取的路径。独立候选补丁已构建并实测，但只保存在 [experiments](../scripts/ssi-lab/experiments/README.md)，不加入默认补丁集。双节点中还观察到宿主 `mark_page_dirty_in_slot` 告警、客体 TSC 不稳定和 RCU 停顿。首次登录的输出只有 `hostname`，没有完整的内核/CPU/压力测试结果，不能标为四线程 SSH 场景通过，也不能认定停顿由压力测试触发。
+
+两边运行到 900 秒限时终止，管理 SSH 进程退出 255，不能等同于客体正常关机。保存原始日志后，已确认两节点没有 QEMU 残留，并重启回原版 `6.8.0-147-generic`：管理 SSH 可用、`/lib -> usr/lib` 保持完整、GRUB 无待执行的一次性启动项。业务 VM、现有数据库与公司目录未参与实验。
+
+新增 `check-ssh-boot.py` 检查唯一内核/四 CPU/sshd 就绪顺序，并拒绝内核告警、TSC 偏移、RCU 停顿、网络和 DSM 错误。`--host-log` 可重复传入两节点本轮日志。它只是一道日志门槛；即便通过，仍需要完整 SSH 会话、双节点执行证据、SFTP 往返、正常关机和人工核查日志完整性。
+
+当前最先需要解决的是设备访问一致性、非 vCPU 写入的脏页记账和时钟/RCU 停顿，然后才有条件继续持久磁盘、Docker、数据库与故障恢复。

@@ -1,0 +1,100 @@
+SSI SSH network experiment, 2026-11-05
+RESULT: PARTIAL / FAILED full two-node workspace acceptance.
+Two nested x86 KVM nodes on ONE physical ESXi host. No production volumes mounted.
+Host kernel: 7.1.0-rc3-sshpool-gvm-pf2
+Ubuntu guest kernel SHA256: 41ba36d860aa0b0cd995f4ca8856d80249b244577e704929b55be13fbd1ebd2f
+Diagnostic Ubuntu initramfs SHA256: 87342480b6393c24c82aa72125ffb328ff5b9c32e4af24116365a37fb87e9861
+Experimental QEMU SHA256: a2d0a9c4eaf74e72e044ff229b6cbbc9d1a7aeeb36ac8d8799f30e91ade8e7fc
+Private paths, LAN addresses, and SSH public key fingerprints omitted.
+
+SINGLE-NODE PATCHED CONTROL: SSH / memory test / 1 MiB SFTP / QEMU exit 0
+Unmodified Ubuntu 6.8.0-147-generic kernel, Alpine userspace, built-in virtio networking.
+This control does not prove any cross-node property.
+
+sshpool-ssi-guest
+6.8.0-147-generic
+4
+rootfs on / type rootfs (rw,size=98444k,nr_inodes=24611,inode64)
+proc on /proc type proc (rw,relatime)
+sysfs on /sys type sysfs (rw,relatime)
+devtmpfs on /dev type devtmpfs (rw,relatime,size=98444k,nr_inodes=24611,mode=755,inode64)
+devpts on /dev/pts type devpts (rw,relatime,mode=600,ptmxmode=000)
+tmpfs on /dev/shm type tmpfs (rw,relatime,inode64)
+tmpfs on /tmp type tmpfs (rw,relatime,inode64)
+tmpfs on /run type tmpfs (rw,relatime,inode64)
+STRESS_START pid=120 online_cpus=4 bytes=4194304 rounds=8 allocations=2
+STRESS_ROUND allocation=0 round=0 counter=512
+STRESS_ROUND allocation=0 round=1 counter=1024
+STRESS_ROUND allocation=0 round=2 counter=1536
+STRESS_ROUND allocation=0 round=3 counter=2048
+STRESS_ROUND allocation=0 round=4 counter=2560
+STRESS_ROUND allocation=0 round=5 counter=3072
+STRESS_ROUND allocation=0 round=6 counter=3584
+STRESS_THREAD allocation=0 pid=120 tid=127 requested_cpu=2 observed_cpu=2
+STRESS_ROUND allocation=0 round=7 counter=4096
+STRESS_THREAD allocation=0 pid=120 tid=125 requested_cpu=0 observed_cpu=0
+STRESS_THREAD allocation=0 pid=120 tid=128 requested_cpu=3 observed_cpu=3
+STRESS_THREAD allocation=0 pid=120 tid=126 requested_cpu=1 observed_cpu=1
+STRESS_ROUND allocation=1 round=0 counter=512
+STRESS_ROUND allocation=1 round=1 counter=1024
+STRESS_ROUND allocation=1 round=2 counter=1536
+STRESS_ROUND allocation=1 round=3 counter=2048
+STRESS_ROUND allocation=1 round=4 counter=2560
+STRESS_ROUND allocation=1 round=5 counter=3072
+STRESS_ROUND allocation=1 round=6 counter=3584
+STRESS_THREAD allocation=1 pid=120 tid=130 requested_cpu=1 observed_cpu=1
+STRESS_THREAD allocation=1 pid=120 tid=132 requested_cpu=3 observed_cpu=3
+STRESS_ROUND allocation=1 round=7 counter=4096
+STRESS_THREAD allocation=1 pid=120 tid=129 requested_cpu=0 observed_cpu=0
+STRESS_THREAD allocation=1 pid=120 tid=131 requested_cpu=2 observed_cpu=2
+STRESS_PASS cpus=4 rounds=8 allocations=2 counter_per_allocation=4096 bytes=4194304
+STRESS_EXIT status=0
+sftp> put <local-test-file> /tmp/ssi-transfer.bin
+sftp> get /tmp/ssi-transfer.bin <local-test-file>
+sftp> rm /tmp/ssi-transfer.bin
+SFTP_SHA256 fbbab289f7f94b25736c58be46a994c441fd02552cc6022352e3d86d2fab7c83
+
+
+UNPATCHED ALPINE VIRTIO TWO-NODE FAILURE (selected serial lines):
+[  337.251528] watchdog: BUG: soft lockup - CPU#1 stuck for 23s! [kworker/u16:5:208]
+[  337.296989] watchdog: BUG: soft lockup - CPU#3 stuck for 26s! [kworker/u16:5:70]
+[  340.686438] watchdog: BUG: soft lockup - CPU#0 stuck for 22s! [kworker/0:0:9]
+[  340.692208] watchdog: BUG: soft lockup - CPU#2 stuck for 21s! [kworker/u16:0:206]
+[  378.312193] WARNING: CPU: 1 PID: 414 at kernel/time/hrtimer.c:1056 hrtimer_forward+0x8a/0xe0
+[  444.983681] Run /init as init process
+
+UNPATCHED UBUNTU VIRTIO TWO-NODE FAILURE (selected serial lines):
+[    1.872300] Measured 2941101754 cycles TSC warp between CPUs, turning off TSC clock.
+[    1.872483] tsc: Marking TSC unstable due to check_tsc_sync_source failed
+[  223.193145] net eth0: Failed to disable promisc mode.
+[  223.214622] net eth0: Failed to disable allmulti mode.
+[  223.219692] net eth0: Failed to set MAC filter table.
+SSH_GUEST_READY kernel=6.8.0-147-generic cpus=4
+SSH client: banner exchange timed out; no authenticated session.
+
+PATCHED UBUNTU VIRTIO TWO-NODE FAILURE (selected serial lines):
+[    8.123320] tsc: Marking TSC unstable due to clocksource watchdog
+SSH_GUEST_READY kernel=6.8.0-147-generic cpus=4
+Server listening on 0.0.0.0 port 22.
+Server listening on :: port 22.
+Accepted publickey for root [transport address and key fingerprint omitted]
+[  503.524262] rcu: INFO: rcu_preempt detected stalls on CPUs/tasks:
+qemu-system-x86_64-virtio: terminating on signal 15 from pid 3941 (timeout)
+
+First authenticated SSH command output (hostname returned; command sequence did not finish):
+sshpool-ssi-guest
+Timeout, server <guest-endpoint> not responding.
+
+Later SSH proof attempt: banner timeout; no STRESS_START and no STRESS_PASS.
+Later SFTP attempt: client exit 255, banner timeout; no completed file round trip.
+900-second timeout terminated both QEMUs; captured management SSH exits were 255, not normal guest shutdown.
+
+HOST WARNING DURING PATCHED DEVICE ACCESS (selected lines):
+WARNING: arch/x86/kvm/../../../virt/kvm/kvm_main.c:3523 at mark_page_dirty_in_slot+0x6b/0xe0, CPU#1: qemu-system-x86/3946
+ __kvm_write_guest_page+0x67/0xb0
+ ivy_kvm_dsm_page_fault+0x560/0x7b0
+ kvm_vm_ioctl_dsm+0x3d1/0x12e0
+
+After timeout, both nodes had no QEMU/KVM experiment threads.
+Both lab VMs rebooted into stock 6.8.0-147-generic; SSH verified; /lib -> usr/lib; no one-shot GRUB entry.
+Docker, persistent storage, database integrity, physical host failover, and production readiness: NOT VERIFIED.

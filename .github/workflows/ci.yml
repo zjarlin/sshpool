@@ -19,3 +19,8 @@ jobs:
       - run: cargo test --locked
       - run: python3 scripts/feature-status.py --check
       - run: python3 -m unittest discover -s scripts/ssi-lab -p 'test_*.py'
+      - if: runner.os == 'Linux'
+        run: |
+          cc -O2 -Wall -Wextra -Werror -static -pthread scripts/ssi-lab/guest-stress.c -o "$RUNNER_TEMP/guest-stress"
+          bash -n scripts/ssi-lab/run-node.sh scripts/ssi-lab/build-host-kernel.sh
+          sh -n scripts/ssi-lab/guest-ssh-init.sh
