@@ -8,7 +8,7 @@ import re
 def check_errors(log):
     """QEMU 的推荐核数提示不等于内核告警；其他匹配错误都保留。"""
     log = re.sub(
-        r'^qemu[^:\r\n]*: warning: Number of (?:SMP cpus|hotpluggable cpus) requested '
+        r'^(?:qemu[^:\r\n]*:)?[ \t]*warning: Number of (?:SMP cpus|hotpluggable cpus) requested '
         r'\(\d+\) exceeds the recommended cpus supported by KVM \(\d+\)\r?$',
         '', log, flags=re.MULTILINE)
     failures = (
@@ -17,6 +17,9 @@ def check_errors(log):
         r'rcu.*(?:detected stalls|self-detected stall)',
         r'TSC warp', r'Marking TSC unstable',
         r'hctosys: unable to read the hardware clock',
+        r'RTC time:.*date: (?:\d{4}-00-\d{2}|\d{4}-\d{2}-00)',
+        r'Lost \d+ RTC interrupts',
+        r'Long readout interval, skipping watchdog check',
         r'Failed to (?:disable|set MAC)', r'EEPROM Checksum Is Not Valid',
         r'KVM_DSM_\w+ failed', r'access mismatch',
         r'failed to handle page fault', r'ktcp_receive.*error',

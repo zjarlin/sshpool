@@ -3157,6 +3157,796 @@
         1,
         0
       ]
+    },
+    {
+      "run": "pvclock-pf7-pair-1",
+      "exchanges": [
+        {
+          "round": 0,
+          "cpu": 0,
+          "reader_node": 1,
+          "before": {
+            "node": 0,
+            "op": "tick",
+            "marker": 1,
+            "records": [
+              {
+                "version": 4,
+                "tsc": 129793454,
+                "time": 56630382,
+                "multiplier": 3587549226,
+                "shift": -1,
+                "flags": 1
+              },
+              {
+                "version": 2,
+                "tsc": 85145844,
+                "time": 37208774,
+                "multiplier": 3587549226,
+                "shift": -1,
+                "flags": 1
+              }
+            ]
+          },
+          "previous": {
+            "node": 1,
+            "op": "read",
+            "marker": 2,
+            "records": [
+              {
+                "version": 4,
+                "tsc": 129793454,
+                "time": 56630382,
+                "multiplier": 3587549226,
+                "shift": -1,
+                "flags": 1
+              },
+              {
+                "version": 2,
+                "tsc": 85145844,
+                "time": 37208774,
+                "multiplier": 3587549226,
+                "shift": -1,
+                "flags": 1
+              }
+            ]
+          },
+          "latest": {
+            "node": 0,
+            "op": "tick",
+            "marker": 2,
+            "records": [
+              {
+                "version": 6,
+                "tsc": 168421828,
+                "time": 72763551,
+                "multiplier": 3587549226,
+                "shift": -1,
+                "flags": 1
+              },
+              {
+                "version": 2,
+                "tsc": 85145844,
+                "time": 37208774,
+                "multiplier": 3587549226,
+                "shift": -1,
+                "flags": 1
+              }
+            ]
+          },
+          "observed": {
+            "node": 1,
+            "op": "read",
+            "marker": 2,
+            "records": [
+              {
+                "version": 6,
+                "tsc": 168421828,
+                "time": 72763551,
+                "multiplier": 3587549226,
+                "shift": -1,
+                "flags": 1
+              },
+              {
+                "version": 2,
+                "tsc": 85145844,
+                "time": 37208774,
+                "multiplier": 3587549226,
+                "shift": -1,
+                "flags": 1
+              }
+            ]
+          }
+        },
+        {
+          "round": 0,
+          "cpu": 1,
+          "reader_node": 0,
+          "before": {
+            "node": 1,
+            "op": "tick",
+            "marker": 2,
+            "records": [
+              {
+                "version": 6,
+                "tsc": 168421828,
+                "time": 72763551,
+                "multiplier": 3587549226,
+                "shift": -1,
+                "flags": 1
+              },
+              {
+                "version": 4,
+                "tsc": 190031784,
+                "time": 81013971,
+                "multiplier": 3587549226,
+                "shift": -1,
+                "flags": 1
+              }
+            ]
+          },
+          "previous": {
+            "node": 0,
+            "op": "read",
+            "marker": 1,
+            "records": [
+              {
+                "version": 6,
+                "tsc": 168421828,
+                "time": 72763551,
+                "multiplier": 3587549226,
+                "shift": -1,
+                "flags": 1
+              },
+              {
+                "version": 4,
+                "tsc": 190031784,
+                "time": 81013971,
+                "multiplier": 3587549226,
+                "shift": -1,
+                "flags": 1
+              }
+            ]
+          },
+          "latest": {
+            "node": 1,
+            "op": "tick",
+            "marker": 1,
+            "records": [
+              {
+                "version": 6,
+                "tsc": 168421828,
+                "time": 72763551,
+                "multiplier": 3587549226,
+                "shift": -1,
+                "flags": 1
+              },
+              {
+                "version": 6,
+                "tsc": 226905574,
+                "time": 96414214,
+                "multiplier": 3587549226,
+                "shift": -1,
+                "flags": 1
+              }
+            ]
+          },
+          "observed": {
+            "node": 0,
+            "op": "read",
+            "marker": 1,
+            "records": [
+              {
+                "version": 6,
+                "tsc": 168421828,
+                "time": 72763551,
+                "multiplier": 3587549226,
+                "shift": -1,
+                "flags": 1
+              },
+              {
+                "version": 6,
+                "tsc": 226905574,
+                "time": 96414214,
+                "multiplier": 3587549226,
+                "shift": -1,
+                "flags": 1
+              }
+            ]
+          }
+        },
+        {
+          "round": 1,
+          "cpu": 0,
+          "reader_node": 1,
+          "before": {
+            "node": 0,
+            "op": "tick",
+            "marker": 1,
+            "records": [
+              {
+                "version": 8,
+                "tsc": 286006036,
+                "time": 121872133,
+                "multiplier": 3587549226,
+                "shift": -1,
+                "flags": 1
+              },
+              {
+                "version": 6,
+                "tsc": 226905574,
+                "time": 96414214,
+                "multiplier": 3587549226,
+                "shift": -1,
+                "flags": 1
+              }
+            ]
+          },
+          "previous": {
+            "node": 1,
+            "op": "read",
+            "marker": 2,
+            "records": [
+              {
+                "version": 8,
+                "tsc": 286006036,
+                "time": 121872133,
+                "multiplier": 3587549226,
+                "shift": -1,
+                "flags": 1
+              },
+              {
+                "version": 6,
+                "tsc": 226905574,
+                "time": 96414214,
+                "multiplier": 3587549226,
+                "shift": -1,
+                "flags": 1
+              }
+            ]
+          },
+          "latest": {
+            "node": 0,
+            "op": "tick",
+            "marker": 2,
+            "records": [
+              {
+                "version": 10,
+                "tsc": 321415836,
+                "time": 136661285,
+                "multiplier": 3587549226,
+                "shift": -1,
+                "flags": 1
+              },
+              {
+                "version": 6,
+                "tsc": 226905574,
+                "time": 96414214,
+                "multiplier": 3587549226,
+                "shift": -1,
+                "flags": 1
+              }
+            ]
+          },
+          "observed": {
+            "node": 1,
+            "op": "read",
+            "marker": 2,
+            "records": [
+              {
+                "version": 10,
+                "tsc": 321415836,
+                "time": 136661285,
+                "multiplier": 3587549226,
+                "shift": -1,
+                "flags": 1
+              },
+              {
+                "version": 6,
+                "tsc": 226905574,
+                "time": 96414214,
+                "multiplier": 3587549226,
+                "shift": -1,
+                "flags": 1
+              }
+            ]
+          }
+        },
+        {
+          "round": 1,
+          "cpu": 1,
+          "reader_node": 0,
+          "before": {
+            "node": 1,
+            "op": "tick",
+            "marker": 2,
+            "records": [
+              {
+                "version": 10,
+                "tsc": 321415836,
+                "time": 136661285,
+                "multiplier": 3587549226,
+                "shift": -1,
+                "flags": 1
+              },
+              {
+                "version": 8,
+                "tsc": 342065474,
+                "time": 144510380,
+                "multiplier": 3587549226,
+                "shift": -1,
+                "flags": 1
+              }
+            ]
+          },
+          "previous": {
+            "node": 0,
+            "op": "read",
+            "marker": 1,
+            "records": [
+              {
+                "version": 10,
+                "tsc": 321415836,
+                "time": 136661285,
+                "multiplier": 3587549226,
+                "shift": -1,
+                "flags": 1
+              },
+              {
+                "version": 8,
+                "tsc": 342065474,
+                "time": 144510380,
+                "multiplier": 3587549226,
+                "shift": -1,
+                "flags": 1
+              }
+            ]
+          },
+          "latest": {
+            "node": 1,
+            "op": "tick",
+            "marker": 1,
+            "records": [
+              {
+                "version": 10,
+                "tsc": 321415836,
+                "time": 136661285,
+                "multiplier": 3587549226,
+                "shift": -1,
+                "flags": 1
+              },
+              {
+                "version": 10,
+                "tsc": 380079802,
+                "time": 160386926,
+                "multiplier": 3587549226,
+                "shift": -1,
+                "flags": 1
+              }
+            ]
+          },
+          "observed": {
+            "node": 0,
+            "op": "read",
+            "marker": 1,
+            "records": [
+              {
+                "version": 10,
+                "tsc": 321415836,
+                "time": 136661285,
+                "multiplier": 3587549226,
+                "shift": -1,
+                "flags": 1
+              },
+              {
+                "version": 10,
+                "tsc": 380079802,
+                "time": 160386926,
+                "multiplier": 3587549226,
+                "shift": -1,
+                "flags": 1
+              }
+            ]
+          }
+        },
+        {
+          "round": 2,
+          "cpu": 0,
+          "reader_node": 1,
+          "before": {
+            "node": 0,
+            "op": "tick",
+            "marker": 1,
+            "records": [
+              {
+                "version": 12,
+                "tsc": 433482902,
+                "time": 183465663,
+                "multiplier": 3587549226,
+                "shift": -1,
+                "flags": 1
+              },
+              {
+                "version": 10,
+                "tsc": 380079802,
+                "time": 160386926,
+                "multiplier": 3587549226,
+                "shift": -1,
+                "flags": 1
+              }
+            ]
+          },
+          "previous": {
+            "node": 1,
+            "op": "read",
+            "marker": 2,
+            "records": [
+              {
+                "version": 12,
+                "tsc": 433482902,
+                "time": 183465663,
+                "multiplier": 3587549226,
+                "shift": -1,
+                "flags": 1
+              },
+              {
+                "version": 10,
+                "tsc": 380079802,
+                "time": 160386926,
+                "multiplier": 3587549226,
+                "shift": -1,
+                "flags": 1
+              }
+            ]
+          },
+          "latest": {
+            "node": 0,
+            "op": "tick",
+            "marker": 2,
+            "records": [
+              {
+                "version": 14,
+                "tsc": 472339114,
+                "time": 199693979,
+                "multiplier": 3587549226,
+                "shift": -1,
+                "flags": 1
+              },
+              {
+                "version": 10,
+                "tsc": 380079802,
+                "time": 160386926,
+                "multiplier": 3587549226,
+                "shift": -1,
+                "flags": 1
+              }
+            ]
+          },
+          "observed": {
+            "node": 1,
+            "op": "read",
+            "marker": 2,
+            "records": [
+              {
+                "version": 14,
+                "tsc": 472339114,
+                "time": 199693979,
+                "multiplier": 3587549226,
+                "shift": -1,
+                "flags": 1
+              },
+              {
+                "version": 10,
+                "tsc": 380079802,
+                "time": 160386926,
+                "multiplier": 3587549226,
+                "shift": -1,
+                "flags": 1
+              }
+            ]
+          }
+        },
+        {
+          "round": 2,
+          "cpu": 1,
+          "reader_node": 0,
+          "before": {
+            "node": 1,
+            "op": "tick",
+            "marker": 2,
+            "records": [
+              {
+                "version": 14,
+                "tsc": 472339114,
+                "time": 199693979,
+                "multiplier": 3587549226,
+                "shift": -1,
+                "flags": 1
+              },
+              {
+                "version": 12,
+                "tsc": 491782862,
+                "time": 207039253,
+                "multiplier": 3587549226,
+                "shift": -1,
+                "flags": 1
+              }
+            ]
+          },
+          "previous": {
+            "node": 0,
+            "op": "read",
+            "marker": 1,
+            "records": [
+              {
+                "version": 14,
+                "tsc": 472339114,
+                "time": 199693979,
+                "multiplier": 3587549226,
+                "shift": -1,
+                "flags": 1
+              },
+              {
+                "version": 12,
+                "tsc": 491782862,
+                "time": 207039253,
+                "multiplier": 3587549226,
+                "shift": -1,
+                "flags": 1
+              }
+            ]
+          },
+          "latest": {
+            "node": 1,
+            "op": "tick",
+            "marker": 1,
+            "records": [
+              {
+                "version": 14,
+                "tsc": 472339114,
+                "time": 199693979,
+                "multiplier": 3587549226,
+                "shift": -1,
+                "flags": 1
+              },
+              {
+                "version": 14,
+                "tsc": 523951618,
+                "time": 220474423,
+                "multiplier": 3587549226,
+                "shift": -1,
+                "flags": 1
+              }
+            ]
+          },
+          "observed": {
+            "node": 0,
+            "op": "read",
+            "marker": 1,
+            "records": [
+              {
+                "version": 14,
+                "tsc": 472339114,
+                "time": 199693979,
+                "multiplier": 3587549226,
+                "shift": -1,
+                "flags": 1
+              },
+              {
+                "version": 14,
+                "tsc": 523951618,
+                "time": 220474423,
+                "multiplier": 3587549226,
+                "shift": -1,
+                "flags": 1
+              }
+            ]
+          }
+        },
+        {
+          "round": 3,
+          "cpu": 0,
+          "reader_node": 1,
+          "before": {
+            "node": 0,
+            "op": "tick",
+            "marker": 1,
+            "records": [
+              {
+                "version": 16,
+                "tsc": 587248158,
+                "time": 247685298,
+                "multiplier": 3587549226,
+                "shift": -1,
+                "flags": 1
+              },
+              {
+                "version": 14,
+                "tsc": 523951618,
+                "time": 220474423,
+                "multiplier": 3587549226,
+                "shift": -1,
+                "flags": 1
+              }
+            ]
+          },
+          "previous": {
+            "node": 1,
+            "op": "read",
+            "marker": 2,
+            "records": [
+              {
+                "version": 16,
+                "tsc": 587248158,
+                "time": 247685298,
+                "multiplier": 3587549226,
+                "shift": -1,
+                "flags": 1
+              },
+              {
+                "version": 14,
+                "tsc": 523951618,
+                "time": 220474423,
+                "multiplier": 3587549226,
+                "shift": -1,
+                "flags": 1
+              }
+            ]
+          },
+          "latest": {
+            "node": 0,
+            "op": "tick",
+            "marker": 2,
+            "records": [
+              {
+                "version": 18,
+                "tsc": 620572518,
+                "time": 261603247,
+                "multiplier": 3587549226,
+                "shift": -1,
+                "flags": 1
+              },
+              {
+                "version": 14,
+                "tsc": 523951618,
+                "time": 220474423,
+                "multiplier": 3587549226,
+                "shift": -1,
+                "flags": 1
+              }
+            ]
+          },
+          "observed": {
+            "node": 1,
+            "op": "read",
+            "marker": 2,
+            "records": [
+              {
+                "version": 18,
+                "tsc": 620572518,
+                "time": 261603247,
+                "multiplier": 3587549226,
+                "shift": -1,
+                "flags": 1
+              },
+              {
+                "version": 14,
+                "tsc": 523951618,
+                "time": 220474423,
+                "multiplier": 3587549226,
+                "shift": -1,
+                "flags": 1
+              }
+            ]
+          }
+        },
+        {
+          "round": 3,
+          "cpu": 1,
+          "reader_node": 0,
+          "before": {
+            "node": 1,
+            "op": "tick",
+            "marker": 2,
+            "records": [
+              {
+                "version": 18,
+                "tsc": 620572518,
+                "time": 261603247,
+                "multiplier": 3587549226,
+                "shift": -1,
+                "flags": 1
+              },
+              {
+                "version": 16,
+                "tsc": 639242568,
+                "time": 268625302,
+                "multiplier": 3587549226,
+                "shift": -1,
+                "flags": 1
+              }
+            ]
+          },
+          "previous": {
+            "node": 0,
+            "op": "read",
+            "marker": 1,
+            "records": [
+              {
+                "version": 18,
+                "tsc": 620572518,
+                "time": 261603247,
+                "multiplier": 3587549226,
+                "shift": -1,
+                "flags": 1
+              },
+              {
+                "version": 16,
+                "tsc": 639242568,
+                "time": 268625302,
+                "multiplier": 3587549226,
+                "shift": -1,
+                "flags": 1
+              }
+            ]
+          },
+          "latest": {
+            "node": 1,
+            "op": "tick",
+            "marker": 1,
+            "records": [
+              {
+                "version": 18,
+                "tsc": 620572518,
+                "time": 261603247,
+                "multiplier": 3587549226,
+                "shift": -1,
+                "flags": 1
+              },
+              {
+                "version": 18,
+                "tsc": 676193204,
+                "time": 284057746,
+                "multiplier": 3587549226,
+                "shift": -1,
+                "flags": 1
+              }
+            ]
+          },
+          "observed": {
+            "node": 0,
+            "op": "read",
+            "marker": 1,
+            "records": [
+              {
+                "version": 18,
+                "tsc": 620572518,
+                "time": 261603247,
+                "multiplier": 3587549226,
+                "shift": -1,
+                "flags": 1
+              },
+              {
+                "version": 18,
+                "tsc": 676193204,
+                "time": 284057746,
+                "multiplier": 3587549226,
+                "shift": -1,
+                "flags": 1
+              }
+            ]
+          }
+        }
+      ],
+      "result": {
+        "checks": 8,
+        "failures": 0,
+        "errors": []
+      },
+      "closed_nodes": [
+        1,
+        0
+      ]
     }
   ]
 }

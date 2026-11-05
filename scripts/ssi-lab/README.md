@@ -144,3 +144,11 @@ timeout --kill-after=5 45 python3 scripts/ssi-lab/probe-dsm-device.py \
 `guest-clock.c` 静态编译后通过现有 SFTP 放入无磁盘客体运行；`check-clock.py` 核对 32 个有序采样与四个定时器记录。它检测 TSC 和三类应用时钟倒退、定时器提前返回，不代替启动 watchdog、长期漂移或宿主错误检查。使用方式、成功与失败的真实证据见 [时钟实验](../../docs/ssi-clock.md)。启动偏移候选仍在 `experiments/`，不进入默认构建路径。
 
 `probe-pvclock.c` 和 `probe-pvclock.py` 直接创建仅执行 HLT 的 KVM 实例，强制跨节点转移时钟页后核对内核写入的新版本。PF5 复现更新丢失，PF6 的受控交接通过；使用方式和限制见 [pvclock 实验](../../docs/ssi-pvclock.md)。该探针不在普通 CI 中执行，CI 只编译它并重新核对已保存的真实接口记录。
+
+## DSM 接收等待与性能采样
+
+`probe-receive.py` 复用上面的 C 二进制，测量真实 KVM DSM 监听器在空闲、八字节半帧和 socket 关闭时的行为。额外指定 `--close-order vm-first` 可在保留半帧连接时销毁 VM，验证接收等待可中断。实验防火墙必须允许回环到 TCP 37710，不需要开放外部来源。它会拒绝正在运行其他实验的节点；需要 root 读取内核线程栈，不能在业务宿主运行。
+
+`profile-threads.py` 对指定 QEMU 及独占节点上的 DSM 线程采样，`summarize-profile.py` 核对生命周期和累计 CPU 时间。原始数据、候选接收补丁和验证边界见 [传输实验](../../docs/ssi-transport.md)。默认构建流程不自动应用候选。
+
+可用 `check-clock.py guest.log --max-timer-ms 250` 对本轮四个定时器额外施加延迟门槛；省略参数时仍只验证计时单调性及不提前返回。`check-ssh-boot.py` 现在也拒绝丢失 RTC 中断和因读取间隔太长而跳过 watchdog 的记录。

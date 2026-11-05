@@ -65,3 +65,7 @@ ninja -C GVM-qemu/build -j2 qemu-system-x86_64
 在 PF5 内核补丁之后应用 `kernel-dsm-pvclock.patch`，另行构建 `-sshpool-gvm-pf6`。它在 KVM pvclock 的缓存写入之前取得 DSM 页面写权限，覆盖正常完成和缓存刷新失败的释放路径。默认构建脚本仍不自动应用这些候选补丁。
 
 同一真实 KVM 探针在 PF5 双节点中 8/8 丢失更新，在 PF6 中 8/8 保留新版本及同页记录。修改范围、精确哈希、重现方法和未覆盖的并发/Xen/Hyper-V 缓存路径见 [pvclock 实验](../../../docs/ssi-pvclock.md)。该结果不等于所有时钟、设备和关闭错误已经解决。
+
+## PF7：接收等待
+
+在 PF6 后应用 `kernel-dsm-receive-wait.patch`，另行构建 `-sshpool-gvm-pf7`。它让任意请求接收者和半帧读者等待 socket；指定事务空读仍让出接收锁并退避，保留多读者分流。协议格式、错误报告与所有权操作保持原样。没有应用 TCP_NODELAY 或关闭 watchdog，尚未实现显式关闭握手和故障恢复。真实探针与客体结果见 [传输实验](../../../docs/ssi-transport.md)。

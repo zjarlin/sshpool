@@ -21,6 +21,7 @@ class CheckSshBootTest(unittest.TestCase):
     def test_qemu_recommended_cpu_limit_is_not_a_kernel_warning(self):
         advisory = 'qemu: warning: Number of SMP cpus requested (4) exceeds the recommended cpus supported by KVM (2)\n'
         checker.validate(advisory + control)
+        checker.validate(advisory.replace('qemu:', '') + control)
 
     def test_ready_does_not_override_kernel_clock_or_network_errors(self):
         errors = (
@@ -29,6 +30,9 @@ class CheckSshBootTest(unittest.TestCase):
             'Measured 2941101754 cycles TSC warp between CPUs, turning off TSC clock.',
             'tsc: Marking TSC unstable due to check_tsc_sync_source failed',
             'rtc_cmos 00:04: hctosys: unable to read the hardware clock',
+            'PM: RTC time: 00:00:00, date: 2000-00-00',
+            'hpet: Lost 43 RTC interrupts',
+            'clocksource: Long readout interval, skipping watchdog check: cs_nsec: 2069964532 wd_nsec: 2069964190',
             'net eth0: Failed to set MAC filter table.',
             'e1000: The EEPROM Checksum Is Not Valid',
             'KVM_DSM_MEMCPY failed -14',

@@ -15,6 +15,16 @@ class CheckClockTest(unittest.TestCase):
     def test_accepts_real_single_node_control(self):
         checker.validate(control)
 
+    def test_timer_budget_distinguishes_real_control_and_delayed_pair(self):
+        checker.validate(control, max_timer_ns=250_000_000)
+        evidence = directory.parents[1] / 'docs/evidence/ssi-pvclock-workspace-20261106.txt'
+        with self.assertRaisesRegex(ValueError, '超过'):
+            checker.validate(evidence.read_text(), max_timer_ns=250_000_000)
+
+    def test_rejects_impossible_timer_budget(self):
+        with self.assertRaises(ValueError):
+            checker.validate(control, max_timer_ns=19_000_000)
+
     def test_accepts_bounded_candidate_samples_without_claiming_boot_pass(self):
         evidence = directory.parents[1] / 'docs/evidence/ssi-clock-offset-20261105.txt'
         checker.validate(evidence.read_text())

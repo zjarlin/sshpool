@@ -1,0 +1,2575 @@
+{
+  "worker_sha256": "86f12c44e32069272174d1768e30d494fb126bdfb97d51aa60edd85ba3987756",
+  "runs": [
+    {
+      "label": "pf6-receive-node0-2",
+      "result": {
+        "kernel": "7.1.0-rc3-sshpool-gvm-pf6",
+        "phases": [
+          {
+            "phase": "idle",
+            "elapsed_ns": 3000113461,
+            "cpu_ns": 3003227861,
+            "cpu_equivalents": 1.0010380940722694,
+            "bounded_cpu": false,
+            "before": {
+              "5647": {
+                "name": "dsm-conn/0:0",
+                "stat": "5647 (dsm-conn/0:0) R 2 0 0 0 -1 2129984 0 0 0 0 0 11 0 0 20 0 1 0 104268 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 0 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 113593821,
+                "stack": []
+              },
+              "5648": {
+                "name": "dsm-conn/0:1",
+                "stat": "5648 (dsm-conn/0:1) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 104268 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 2737,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4c/0x320",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "5649": {
+                "name": "dsm-conn/0:2",
+                "stat": "5649 (dsm-conn/0:2) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 104268 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 1163711,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4c/0x320",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "5650": {
+                "name": "dsm-conn/0:3",
+                "stat": "5650 (dsm-conn/0:3) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 104269 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 569357,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4c/0x320",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "5651": {
+                "name": "dsm-conn/0:4",
+                "stat": "5651 (dsm-conn/0:4) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 104269 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 10095,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4c/0x320",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "5652": {
+                "name": "dsm-conn/0:5",
+                "stat": "5652 (dsm-conn/0:5) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 104269 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 378360,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4c/0x320",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "5653": {
+                "name": "dsm-conn/0:6",
+                "stat": "5653 (dsm-conn/0:6) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 104269 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 709116,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4c/0x320",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "5654": {
+                "name": "dsm-conn/0:7",
+                "stat": "5654 (dsm-conn/0:7) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 104269 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 707214,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4c/0x320",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              }
+            },
+            "after": {
+              "5647": {
+                "name": "dsm-conn/0:0",
+                "stat": "5647 (dsm-conn/0:0) R 2 0 0 0 -1 2129984 0 0 0 0 0 311 0 0 20 0 1 0 104268 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 0 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 3116821682,
+                "stack": []
+              },
+              "5648": {
+                "name": "dsm-conn/0:1",
+                "stat": "5648 (dsm-conn/0:1) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 104268 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 2737,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4c/0x320",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "5649": {
+                "name": "dsm-conn/0:2",
+                "stat": "5649 (dsm-conn/0:2) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 104268 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 1163711,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4c/0x320",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "5650": {
+                "name": "dsm-conn/0:3",
+                "stat": "5650 (dsm-conn/0:3) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 104269 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 569357,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4c/0x320",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "5651": {
+                "name": "dsm-conn/0:4",
+                "stat": "5651 (dsm-conn/0:4) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 104269 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 10095,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4c/0x320",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "5652": {
+                "name": "dsm-conn/0:5",
+                "stat": "5652 (dsm-conn/0:5) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 104269 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 378360,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4c/0x320",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "5653": {
+                "name": "dsm-conn/0:6",
+                "stat": "5653 (dsm-conn/0:6) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 104269 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 709116,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4c/0x320",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "5654": {
+                "name": "dsm-conn/0:7",
+                "stat": "5654 (dsm-conn/0:7) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 104269 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 707214,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4c/0x320",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              }
+            }
+          },
+          {
+            "phase": "partial_frame",
+            "elapsed_ns": 3000143138,
+            "cpu_ns": 3003509509,
+            "cpu_equivalents": 1.0011220701297086,
+            "bounded_cpu": false,
+            "before": {
+              "5647": {
+                "name": "dsm-conn/0:0",
+                "stat": "5647 (dsm-conn/0:0) R 2 0 0 0 -1 2129984 0 0 0 0 0 332 0 0 20 0 1 0 104268 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 0 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 3321800571,
+                "stack": []
+              },
+              "5648": {
+                "name": "dsm-conn/0:1",
+                "stat": "5648 (dsm-conn/0:1) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 104268 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 2737,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4c/0x320",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "5649": {
+                "name": "dsm-conn/0:2",
+                "stat": "5649 (dsm-conn/0:2) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 104268 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 1163711,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4c/0x320",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "5650": {
+                "name": "dsm-conn/0:3",
+                "stat": "5650 (dsm-conn/0:3) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 104269 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 569357,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4c/0x320",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "5651": {
+                "name": "dsm-conn/0:4",
+                "stat": "5651 (dsm-conn/0:4) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 104269 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 10095,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4c/0x320",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "5652": {
+                "name": "dsm-conn/0:5",
+                "stat": "5652 (dsm-conn/0:5) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 104269 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 378360,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4c/0x320",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "5653": {
+                "name": "dsm-conn/0:6",
+                "stat": "5653 (dsm-conn/0:6) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 104269 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 709116,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4c/0x320",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "5654": {
+                "name": "dsm-conn/0:7",
+                "stat": "5654 (dsm-conn/0:7) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 104269 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 707214,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4c/0x320",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              }
+            },
+            "after": {
+              "5647": {
+                "name": "dsm-conn/0:0",
+                "stat": "5647 (dsm-conn/0:0) R 2 0 0 0 -1 2129984 0 0 0 0 0 632 0 0 20 0 1 0 104268 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 0 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 6325310080,
+                "stack": []
+              },
+              "5648": {
+                "name": "dsm-conn/0:1",
+                "stat": "5648 (dsm-conn/0:1) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 104268 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 2737,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4c/0x320",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "5649": {
+                "name": "dsm-conn/0:2",
+                "stat": "5649 (dsm-conn/0:2) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 104268 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 1163711,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4c/0x320",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "5650": {
+                "name": "dsm-conn/0:3",
+                "stat": "5650 (dsm-conn/0:3) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 104269 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 569357,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4c/0x320",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "5651": {
+                "name": "dsm-conn/0:4",
+                "stat": "5651 (dsm-conn/0:4) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 104269 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 10095,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4c/0x320",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "5652": {
+                "name": "dsm-conn/0:5",
+                "stat": "5652 (dsm-conn/0:5) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 104269 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 378360,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4c/0x320",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "5653": {
+                "name": "dsm-conn/0:6",
+                "stat": "5653 (dsm-conn/0:6) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 104269 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 709116,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4c/0x320",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "5654": {
+                "name": "dsm-conn/0:7",
+                "stat": "5654 (dsm-conn/0:7) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 104269 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 707214,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4c/0x320",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              }
+            }
+          }
+        ],
+        "errors": [],
+        "closed": true,
+        "exit": 0,
+        "remaining_threads": []
+      },
+      "host_log": "ktcp_receive: __ktcp_receive error, ret -104\nktcp_receive: __ktcp_receive error, ret -104\nktcp_receive: __ktcp_receive error, ret -104\nktcp_receive: __ktcp_receive error, ret -104\nktcp_receive: __ktcp_receive error, ret -104\nktcp_receive: __ktcp_receive error, ret -104\nktcp_receive: __ktcp_receive error, ret -104\nktcp_receive: __ktcp_receive error, ret -104\n",
+      "probe_sha256": "4428878dd45577b35f7656ddda9623c7d3e0ad5827d2c5a069e54e99f5279c7d"
+    },
+    {
+      "label": "pf6-receive-node1-2",
+      "result": {
+        "kernel": "7.1.0-rc3-sshpool-gvm-pf6",
+        "phases": [
+          {
+            "phase": "idle",
+            "elapsed_ns": 3000138113,
+            "cpu_ns": 3003039955,
+            "cpu_equivalents": 1.0009672361373718,
+            "bounded_cpu": false,
+            "before": {
+              "4980": {
+                "name": "dsm-conn/0:0",
+                "stat": "4980 (dsm-conn/0:0) R 2 0 0 0 -1 2129984 0 0 0 0 0 11 0 0 20 0 1 0 104084 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 0 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 111234914,
+                "stack": []
+              },
+              "4981": {
+                "name": "dsm-conn/0:1",
+                "stat": "4981 (dsm-conn/0:1) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 104084 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 10907,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4c/0x320",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "4982": {
+                "name": "dsm-conn/0:2",
+                "stat": "4982 (dsm-conn/0:2) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 104084 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 8604,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4c/0x320",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "4983": {
+                "name": "dsm-conn/0:3",
+                "stat": "4983 (dsm-conn/0:3) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 104084 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 807110,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4c/0x320",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "4984": {
+                "name": "dsm-conn/0:4",
+                "stat": "4984 (dsm-conn/0:4) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 104084 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 5120,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4c/0x320",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "4985": {
+                "name": "dsm-conn/0:5",
+                "stat": "4985 (dsm-conn/0:5) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 104084 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 113819,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4c/0x320",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "4986": {
+                "name": "dsm-conn/0:6",
+                "stat": "4986 (dsm-conn/0:6) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 104084 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 7511,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4c/0x320",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "4987": {
+                "name": "dsm-conn/0:7",
+                "stat": "4987 (dsm-conn/0:7) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 104084 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 547207,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4c/0x320",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              }
+            },
+            "after": {
+              "4980": {
+                "name": "dsm-conn/0:0",
+                "stat": "4980 (dsm-conn/0:0) R 2 0 0 0 -1 2129984 0 0 0 0 0 311 0 0 20 0 1 0 104084 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 0 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 3114274869,
+                "stack": []
+              },
+              "4981": {
+                "name": "dsm-conn/0:1",
+                "stat": "4981 (dsm-conn/0:1) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 104084 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 10907,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4c/0x320",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "4982": {
+                "name": "dsm-conn/0:2",
+                "stat": "4982 (dsm-conn/0:2) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 104084 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 8604,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4c/0x320",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "4983": {
+                "name": "dsm-conn/0:3",
+                "stat": "4983 (dsm-conn/0:3) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 104084 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 807110,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4c/0x320",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "4984": {
+                "name": "dsm-conn/0:4",
+                "stat": "4984 (dsm-conn/0:4) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 104084 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 5120,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4c/0x320",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "4985": {
+                "name": "dsm-conn/0:5",
+                "stat": "4985 (dsm-conn/0:5) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 104084 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 113819,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4c/0x320",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "4986": {
+                "name": "dsm-conn/0:6",
+                "stat": "4986 (dsm-conn/0:6) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 104084 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 7511,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4c/0x320",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "4987": {
+                "name": "dsm-conn/0:7",
+                "stat": "4987 (dsm-conn/0:7) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 104084 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 547207,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4c/0x320",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              }
+            }
+          },
+          {
+            "phase": "partial_frame",
+            "elapsed_ns": 3000105641,
+            "cpu_ns": 3002583776,
+            "cpu_equivalents": 1.000826015912951,
+            "bounded_cpu": false,
+            "before": {
+              "4980": {
+                "name": "dsm-conn/0:0",
+                "stat": "4980 (dsm-conn/0:0) R 2 0 0 0 -1 2129984 0 0 0 0 0 332 0 0 20 0 1 0 104084 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 0 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 3321187224,
+                "stack": []
+              },
+              "4981": {
+                "name": "dsm-conn/0:1",
+                "stat": "4981 (dsm-conn/0:1) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 104084 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 10907,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4c/0x320",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "4982": {
+                "name": "dsm-conn/0:2",
+                "stat": "4982 (dsm-conn/0:2) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 104084 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 8604,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4c/0x320",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "4983": {
+                "name": "dsm-conn/0:3",
+                "stat": "4983 (dsm-conn/0:3) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 104084 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 807110,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4c/0x320",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "4984": {
+                "name": "dsm-conn/0:4",
+                "stat": "4984 (dsm-conn/0:4) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 104084 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 5120,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4c/0x320",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "4985": {
+                "name": "dsm-conn/0:5",
+                "stat": "4985 (dsm-conn/0:5) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 104084 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 113819,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4c/0x320",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "4986": {
+                "name": "dsm-conn/0:6",
+                "stat": "4986 (dsm-conn/0:6) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 104084 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 7511,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4c/0x320",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "4987": {
+                "name": "dsm-conn/0:7",
+                "stat": "4987 (dsm-conn/0:7) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 104084 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 547207,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4c/0x320",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              }
+            },
+            "after": {
+              "4980": {
+                "name": "dsm-conn/0:0",
+                "stat": "4980 (dsm-conn/0:0) R 2 0 0 0 -1 2129984 0 0 0 0 0 632 0 0 20 0 1 0 104084 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 0 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 6323771000,
+                "stack": []
+              },
+              "4981": {
+                "name": "dsm-conn/0:1",
+                "stat": "4981 (dsm-conn/0:1) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 104084 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 10907,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4c/0x320",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "4982": {
+                "name": "dsm-conn/0:2",
+                "stat": "4982 (dsm-conn/0:2) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 104084 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 8604,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4c/0x320",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "4983": {
+                "name": "dsm-conn/0:3",
+                "stat": "4983 (dsm-conn/0:3) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 104084 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 807110,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4c/0x320",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "4984": {
+                "name": "dsm-conn/0:4",
+                "stat": "4984 (dsm-conn/0:4) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 104084 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 5120,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4c/0x320",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "4985": {
+                "name": "dsm-conn/0:5",
+                "stat": "4985 (dsm-conn/0:5) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 104084 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 113819,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4c/0x320",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "4986": {
+                "name": "dsm-conn/0:6",
+                "stat": "4986 (dsm-conn/0:6) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 104084 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 7511,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4c/0x320",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "4987": {
+                "name": "dsm-conn/0:7",
+                "stat": "4987 (dsm-conn/0:7) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 104084 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 547207,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4c/0x320",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              }
+            }
+          }
+        ],
+        "errors": [],
+        "closed": true,
+        "exit": 0,
+        "remaining_threads": []
+      },
+      "host_log": "ktcp_receive: __ktcp_receive error, ret -104\nktcp_receive: __ktcp_receive error, ret -104\nktcp_receive: __ktcp_receive error, ret -104\nktcp_receive: __ktcp_receive error, ret -104\nktcp_receive: __ktcp_receive error, ret -104\nktcp_receive: __ktcp_receive error, ret -104\n",
+      "probe_sha256": "4428878dd45577b35f7656ddda9623c7d3e0ad5827d2c5a069e54e99f5279c7d"
+    },
+    {
+      "label": "pf7-receive-node0-1",
+      "result": {
+        "kernel": "7.1.0-rc3-sshpool-gvm-pf7",
+        "phases": [
+          {
+            "phase": "idle",
+            "elapsed_ns": 3000119008,
+            "cpu_ns": 0,
+            "cpu_equivalents": 0.0,
+            "bounded_cpu": true,
+            "before": {
+              "1249": {
+                "name": "dsm-conn/0:0",
+                "stat": "1249 (dsm-conn/0:0) S 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 4750 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 9953,
+                "stack": [
+                  "[<0>] wait_woken+0x80/0x90",
+                  "[<0>] sk_wait_data+0x12b/0x140",
+                  "[<0>] tcp_recvmsg_locked+0x4e4/0x9f0",
+                  "[<0>] tcp_recvmsg+0x88/0x1e0",
+                  "[<0>] kernel_recvmsg+0xaa/0xc0",
+                  "[<0>] __ktcp_receive.constprop.0+0x9f/0x120",
+                  "[<0>] ktcp_receive+0x168/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "1250": {
+                "name": "dsm-conn/0:1",
+                "stat": "1250 (dsm-conn/0:1) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 4750 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 4001,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "1251": {
+                "name": "dsm-conn/0:2",
+                "stat": "1251 (dsm-conn/0:2) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 4750 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 3270,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "1252": {
+                "name": "dsm-conn/0:3",
+                "stat": "1252 (dsm-conn/0:3) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 4750 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 3183,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "1253": {
+                "name": "dsm-conn/0:4",
+                "stat": "1253 (dsm-conn/0:4) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 4750 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 3095,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "1254": {
+                "name": "dsm-conn/0:5",
+                "stat": "1254 (dsm-conn/0:5) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 4750 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 3524,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "1255": {
+                "name": "dsm-conn/0:6",
+                "stat": "1255 (dsm-conn/0:6) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 4750 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 2935,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "1256": {
+                "name": "dsm-conn/0:7",
+                "stat": "1256 (dsm-conn/0:7) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 4750 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 2020,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              }
+            },
+            "after": {
+              "1249": {
+                "name": "dsm-conn/0:0",
+                "stat": "1249 (dsm-conn/0:0) S 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 4750 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 9953,
+                "stack": [
+                  "[<0>] wait_woken+0x80/0x90",
+                  "[<0>] sk_wait_data+0x12b/0x140",
+                  "[<0>] tcp_recvmsg_locked+0x4e4/0x9f0",
+                  "[<0>] tcp_recvmsg+0x88/0x1e0",
+                  "[<0>] kernel_recvmsg+0xaa/0xc0",
+                  "[<0>] __ktcp_receive.constprop.0+0x9f/0x120",
+                  "[<0>] ktcp_receive+0x168/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "1250": {
+                "name": "dsm-conn/0:1",
+                "stat": "1250 (dsm-conn/0:1) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 4750 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 4001,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "1251": {
+                "name": "dsm-conn/0:2",
+                "stat": "1251 (dsm-conn/0:2) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 4750 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 3270,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "1252": {
+                "name": "dsm-conn/0:3",
+                "stat": "1252 (dsm-conn/0:3) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 4750 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 3183,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "1253": {
+                "name": "dsm-conn/0:4",
+                "stat": "1253 (dsm-conn/0:4) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 4750 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 3095,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "1254": {
+                "name": "dsm-conn/0:5",
+                "stat": "1254 (dsm-conn/0:5) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 4750 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 3524,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "1255": {
+                "name": "dsm-conn/0:6",
+                "stat": "1255 (dsm-conn/0:6) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 4750 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 2935,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "1256": {
+                "name": "dsm-conn/0:7",
+                "stat": "1256 (dsm-conn/0:7) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 4750 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 2020,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              }
+            }
+          },
+          {
+            "phase": "partial_frame",
+            "elapsed_ns": 3000165020,
+            "cpu_ns": 0,
+            "cpu_equivalents": 0.0,
+            "bounded_cpu": true,
+            "before": {
+              "1249": {
+                "name": "dsm-conn/0:0",
+                "stat": "1249 (dsm-conn/0:0) S 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 4750 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 25938,
+                "stack": [
+                  "[<0>] wait_woken+0x80/0x90",
+                  "[<0>] sk_wait_data+0x12b/0x140",
+                  "[<0>] tcp_recvmsg_locked+0x4e4/0x9f0",
+                  "[<0>] tcp_recvmsg+0x88/0x1e0",
+                  "[<0>] kernel_recvmsg+0xaa/0xc0",
+                  "[<0>] __ktcp_receive.constprop.0+0x9f/0x120",
+                  "[<0>] ktcp_receive+0x168/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "1250": {
+                "name": "dsm-conn/0:1",
+                "stat": "1250 (dsm-conn/0:1) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 4750 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 4001,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "1251": {
+                "name": "dsm-conn/0:2",
+                "stat": "1251 (dsm-conn/0:2) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 4750 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 3270,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "1252": {
+                "name": "dsm-conn/0:3",
+                "stat": "1252 (dsm-conn/0:3) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 4750 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 3183,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "1253": {
+                "name": "dsm-conn/0:4",
+                "stat": "1253 (dsm-conn/0:4) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 4750 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 3095,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "1254": {
+                "name": "dsm-conn/0:5",
+                "stat": "1254 (dsm-conn/0:5) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 4750 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 3524,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "1255": {
+                "name": "dsm-conn/0:6",
+                "stat": "1255 (dsm-conn/0:6) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 4750 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 2935,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "1256": {
+                "name": "dsm-conn/0:7",
+                "stat": "1256 (dsm-conn/0:7) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 4750 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 2020,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              }
+            },
+            "after": {
+              "1249": {
+                "name": "dsm-conn/0:0",
+                "stat": "1249 (dsm-conn/0:0) S 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 4750 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 25938,
+                "stack": [
+                  "[<0>] wait_woken+0x80/0x90",
+                  "[<0>] sk_wait_data+0x12b/0x140",
+                  "[<0>] tcp_recvmsg_locked+0x4e4/0x9f0",
+                  "[<0>] tcp_recvmsg+0x88/0x1e0",
+                  "[<0>] kernel_recvmsg+0xaa/0xc0",
+                  "[<0>] __ktcp_receive.constprop.0+0x9f/0x120",
+                  "[<0>] ktcp_receive+0x168/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "1250": {
+                "name": "dsm-conn/0:1",
+                "stat": "1250 (dsm-conn/0:1) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 4750 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 4001,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "1251": {
+                "name": "dsm-conn/0:2",
+                "stat": "1251 (dsm-conn/0:2) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 4750 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 3270,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "1252": {
+                "name": "dsm-conn/0:3",
+                "stat": "1252 (dsm-conn/0:3) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 4750 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 3183,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "1253": {
+                "name": "dsm-conn/0:4",
+                "stat": "1253 (dsm-conn/0:4) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 4750 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 3095,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "1254": {
+                "name": "dsm-conn/0:5",
+                "stat": "1254 (dsm-conn/0:5) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 4750 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 3524,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "1255": {
+                "name": "dsm-conn/0:6",
+                "stat": "1255 (dsm-conn/0:6) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 4750 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 2935,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "1256": {
+                "name": "dsm-conn/0:7",
+                "stat": "1256 (dsm-conn/0:7) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 4750 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 2020,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              }
+            }
+          }
+        ],
+        "errors": [],
+        "closed": true,
+        "exit": 0,
+        "remaining_threads": []
+      },
+      "host_log": "ktcp_receive: __ktcp_receive error, ret -104\nktcp_receive: __ktcp_receive error, ret -104\nktcp_receive: __ktcp_receive error, ret -104\nktcp_receive: __ktcp_receive error, ret -104\nktcp_receive: __ktcp_receive error, ret -104\nktcp_receive: __ktcp_receive error, ret -104\nktcp_receive: __ktcp_receive error, ret -104\nktcp_receive: __ktcp_receive error, ret -104\nkvm_dsm_free: node-0 dsm root server exited with -104\n",
+      "probe_sha256": "4428878dd45577b35f7656ddda9623c7d3e0ad5827d2c5a069e54e99f5279c7d"
+    },
+    {
+      "label": "pf7-receive-node1-1",
+      "result": {
+        "kernel": "7.1.0-rc3-sshpool-gvm-pf7",
+        "phases": [
+          {
+            "phase": "idle",
+            "elapsed_ns": 3000139954,
+            "cpu_ns": 0,
+            "cpu_equivalents": 0.0,
+            "bounded_cpu": true,
+            "before": {
+              "1246": {
+                "name": "dsm-conn/0:0",
+                "stat": "1246 (dsm-conn/0:0) S 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 4609 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 16929,
+                "stack": [
+                  "[<0>] wait_woken+0x80/0x90",
+                  "[<0>] sk_wait_data+0x12b/0x140",
+                  "[<0>] tcp_recvmsg_locked+0x4e4/0x9f0",
+                  "[<0>] tcp_recvmsg+0x88/0x1e0",
+                  "[<0>] kernel_recvmsg+0xaa/0xc0",
+                  "[<0>] __ktcp_receive.constprop.0+0x9f/0x120",
+                  "[<0>] ktcp_receive+0x168/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "1247": {
+                "name": "dsm-conn/0:1",
+                "stat": "1247 (dsm-conn/0:1) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 4609 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 15782,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "1248": {
+                "name": "dsm-conn/0:2",
+                "stat": "1248 (dsm-conn/0:2) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 4609 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 16932,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "1249": {
+                "name": "dsm-conn/0:3",
+                "stat": "1249 (dsm-conn/0:3) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 4609 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 13438,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "1250": {
+                "name": "dsm-conn/0:4",
+                "stat": "1250 (dsm-conn/0:4) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 4609 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 10166,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "1251": {
+                "name": "dsm-conn/0:5",
+                "stat": "1251 (dsm-conn/0:5) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 4609 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 9516,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "1252": {
+                "name": "dsm-conn/0:6",
+                "stat": "1252 (dsm-conn/0:6) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 4609 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 9516,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "1253": {
+                "name": "dsm-conn/0:7",
+                "stat": "1253 (dsm-conn/0:7) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 4609 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 7379,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              }
+            },
+            "after": {
+              "1246": {
+                "name": "dsm-conn/0:0",
+                "stat": "1246 (dsm-conn/0:0) S 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 4609 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 16929,
+                "stack": [
+                  "[<0>] wait_woken+0x80/0x90",
+                  "[<0>] sk_wait_data+0x12b/0x140",
+                  "[<0>] tcp_recvmsg_locked+0x4e4/0x9f0",
+                  "[<0>] tcp_recvmsg+0x88/0x1e0",
+                  "[<0>] kernel_recvmsg+0xaa/0xc0",
+                  "[<0>] __ktcp_receive.constprop.0+0x9f/0x120",
+                  "[<0>] ktcp_receive+0x168/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "1247": {
+                "name": "dsm-conn/0:1",
+                "stat": "1247 (dsm-conn/0:1) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 4609 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 15782,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "1248": {
+                "name": "dsm-conn/0:2",
+                "stat": "1248 (dsm-conn/0:2) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 4609 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 16932,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "1249": {
+                "name": "dsm-conn/0:3",
+                "stat": "1249 (dsm-conn/0:3) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 4609 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 13438,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "1250": {
+                "name": "dsm-conn/0:4",
+                "stat": "1250 (dsm-conn/0:4) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 4609 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 10166,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "1251": {
+                "name": "dsm-conn/0:5",
+                "stat": "1251 (dsm-conn/0:5) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 4609 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 9516,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "1252": {
+                "name": "dsm-conn/0:6",
+                "stat": "1252 (dsm-conn/0:6) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 4609 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 9516,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "1253": {
+                "name": "dsm-conn/0:7",
+                "stat": "1253 (dsm-conn/0:7) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 4609 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 7379,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              }
+            }
+          },
+          {
+            "phase": "partial_frame",
+            "elapsed_ns": 3000136789,
+            "cpu_ns": 0,
+            "cpu_equivalents": 0.0,
+            "bounded_cpu": true,
+            "before": {
+              "1246": {
+                "name": "dsm-conn/0:0",
+                "stat": "1246 (dsm-conn/0:0) S 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 4609 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 55645,
+                "stack": [
+                  "[<0>] wait_woken+0x80/0x90",
+                  "[<0>] sk_wait_data+0x12b/0x140",
+                  "[<0>] tcp_recvmsg_locked+0x4e4/0x9f0",
+                  "[<0>] tcp_recvmsg+0x88/0x1e0",
+                  "[<0>] kernel_recvmsg+0xaa/0xc0",
+                  "[<0>] __ktcp_receive.constprop.0+0x9f/0x120",
+                  "[<0>] ktcp_receive+0x168/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "1247": {
+                "name": "dsm-conn/0:1",
+                "stat": "1247 (dsm-conn/0:1) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 4609 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 15782,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "1248": {
+                "name": "dsm-conn/0:2",
+                "stat": "1248 (dsm-conn/0:2) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 4609 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 16932,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "1249": {
+                "name": "dsm-conn/0:3",
+                "stat": "1249 (dsm-conn/0:3) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 4609 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 13438,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "1250": {
+                "name": "dsm-conn/0:4",
+                "stat": "1250 (dsm-conn/0:4) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 4609 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 10166,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "1251": {
+                "name": "dsm-conn/0:5",
+                "stat": "1251 (dsm-conn/0:5) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 4609 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 9516,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "1252": {
+                "name": "dsm-conn/0:6",
+                "stat": "1252 (dsm-conn/0:6) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 4609 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 9516,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "1253": {
+                "name": "dsm-conn/0:7",
+                "stat": "1253 (dsm-conn/0:7) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 4609 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 7379,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              }
+            },
+            "after": {
+              "1246": {
+                "name": "dsm-conn/0:0",
+                "stat": "1246 (dsm-conn/0:0) S 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 4609 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 55645,
+                "stack": [
+                  "[<0>] wait_woken+0x80/0x90",
+                  "[<0>] sk_wait_data+0x12b/0x140",
+                  "[<0>] tcp_recvmsg_locked+0x4e4/0x9f0",
+                  "[<0>] tcp_recvmsg+0x88/0x1e0",
+                  "[<0>] kernel_recvmsg+0xaa/0xc0",
+                  "[<0>] __ktcp_receive.constprop.0+0x9f/0x120",
+                  "[<0>] ktcp_receive+0x168/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "1247": {
+                "name": "dsm-conn/0:1",
+                "stat": "1247 (dsm-conn/0:1) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 4609 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 15782,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "1248": {
+                "name": "dsm-conn/0:2",
+                "stat": "1248 (dsm-conn/0:2) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 4609 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 16932,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "1249": {
+                "name": "dsm-conn/0:3",
+                "stat": "1249 (dsm-conn/0:3) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 4609 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 13438,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "1250": {
+                "name": "dsm-conn/0:4",
+                "stat": "1250 (dsm-conn/0:4) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 4609 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 10166,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "1251": {
+                "name": "dsm-conn/0:5",
+                "stat": "1251 (dsm-conn/0:5) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 4609 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 9516,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "1252": {
+                "name": "dsm-conn/0:6",
+                "stat": "1252 (dsm-conn/0:6) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 4609 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 9516,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "1253": {
+                "name": "dsm-conn/0:7",
+                "stat": "1253 (dsm-conn/0:7) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 4609 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 7379,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              }
+            }
+          }
+        ],
+        "errors": [],
+        "closed": true,
+        "exit": 0,
+        "remaining_threads": []
+      },
+      "host_log": "ktcp_receive: __ktcp_receive error, ret -104\nktcp_receive: __ktcp_receive error, ret -104\nktcp_receive: __ktcp_receive error, ret -104\nktcp_receive: __ktcp_receive error, ret -104\nktcp_receive: __ktcp_receive error, ret -104\nktcp_receive: __ktcp_receive error, ret -104\nktcp_receive: __ktcp_receive error, ret -104\n",
+      "probe_sha256": "4428878dd45577b35f7656ddda9623c7d3e0ad5827d2c5a069e54e99f5279c7d"
+    },
+    {
+      "label": "pf7-receive-cancel-node0-1",
+      "result": {
+        "kernel": "7.1.0-rc3-sshpool-gvm-pf7",
+        "close_order": "vm-first",
+        "phases": [
+          {
+            "phase": "idle",
+            "elapsed_ns": 3000131041,
+            "cpu_ns": 0,
+            "cpu_equivalents": 0.0,
+            "bounded_cpu": true,
+            "before": {
+              "4041": {
+                "name": "dsm-conn/0:0",
+                "stat": "4041 (dsm-conn/0:0) S 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 44002 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 26260,
+                "stack": [
+                  "[<0>] wait_woken+0x80/0x90",
+                  "[<0>] sk_wait_data+0x12b/0x140",
+                  "[<0>] tcp_recvmsg_locked+0x4e4/0x9f0",
+                  "[<0>] tcp_recvmsg+0x88/0x1e0",
+                  "[<0>] kernel_recvmsg+0xaa/0xc0",
+                  "[<0>] __ktcp_receive.constprop.0+0x9f/0x120",
+                  "[<0>] ktcp_receive+0x168/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "4042": {
+                "name": "dsm-conn/0:1",
+                "stat": "4042 (dsm-conn/0:1) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 44002 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 11152,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "4043": {
+                "name": "dsm-conn/0:2",
+                "stat": "4043 (dsm-conn/0:2) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 44002 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 14577,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "4044": {
+                "name": "dsm-conn/0:3",
+                "stat": "4044 (dsm-conn/0:3) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 44002 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 16878,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "4045": {
+                "name": "dsm-conn/0:4",
+                "stat": "4045 (dsm-conn/0:4) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 44003 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 8424,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "4046": {
+                "name": "dsm-conn/0:5",
+                "stat": "4046 (dsm-conn/0:5) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 44003 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 4270,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "4047": {
+                "name": "dsm-conn/0:6",
+                "stat": "4047 (dsm-conn/0:6) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 44003 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 5393,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "4048": {
+                "name": "dsm-conn/0:7",
+                "stat": "4048 (dsm-conn/0:7) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 44003 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 2959,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              }
+            },
+            "after": {
+              "4041": {
+                "name": "dsm-conn/0:0",
+                "stat": "4041 (dsm-conn/0:0) S 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 44002 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 26260,
+                "stack": [
+                  "[<0>] wait_woken+0x80/0x90",
+                  "[<0>] sk_wait_data+0x12b/0x140",
+                  "[<0>] tcp_recvmsg_locked+0x4e4/0x9f0",
+                  "[<0>] tcp_recvmsg+0x88/0x1e0",
+                  "[<0>] kernel_recvmsg+0xaa/0xc0",
+                  "[<0>] __ktcp_receive.constprop.0+0x9f/0x120",
+                  "[<0>] ktcp_receive+0x168/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "4042": {
+                "name": "dsm-conn/0:1",
+                "stat": "4042 (dsm-conn/0:1) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 44002 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 11152,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "4043": {
+                "name": "dsm-conn/0:2",
+                "stat": "4043 (dsm-conn/0:2) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 44002 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 14577,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "4044": {
+                "name": "dsm-conn/0:3",
+                "stat": "4044 (dsm-conn/0:3) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 44002 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 16878,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "4045": {
+                "name": "dsm-conn/0:4",
+                "stat": "4045 (dsm-conn/0:4) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 44003 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 8424,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "4046": {
+                "name": "dsm-conn/0:5",
+                "stat": "4046 (dsm-conn/0:5) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 44003 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 4270,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "4047": {
+                "name": "dsm-conn/0:6",
+                "stat": "4047 (dsm-conn/0:6) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 44003 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 5393,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "4048": {
+                "name": "dsm-conn/0:7",
+                "stat": "4048 (dsm-conn/0:7) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 44003 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 2959,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              }
+            }
+          },
+          {
+            "phase": "partial_frame",
+            "elapsed_ns": 3000138386,
+            "cpu_ns": 0,
+            "cpu_equivalents": 0.0,
+            "bounded_cpu": true,
+            "before": {
+              "4041": {
+                "name": "dsm-conn/0:0",
+                "stat": "4041 (dsm-conn/0:0) S 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 44002 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 38990,
+                "stack": [
+                  "[<0>] wait_woken+0x80/0x90",
+                  "[<0>] sk_wait_data+0x12b/0x140",
+                  "[<0>] tcp_recvmsg_locked+0x4e4/0x9f0",
+                  "[<0>] tcp_recvmsg+0x88/0x1e0",
+                  "[<0>] kernel_recvmsg+0xaa/0xc0",
+                  "[<0>] __ktcp_receive.constprop.0+0x9f/0x120",
+                  "[<0>] ktcp_receive+0x168/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "4042": {
+                "name": "dsm-conn/0:1",
+                "stat": "4042 (dsm-conn/0:1) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 44002 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 11152,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "4043": {
+                "name": "dsm-conn/0:2",
+                "stat": "4043 (dsm-conn/0:2) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 44002 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 14577,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "4044": {
+                "name": "dsm-conn/0:3",
+                "stat": "4044 (dsm-conn/0:3) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 44002 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 16878,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "4045": {
+                "name": "dsm-conn/0:4",
+                "stat": "4045 (dsm-conn/0:4) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 44003 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 8424,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "4046": {
+                "name": "dsm-conn/0:5",
+                "stat": "4046 (dsm-conn/0:5) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 44003 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 4270,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "4047": {
+                "name": "dsm-conn/0:6",
+                "stat": "4047 (dsm-conn/0:6) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 44003 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 5393,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "4048": {
+                "name": "dsm-conn/0:7",
+                "stat": "4048 (dsm-conn/0:7) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 44003 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 2959,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              }
+            },
+            "after": {
+              "4041": {
+                "name": "dsm-conn/0:0",
+                "stat": "4041 (dsm-conn/0:0) S 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 44002 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 38990,
+                "stack": [
+                  "[<0>] wait_woken+0x80/0x90",
+                  "[<0>] sk_wait_data+0x12b/0x140",
+                  "[<0>] tcp_recvmsg_locked+0x4e4/0x9f0",
+                  "[<0>] tcp_recvmsg+0x88/0x1e0",
+                  "[<0>] kernel_recvmsg+0xaa/0xc0",
+                  "[<0>] __ktcp_receive.constprop.0+0x9f/0x120",
+                  "[<0>] ktcp_receive+0x168/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "4042": {
+                "name": "dsm-conn/0:1",
+                "stat": "4042 (dsm-conn/0:1) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 44002 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 11152,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "4043": {
+                "name": "dsm-conn/0:2",
+                "stat": "4043 (dsm-conn/0:2) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 44002 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 14577,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "4044": {
+                "name": "dsm-conn/0:3",
+                "stat": "4044 (dsm-conn/0:3) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 44002 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 16878,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "4045": {
+                "name": "dsm-conn/0:4",
+                "stat": "4045 (dsm-conn/0:4) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 44003 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 8424,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "4046": {
+                "name": "dsm-conn/0:5",
+                "stat": "4046 (dsm-conn/0:5) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 44003 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 4270,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "4047": {
+                "name": "dsm-conn/0:6",
+                "stat": "4047 (dsm-conn/0:6) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 44003 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 5393,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "4048": {
+                "name": "dsm-conn/0:7",
+                "stat": "4048 (dsm-conn/0:7) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 44003 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 2959,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              }
+            }
+          }
+        ],
+        "errors": [],
+        "closed": true,
+        "exit": 0,
+        "remaining_threads": []
+      },
+      "host_log": "ktcp_receive: __ktcp_receive error, ret -4\nktcp_receive: __ktcp_receive error, ret -4\nktcp_receive: __ktcp_receive error, ret -4\nktcp_receive: __ktcp_receive error, ret -4\n",
+      "probe_sha256": "57d1f57cc0c9de7b67e6837837b37e06c9a823cdb3b1d4317376d38404ed57f6"
+    },
+    {
+      "label": "pf7-receive-cancel-node1-1",
+      "result": {
+        "kernel": "7.1.0-rc3-sshpool-gvm-pf7",
+        "close_order": "vm-first",
+        "phases": [
+          {
+            "phase": "idle",
+            "elapsed_ns": 3000166013,
+            "cpu_ns": 0,
+            "cpu_equivalents": 0.0,
+            "bounded_cpu": true,
+            "before": {
+              "3020": {
+                "name": "dsm-conn/0:0",
+                "stat": "3020 (dsm-conn/0:0) S 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 43869 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 7397,
+                "stack": [
+                  "[<0>] wait_woken+0x80/0x90",
+                  "[<0>] sk_wait_data+0x12b/0x140",
+                  "[<0>] tcp_recvmsg_locked+0x4e4/0x9f0",
+                  "[<0>] tcp_recvmsg+0x88/0x1e0",
+                  "[<0>] kernel_recvmsg+0xaa/0xc0",
+                  "[<0>] __ktcp_receive.constprop.0+0x9f/0x120",
+                  "[<0>] ktcp_receive+0x168/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "3021": {
+                "name": "dsm-conn/0:1",
+                "stat": "3021 (dsm-conn/0:1) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 43869 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 51474,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "3022": {
+                "name": "dsm-conn/0:2",
+                "stat": "3022 (dsm-conn/0:2) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 43869 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 3697,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "3023": {
+                "name": "dsm-conn/0:3",
+                "stat": "3023 (dsm-conn/0:3) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 43869 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 25089,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "3024": {
+                "name": "dsm-conn/0:4",
+                "stat": "3024 (dsm-conn/0:4) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 43869 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 19369,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "3025": {
+                "name": "dsm-conn/0:5",
+                "stat": "3025 (dsm-conn/0:5) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 43869 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 6680,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "3026": {
+                "name": "dsm-conn/0:6",
+                "stat": "3026 (dsm-conn/0:6) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 43869 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 24819,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "3027": {
+                "name": "dsm-conn/0:7",
+                "stat": "3027 (dsm-conn/0:7) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 43869 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 23530,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              }
+            },
+            "after": {
+              "3020": {
+                "name": "dsm-conn/0:0",
+                "stat": "3020 (dsm-conn/0:0) S 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 43869 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 7397,
+                "stack": [
+                  "[<0>] wait_woken+0x80/0x90",
+                  "[<0>] sk_wait_data+0x12b/0x140",
+                  "[<0>] tcp_recvmsg_locked+0x4e4/0x9f0",
+                  "[<0>] tcp_recvmsg+0x88/0x1e0",
+                  "[<0>] kernel_recvmsg+0xaa/0xc0",
+                  "[<0>] __ktcp_receive.constprop.0+0x9f/0x120",
+                  "[<0>] ktcp_receive+0x168/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "3021": {
+                "name": "dsm-conn/0:1",
+                "stat": "3021 (dsm-conn/0:1) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 43869 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 51474,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "3022": {
+                "name": "dsm-conn/0:2",
+                "stat": "3022 (dsm-conn/0:2) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 43869 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 3697,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "3023": {
+                "name": "dsm-conn/0:3",
+                "stat": "3023 (dsm-conn/0:3) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 43869 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 25089,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "3024": {
+                "name": "dsm-conn/0:4",
+                "stat": "3024 (dsm-conn/0:4) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 43869 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 19369,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "3025": {
+                "name": "dsm-conn/0:5",
+                "stat": "3025 (dsm-conn/0:5) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 43869 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 6680,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "3026": {
+                "name": "dsm-conn/0:6",
+                "stat": "3026 (dsm-conn/0:6) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 43869 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 24819,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "3027": {
+                "name": "dsm-conn/0:7",
+                "stat": "3027 (dsm-conn/0:7) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 43869 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 23530,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              }
+            }
+          },
+          {
+            "phase": "partial_frame",
+            "elapsed_ns": 3000120462,
+            "cpu_ns": 0,
+            "cpu_equivalents": 0.0,
+            "bounded_cpu": true,
+            "before": {
+              "3020": {
+                "name": "dsm-conn/0:0",
+                "stat": "3020 (dsm-conn/0:0) S 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 43869 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 32333,
+                "stack": [
+                  "[<0>] wait_woken+0x80/0x90",
+                  "[<0>] sk_wait_data+0x12b/0x140",
+                  "[<0>] tcp_recvmsg_locked+0x4e4/0x9f0",
+                  "[<0>] tcp_recvmsg+0x88/0x1e0",
+                  "[<0>] kernel_recvmsg+0xaa/0xc0",
+                  "[<0>] __ktcp_receive.constprop.0+0x9f/0x120",
+                  "[<0>] ktcp_receive+0x168/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "3021": {
+                "name": "dsm-conn/0:1",
+                "stat": "3021 (dsm-conn/0:1) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 43869 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 51474,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "3022": {
+                "name": "dsm-conn/0:2",
+                "stat": "3022 (dsm-conn/0:2) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 43869 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 3697,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "3023": {
+                "name": "dsm-conn/0:3",
+                "stat": "3023 (dsm-conn/0:3) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 43869 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 25089,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "3024": {
+                "name": "dsm-conn/0:4",
+                "stat": "3024 (dsm-conn/0:4) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 43869 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 19369,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "3025": {
+                "name": "dsm-conn/0:5",
+                "stat": "3025 (dsm-conn/0:5) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 43869 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 6680,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "3026": {
+                "name": "dsm-conn/0:6",
+                "stat": "3026 (dsm-conn/0:6) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 43869 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 24819,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "3027": {
+                "name": "dsm-conn/0:7",
+                "stat": "3027 (dsm-conn/0:7) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 43869 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 23530,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              }
+            },
+            "after": {
+              "3020": {
+                "name": "dsm-conn/0:0",
+                "stat": "3020 (dsm-conn/0:0) S 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 43869 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 32333,
+                "stack": [
+                  "[<0>] wait_woken+0x80/0x90",
+                  "[<0>] sk_wait_data+0x12b/0x140",
+                  "[<0>] tcp_recvmsg_locked+0x4e4/0x9f0",
+                  "[<0>] tcp_recvmsg+0x88/0x1e0",
+                  "[<0>] kernel_recvmsg+0xaa/0xc0",
+                  "[<0>] __ktcp_receive.constprop.0+0x9f/0x120",
+                  "[<0>] ktcp_receive+0x168/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "3021": {
+                "name": "dsm-conn/0:1",
+                "stat": "3021 (dsm-conn/0:1) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 43869 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 51474,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "3022": {
+                "name": "dsm-conn/0:2",
+                "stat": "3022 (dsm-conn/0:2) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 43869 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 3697,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "3023": {
+                "name": "dsm-conn/0:3",
+                "stat": "3023 (dsm-conn/0:3) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 43869 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 25089,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "3024": {
+                "name": "dsm-conn/0:4",
+                "stat": "3024 (dsm-conn/0:4) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 43869 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 19369,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "3025": {
+                "name": "dsm-conn/0:5",
+                "stat": "3025 (dsm-conn/0:5) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 43869 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 6680,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "3026": {
+                "name": "dsm-conn/0:6",
+                "stat": "3026 (dsm-conn/0:6) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 43869 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 24819,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "3027": {
+                "name": "dsm-conn/0:7",
+                "stat": "3027 (dsm-conn/0:7) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 43869 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 23530,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              }
+            }
+          }
+        ],
+        "errors": [],
+        "closed": true,
+        "exit": 0,
+        "remaining_threads": []
+      },
+      "host_log": "ktcp_receive: __ktcp_receive error, ret -4\nktcp_receive: __ktcp_receive error, ret -4\nktcp_receive: __ktcp_receive error, ret -4\nktcp_receive: __ktcp_receive error, ret -4\nktcp_receive: __ktcp_receive error, ret -4\nktcp_receive: __ktcp_receive error, ret -4\nktcp_receive: __ktcp_receive error, ret -4\n",
+      "probe_sha256": "57d1f57cc0c9de7b67e6837837b37e06c9a823cdb3b1d4317376d38404ed57f6"
+    }
+  ]
+}

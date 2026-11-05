@@ -9,7 +9,9 @@ SAMPLE = re.compile(
 TIMER = re.compile(r'CLOCK_TIMER cpu=(\d+) requested_ns=(\d+) elapsed_ns=(\d+)')
 
 
-def validate(log):
+def validate(log, max_timer_ns=None):
+    if max_timer_ns is not None and max_timer_ns < 20_000_000:
+        raise ValueError('定时器延迟上限不能小于请求的 20 毫秒')
     records = [line.strip() for line in log.splitlines() if line.strip().startswith('CLOCK_')]
     if len(records) != 38:
         raise ValueError('需要唯一一次完整探针：32 次采样、4 次定时器与开始结束标记')
@@ -39,17 +41,24 @@ def validate(log):
                 actual_cpu, requested, elapsed = map(int, timer.groups())
                 if actual_cpu != cpu or requested != 20_000_000 or elapsed < requested:
                     raise ValueError('定时器 CPU 不匹配或提前到期')
+                if max_timer_ns is not None and elapsed > max_timer_ns:
+                    raise ValueError(f'CPU {cpu} 定时器耗时 {elapsed} ns，超过 {max_timer_ns} ns 上限')
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('log', type=Path)
+    parser.add_argument('--max-timer-ms', type=int,
+                        help='额外校验四个 20 ms 定时器的实际耗时上限；默认只检查不提前返回')
     args = parser.parse_args()
     try:
-        validate(args.log.read_text(errors='replace'))
+        limit = None if args.max_timer_ms is None else args.max_timer_ms * 1_000_000
+        validate(args.log.read_text(errors='replace'), limit)
     except ValueError as error:
         raise SystemExit(f'失败：{error}') from error
     print('时钟采样通过：四 CPU、32 次采样、四次定时器；不证明长期同步和频率一致。')
+    if args.max_timer_ms is not None:
+        print(f'本轮四个定时器实际耗时均未超过 {args.max_timer_ms} ms；不代表尾延迟分布。')
 
 
 if __name__ == '__main__':
