@@ -1,0 +1,109 @@
+SSI device memory probes, 2026-11-05
+SCOPE: Two dedicated nested x86 KVM nodes on ONE physical ESXi host.
+The probe creates no vCPU, disk, container, or host directory mount.
+No production volumes or databases were used.
+Private addresses, machine IDs, file paths and credentials omitted.
+
+Baseline host: 7.1.0-rc3-sshpool-gvm-pf2
+Baseline kernel SHA256: 8a7460f98785c260b90180c47314628bf5d985285c64e3161627c0814eec8026
+Candidate host: 7.1.0-rc3-sshpool-gvm-pf5, build #8
+Candidate kernel SHA256: 43c3fc7cc6ed92065b121948df87ae328db10e3a7563cda3d0dfae9d21c2edb9
+Candidate QEMU SHA256: 53757273c425959033d37d20d179feb0e1cfab64186aebddb825f992e63ea50b
+Guest kernel SHA256: 41ba36d860aa0b0cd995f4ca8856d80249b244577e704929b55be13fbd1ebd2f
+Guest initramfs SHA256: 87342480b6393c24c82aa72125ffb328ff5b9c32e4af24116365a37fb87e9861
+Kernel upstream: 6317a6badf4f5a42e8ff7f6881b3a9199e6c0b54
+QEMU upstream: da3f3b05d23ba714a3e961f80c059c376007d7d7
+
+PF2 BASELINE FAILURE:
+DEVICE_PROBE_FAIL case=device_write error=跨页写入的 dirty bitmap 为 0b0，预期 0b11
+The old probe stopped in close(vm); remaining cases did not execute.
+SIGKILL pending, CPU usage approximately 100%; NMI backtrace excerpts:
+RIP: pte_list_remove+0xec/0x210
+ kvm_dsm_free_rmap+0x7e/0xa0
+ kvm_dsm_free+0xbb/0x100
+ kvm_destroy_vm+0x14b/0x270
+ kvm_vm_release+0x19/0x30
+ __fput+0xe1/0x2b0
+ __x64_sys_close+0x38/0x80
+Normal reboot stalled. Only the owned lab VM was reset through ESXi.
+Stock Ubuntu SSH and /lib -> usr/lib were verified before installing PF5.
+
+PF5 CANDIDATE PROBES (PASS is emitted only after VM close returns):
+
+NODE 0, process exit 0:
+DEVICE_PROBE_BEGIN case=device_write
+DEVICE_PROBE_CLOSE case=device_write
+DEVICE_PROBE_PASS case=device_write
+DEVICE_PROBE_BEGIN case=slot_remove
+DEVICE_PROBE_CLOSE case=slot_remove
+DEVICE_PROBE_PASS case=slot_remove
+DEVICE_PROBE_BEGIN case=alias_remove
+DEVICE_PROBE_CLOSE case=alias_remove
+DEVICE_PROBE_PASS case=alias_remove
+DEVICE_PROBE_BEGIN case=ring_before_dsm
+DEVICE_PROBE_CLOSE case=ring_before_dsm
+DEVICE_PROBE_PASS case=ring_before_dsm
+DEVICE_PROBE_BEGIN case=dsm_before_ring
+DEVICE_PROBE_CLOSE case=dsm_before_ring
+DEVICE_PROBE_PASS case=dsm_before_ring
+DEVICE_PROBE_EXIT failures=0
+
+NODE 1, process exit 0:
+DEVICE_PROBE_BEGIN case=device_write
+DEVICE_PROBE_CLOSE case=device_write
+DEVICE_PROBE_PASS case=device_write
+DEVICE_PROBE_BEGIN case=slot_remove
+DEVICE_PROBE_CLOSE case=slot_remove
+DEVICE_PROBE_PASS case=slot_remove
+DEVICE_PROBE_BEGIN case=alias_remove
+DEVICE_PROBE_CLOSE case=alias_remove
+DEVICE_PROBE_PASS case=alias_remove
+DEVICE_PROBE_BEGIN case=ring_before_dsm
+DEVICE_PROBE_CLOSE case=ring_before_dsm
+DEVICE_PROBE_PASS case=ring_before_dsm
+DEVICE_PROBE_BEGIN case=dsm_before_ring
+DEVICE_PROBE_CLOSE case=dsm_before_ring
+DEVICE_PROBE_PASS case=dsm_before_ring
+DEVICE_PROBE_EXIT failures=0
+
+Both probe host logs checked: no WARNING/BUG/Oops/refcount errors.
+No probe Python, QEMU, kvm-dsm or dsm-conn tasks remained after the probes.
+Device writes use a single dirty-logged memslot in this test.
+Alias test covers list removal/teardown, NOT dirty-bit propagation to all aliases.
+No proof of arbitrary invalid-buffer safety, concurrent memslot removal,
+remote cancellation, dirty-ring concurrency stress or database consistency.
+
+SINGLE-NODE CONTROL with PF5 and candidate QEMU:
+SSH authenticated; guest hostname sshpool-ssi-guest; kernel 6.8.0-147-generic; nproc 4.
+STRESS_START pid=120 online_cpus=4 bytes=4194304 rounds=8 allocations=2
+STRESS_ROUND allocation=0 round=0 counter=512
+STRESS_ROUND allocation=0 round=1 counter=1024
+STRESS_ROUND allocation=0 round=2 counter=1536
+STRESS_ROUND allocation=0 round=3 counter=2048
+STRESS_ROUND allocation=0 round=4 counter=2560
+STRESS_ROUND allocation=0 round=5 counter=3072
+STRESS_ROUND allocation=0 round=6 counter=3584
+STRESS_THREAD allocation=0 pid=120 tid=127 requested_cpu=1 observed_cpu=1
+STRESS_THREAD allocation=0 pid=120 tid=128 requested_cpu=2 observed_cpu=2
+STRESS_ROUND allocation=0 round=7 counter=4096
+STRESS_THREAD allocation=0 pid=120 tid=126 requested_cpu=0 observed_cpu=0
+STRESS_THREAD allocation=0 pid=120 tid=129 requested_cpu=3 observed_cpu=3
+STRESS_ROUND allocation=1 round=0 counter=512
+STRESS_ROUND allocation=1 round=1 counter=1024
+STRESS_ROUND allocation=1 round=2 counter=1536
+STRESS_ROUND allocation=1 round=3 counter=2048
+STRESS_ROUND allocation=1 round=4 counter=2560
+STRESS_ROUND allocation=1 round=5 counter=3072
+STRESS_ROUND allocation=1 round=6 counter=3584
+STRESS_THREAD allocation=1 pid=120 tid=131 requested_cpu=1 observed_cpu=1
+STRESS_ROUND allocation=1 round=7 counter=4096
+STRESS_THREAD allocation=1 pid=120 tid=130 requested_cpu=0 observed_cpu=0
+STRESS_THREAD allocation=1 pid=120 tid=132 requested_cpu=2 observed_cpu=2
+STRESS_THREAD allocation=1 pid=120 tid=133 requested_cpu=3 observed_cpu=3
+STRESS_PASS cpus=4 rounds=8 allocations=2 counter_per_allocation=4096 bytes=4194304
+STRESS_EXIT status=0
+SFTP: 1 MiB uploaded to guest /tmp, downloaded and cmp matched.
+SFTP SHA256: fbbab289f7f94b25736c58be46a994c441fd02552cc6022352e3d86d2fab7c83
+Guest poweroff closed SSH (255); QEMU itself exited 0 normally.
+check-stress.py and check-ssh-boot.py passed for this SINGLE-NODE control.
+This does not prove cross-node SSH, aggregate memory capacity, Docker or failover.

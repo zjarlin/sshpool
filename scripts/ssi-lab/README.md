@@ -126,4 +126,15 @@ python3 scripts/ssi-lab/build-ssh-guest.py \
 
 启动日志可先运行 `python3 scripts/ssi-lab/check-ssh-boot.py guest.log --host-log node0-kernel.log --host-log node1-kernel.log`。它会拒绝带内核告警、RCU 停顿或时钟/网络错误的就绪记录，但不替代完整 SSH、SFTP、执行归属与关机验收。宿主日志必须覆盖本轮全过程，不应截取掉告警。
 
-2026-11-05 的双节点 SSH 完整验收仍失败。首次公钥认证成功之后出现 RCU 停顿，且宿主出现脏页记账告警；尚未通过的 virtio 候选补丁单独留在 [experiments](experiments/README.md)，不要加入上面的默认构建步骤。
+2026-11-05 的双节点 SSH 完整验收仍失败。早期实验认证后出现 RCU 停顿和宿主脏页记账告警；后续 PF5 已通过 SSH 中的四线程测试和 SFTP 往返，但仍有时钟偏移且未完成正常关机。候选补丁和应用顺序在 [experiments](experiments/README.md)，不要加入上面的默认构建步骤。
+
+## 设备接口探针
+
+`probe-dsm-device.py` 在显式指定的研究内核上直接创建真实 KVM VM，验证 DSM 写入的脏页位图、内存槽/地址别名清理及 dirty ring 互斥。没有 vCPU 或磁盘，不依赖 QEMU，也没有伪造 ioctl 返回值。每项只有在 VM fd 成功关闭后才标为通过。
+
+```sh
+timeout --kill-after=5 45 python3 scripts/ssi-lab/probe-dsm-device.py \
+  --require-kernel 7.1.0-rc3-sshpool-gvm-pf5
+```
+
+只适用于可重置的隔离 VM。PF2 实测在关闭 VM 时进入无法被 timeout 杀死的内核循环，需恢复实验 VM；这是已知缺陷，不是超时工具提供的安全隔离。两个节点的 PF5 五组测试均通过，具体覆盖范围与尚未测试的别名写入、并发和取消路径见 [设备内存记录](../../docs/ssi-device-memory.md)。该探针不在普通 CI 中运行，CI 不具备配套研究内核。

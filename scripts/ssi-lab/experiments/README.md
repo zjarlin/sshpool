@@ -1,6 +1,6 @@
 # 未通过完整验收的设备一致性候选补丁
 
-本目录不是默认安装路径。`qemu-virtio-dsm-cache.patch` 只用于已有隔离实验环境，不能纳入此前已通过的 PF2 内存测试基线，也不能部署到业务宿主。补丁修改 QEMU GPL 源码，许可证为 GPL-2.0-or-later，正文见上级目录的 `COPYING.GPL-2.0`。
+本目录不是默认安装路径，不能部署到业务宿主。QEMU 补丁为 GPL-2.0-or-later，Linux 内核补丁为 GPL-2.0-only，正文见上级目录的 `COPYING.GPL-2.0`。PF2 历史内存测试不等于稳定性保证，后续探针已复现其设备脏页与映射销毁缺陷。
 
 固定上游提交仍是 `da3f3b05d23ba714a3e961f80c059c376007d7d7`。在已应用 `qemu-single-node-routing.patch` 的独立源码目录使用 `patch -p1 < qemu-virtio-dsm-cache.patch`，重新构建并另存二进制，保留原始运行时。
 
@@ -23,4 +23,28 @@
 
 在新建私有构建目录复制生成器的 `root/`，将其中 `/init` 的三行 `insmod` 替换为 `test -d /sys/module/virtio_net`，其后输出 `SSH_INIT_NETWORK_BUILTIN`；其他初始化步骤不变。用文档中的 `cpio --owner=0:0 --format=newc` 和 `gzip -1` 重新打包，给两节点分发完全相同的镜像与内核。原 Alpine 模块未加载，未修改发行版内核。镜像中含 SSH 私钥，不能发布。
 
-下一步要先定位时钟、RCU 停顿和非 vCPU 设备写入的脏页记账，再重跑单节点、双节点与重复冷启动。不能以关闭 watchdog 或删除 WARN 来验收。
+以上是早期 virtio 缓存实验。不能以关闭 watchdog 或删除 WARN 来验收。
+
+## PF5 设备写入和反向映射
+
+新增三个候选补丁：
+
+- `kernel-dsm-device-writes.patch`：DSM 位图模式支持没有运行中 vCPU 的设备写入，MEMCPY 记录脏页并返回复制错误；DSM 与 dirty ring 两种启用顺序互斥。
+- `kernel-dsm-rmap.patch`：DSM 编码页号的 bit 1 不再被普通 KVM 反向映射当成锁位，查询保留原值，清理使用 DSM 自身 mutex。
+- `qemu-dma-unpin.patch`：按完整映射 `len` 解除固定，不能只解除实际传输 `access_len`。
+
+固定源码提交与上级 README 相同。内核先应用默认的页引用、权限补丁，再按下面顺序应用；不要把研究内核设为默认引导项：
+
+```sh
+patch -d GVM-kernel -p1 < scripts/ssi-lab/experiments/kernel-dsm-device-writes.patch
+patch -d GVM-kernel -p1 < scripts/ssi-lab/experiments/kernel-dsm-rmap.patch
+# 按上级构建脚本生成配置，将 LOCALVERSION 设为 -sshpool-gvm-pf5 后单独构建。
+
+# QEMU 已应用上级单节点路由补丁。
+patch -d GVM-qemu -p1 < scripts/ssi-lab/experiments/qemu-virtio-dsm-cache.patch
+patch -d GVM-qemu -p1 < scripts/ssi-lab/experiments/qemu-dma-unpin.patch
+```
+
+两节点 PF5 实际接口探针的五项测试均通过，单节点完整对照通过；双节点 SSH 四线程测试和 SFTP 往返也通过。时钟门槛仍失败，900 秒限时终止导致正常关机未验证，因此继续作为实验补丁保存。所有地址别名的脏位传播、用户缓冲区异常、并发内存槽变动、DMA 取消及设备复位仍未全部覆盖。
+
+精确哈希、重现与已知限制见 [设备内存实验](../../../docs/ssi-device-memory.md) 和 [PF5 SSH 输出](../../../docs/evidence/ssi-ssh-pf5-20261105.txt)。后续先解决时钟与生命周期，重复完整实验，再考虑持久磁盘和数据库。

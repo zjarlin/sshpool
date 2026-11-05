@@ -1,0 +1,12 @@
+--- a/system/physmem.c
++++ b/system/physmem.c
+@@ -3578,7 +3578,8 @@
+                 .write = is_write,
+                 .unpin = true,
+                 .host_virt_addr = (__u64)buffer,
+-                .length = access_len,
++                /* 固定的是完整映射，短包或取消也必须释放全部页面。 */
++                .length = len,
+             };
+             ret = kvm_vm_ioctl(kvm_state, KVM_DSM_MEMPIN, &pin);
+             if (ret < 0) {

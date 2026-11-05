@@ -1,0 +1,113 @@
+--- a/virt/kvm/dirty_ring.c
++++ b/virt/kvm/dirty_ring.c
+@@ -31,6 +31,11 @@
+ #ifndef CONFIG_NEED_KVM_DIRTY_RING_WITH_BITMAP
+ bool kvm_arch_allow_write_without_running_vcpu(struct kvm *kvm)
+ {
++#ifdef CONFIG_KVM_DSM
++	/* DSM 设备线程没有运行中 vCPU，只允许用位图承接其脏页。 */
++	if (kvm->arch.dsm_enabled && !kvm->dirty_ring_size)
++		return true;
++#endif
+ 	return false;
+ }
+ #endif
+--- a/virt/kvm/kvm_main.c
++++ b/virt/kvm/kvm_main.c
+@@ -4963,6 +4963,13 @@
+ 
+ 	mutex_lock(&kvm->lock);
+ 
++#ifdef CONFIG_KVM_DSM
++	/* DSM 存在非 vCPU 写入，不能切换为只接收 vCPU 脏页的 ring。 */
++	if (kvm->arch.dsm_enabled) {
++		r = -EOPNOTSUPP;
++		goto out_unlock;
++	}
++#endif
+ 	if (kvm->created_vcpus) {
+ 		/* We don't allow to change this value after vcpu created */
+ 		r = -EINVAL;
+@@ -4971,6 +4978,9 @@
+ 		r = 0;
+ 	}
+ 
++#ifdef CONFIG_KVM_DSM
++out_unlock:
++#endif
+ 	mutex_unlock(&kvm->lock);
+ 	return r;
+ }
+--- a/arch/x86/kvm/dsm.c
++++ b/arch/x86/kvm/dsm.c
+@@ -562,6 +562,10 @@
+ 	if (kvm->arch.dsm_enabled)
+ 		return ret;
+ 
++	/* 调用方持有 kvm->lock，与开启 dirty ring 的路径互斥。 */
++	if (kvm->dirty_ring_size)
++		return -EOPNOTSUPP;
++
+ 	dsm_debug("Enable kvm dsm mode, this kvm instance will be node-%u\n",
+ 		  params->dsm_id);
+ 
+@@ -702,6 +706,12 @@
+ 	if (current->mm != kvm->mm)
+ 		return -EFAULT;
+ 	if (!kvm->arch.dsm_enabled)
++		return -EINVAL;
++
++	if (!length)
++		return 0;
++	if (length > ULONG_MAX - host_virt_addr ||
++	    length > ULONG_MAX - userspace_addr)
+ 		return -EINVAL;
+ 
+ 	pr_devel("dsm: hva %lx, length %lu, write %d\n", host_virt_addr, length,
+@@ -763,8 +773,23 @@
+ 			ret = __copy_from_user((void *)hva_start, user_buf, l);
+ 		else
+ 			ret = __copy_to_user(user_buf, (void *)hva_start, l);
+-		if (!slot)
++
++		/* 复制可能部分成功；保守标记所有可能写入的页面，不能遗漏脏页。 */
++		if (write && slot) {
++			for (i = 0; i < npages; i++) {
++				gfn = __kvm_dsm_vfn_to_gfn(slot, false, vfn + i,
++							 &is_smm, NULL, NULL);
++				memslot = __gfn_to_memslot(__kvm_memslots(kvm, is_smm), gfn);
++				mark_page_dirty_in_slot(kvm, memslot, gfn);
++			}
++		}
++		if (ret)
++			ret = -EFAULT;
++		if (!slot) {
++			if (ret)
++				goto out;
+ 			continue;
++		}
+ 
+ out_unlock:
+ 		for (i = 0; i < npages; i++) {
+@@ -794,6 +819,11 @@
+ 	if (current->mm != kvm->mm)
+ 		return -EFAULT;
+ 	if (!kvm->arch.dsm_enabled)
++		return -EINVAL;
++
++	if (!length)
++		return 0;
++	if (length > ULONG_MAX - host_virt_addr)
+ 		return -EINVAL;
+ 
+ 	pr_devel("dsm: hva %lx, length %lu, write %d unpin %d\n",
+@@ -926,7 +956,9 @@
+ 		if (copy_from_user(&params, argp, sizeof(params)))
+ 			goto out;
+ 
++		mutex_lock(&kvm->lock);
+ 		r = kvm_dsm_init(kvm, &params);
++		mutex_unlock(&kvm->lock);
+ 		if (r)
+ 			goto out;
+ 		break;

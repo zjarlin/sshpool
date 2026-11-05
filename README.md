@@ -4,7 +4,7 @@
 
 **目标差距：当前产品不满足“一个 Linux/数据库实例使用多台机器合计资源”的完整 SSI 要求。** 资源池与有状态恢复仍未交付。最新 GiantVM 调研、实际 KVM/ISA 阻塞和容量边界见 [严格 SSI 可行性](docs/ssi-feasibility.md)；不要把任务调度器的验收数量当作 SSI 完成度。
 
-**SSI 实验进展（2026-11-05）：** 已用 GiantVM 在同一 ESXi 的两个隔离 x86_64 节点上启动一个 Ubuntu 客体，同一 PID 的四线程与 32 MiB 共享内存校验通过。修正页引用、权限记账与预取问题后，另通过三次全新客体的页面交接测试。复现补丁和真实证据见 [双节点实验](docs/ssi-lab.md)，OpenSSH 客体进展见 [SSI 工作区](docs/ssi-workspace.md)。启动仍需数分钟；跨物理机、超单机内存、Docker、数据库和故障恢复均未验收。
+**SSI 实验进展（2026-11-05）：** 已用 GiantVM 在同一 ESXi 的两个隔离 x86_64 节点上启动一个 Ubuntu 客体，同一 PID 的四线程与 32 MiB 共享内存校验通过，另通过三次全新客体的页面交接测试。最新 PF5 实验又通过跨节点客体 SSH 中的四线程测试和 1 MiB SFTP 往返；新增 [设备脏页与映射修复](docs/ssi-device-memory.md)。**仍有 TSC 偏移，且本轮被限时终止，完整 SSH 工作区未通过验收。** 复现与证据见 [双节点实验](docs/ssi-lab.md) 和 [SSI 工作区](docs/ssi-workspace.md)。启动仍需数分钟；跨物理机、超单机内存、Docker、数据库和故障恢复均未验收。
 
 SSHPool 面向只能配置一个远程主机的 AI 编程工具、Remote SSH IDE 和终端。工作台放在可靠的宿主上，源码与编辑会话留在工作台；明确加入的项目可以把构建交给资源合适的 SSH 节点。
 

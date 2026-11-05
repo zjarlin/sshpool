@@ -1,0 +1,120 @@
+--- a/arch/x86/kvm/mmu/mmu.c
++++ b/arch/x86/kvm/mmu/mmu.c
+@@ -1168,14 +1168,12 @@
+ 	mmu_free_pte_list_desc(head_desc);
+ }
+ 
+-static void pte_list_remove(struct kvm *kvm, u64 *spte,
+-			    struct kvm_rmap_head *rmap_head)
++static unsigned long pte_list_remove_value(struct kvm *kvm, u64 *spte,
++					   unsigned long rmap_val)
+ {
+ 	struct pte_list_desc *desc;
+-	unsigned long rmap_val;
+ 	int i;
+ 
+-	rmap_val = kvm_rmap_lock(kvm, rmap_head);
+ 	if (KVM_BUG_ON_DATA_CORRUPTION(!rmap_val, kvm))
+ 		goto out;
+ 
+@@ -1201,6 +1199,16 @@
+ 	}
+ 
+ out:
++	return rmap_val;
++}
++
++/* 普通 KVM 页表映射继续使用原有锁，DSM 的编码页号由独立 mutex 保护。 */
++static void pte_list_remove(struct kvm *kvm, u64 *spte,
++			    struct kvm_rmap_head *rmap_head)
++{
++	unsigned long rmap_val = kvm_rmap_lock(kvm, rmap_head);
++
++	rmap_val = pte_list_remove_value(kvm, spte, rmap_val);
+ 	kvm_rmap_unlock(kvm, rmap_head, rmap_val);
+ }
+ 
+@@ -1307,11 +1315,9 @@
+  *
+  * Returns sptep if found, NULL otherwise.
+  */
+-static u64 *rmap_get_first(struct kvm_rmap_head *rmap_head,
+-			   struct rmap_iterator *iter)
+-{
+-	unsigned long rmap_val = kvm_rmap_get(rmap_head);
+-
++static u64 *rmap_get_first_value(unsigned long rmap_val,
++				 struct rmap_iterator *iter)
++{
+ 	if (!rmap_val)
+ 		return NULL;
+ 
+@@ -1323,6 +1329,12 @@
+ 	iter->desc = (struct pte_list_desc *)(rmap_val & ~KVM_RMAP_MANY);
+ 	iter->pos = 0;
+ 	return iter->desc->sptes[iter->pos];
++}
++
++static u64 *rmap_get_first(struct kvm_rmap_head *rmap_head,
++			   struct rmap_iterator *iter)
++{
++	return rmap_get_first_value(kvm_rmap_get(rmap_head), iter);
+ }
+ 
+ /*
+@@ -5216,8 +5228,15 @@
+ 
+ #ifdef CONFIG_KVM_DSM
+ 
++/* DSM 的 bit 1 属于编码页号，读取和删除都不能按 KVM 锁位处理。 */
++static u64 *dsm_rmap_get_first(struct kvm_rmap_head *head,
++			     struct rmap_iterator *iter)
++{
++	return rmap_get_first_value(atomic_long_read(&head->val), iter);
++}
++
+ #define for_each_rmap_spte_nocheck(_rmap_head_, _iter_, _spte_)		\
+-	for (_spte_ = rmap_get_first(_rmap_head_, _iter_);	\
++	for (_spte_ = dsm_rmap_get_first(_rmap_head_, _iter_);	\
+ 	     _spte_; _spte_ = rmap_get_next(_iter_))
+ 
+ static inline int gfn_list_add(struct kvm *kvm, gfn_t gfn, struct kvm_rmap_head *rmap_head)
+@@ -5226,7 +5245,10 @@
+ }
+ static inline void gfn_list_remove(struct kvm *kvm,gfn_t gfn, struct kvm_rmap_head *rmap_head)
+ {
+-	pte_list_remove(kvm,(u64 *)gfn, rmap_head);
++	unsigned long value = atomic_long_read(&rmap_head->val);
++
++	value = pte_list_remove_value(kvm, (u64 *)gfn, value);
++	atomic_long_set(&rmap_head->val, value);
+ }
+ 
+ int kvm_dsm_rmap_add(struct kvm *kvm,struct kvm_dsm_memory_slot *slot, bool backup,
+@@ -5287,15 +5309,21 @@
+ 	u64 *entry;
+ 	struct rmap_iterator iter;
+ 
++	if (!slot->npages)
++		return;
++
++	mutex_lock(slot->rmap_lock);
+ 	for (i = 0; i < slot->npages; i++) {
+-		while ((entry = rmap_get_first(&slot->backup_rmap[i], &iter))) {
+-			pte_list_remove(kvm,entry, &slot->backup_rmap[i]);
++		while ((entry = dsm_rmap_get_first(&slot->backup_rmap[i], &iter))) {
++			gfn_list_remove(kvm, (gfn_t)entry, &slot->backup_rmap[i]);
+ 		}
+-		while ((entry = rmap_get_first(&slot->rmap[i], &iter))) {
+-			pte_list_remove(kvm,entry, &slot->rmap[i]);
++		while ((entry = dsm_rmap_get_first(&slot->rmap[i], &iter))) {
++			gfn_list_remove(kvm, (gfn_t)entry, &slot->rmap[i]);
+ 		}
+ 	}
+-}
++	mutex_unlock(slot->rmap_lock);
++}
++
+ /*
+  * Return gfns mapped to given vfn.
+  * @backup: Which rmap should be used.
