@@ -1,0 +1,5 @@
+/target
+/.sshpool
+/.env
+*.pem
+*.key

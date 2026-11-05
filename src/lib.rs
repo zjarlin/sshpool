@@ -1,0 +1,12 @@
+//! SSHPool 的控制面、SSH 透传与隔离构建执行器。
+pub mod api;
+pub mod archive;
+pub mod client;
+pub mod config;
+pub mod gateway;
+pub mod model;
+pub mod probe;
+pub mod runner;
+pub mod scheduler;
+pub mod state;
+pub mod transport;

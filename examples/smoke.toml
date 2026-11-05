@@ -1,0 +1,11 @@
+image = "alpine:3.22"
+platform = "linux/amd64"
+command = ["sh", "-c", "set -eu; mkdir -p out; printf 'hello from '; uname -m; id; test ! -e /var/run/docker.sock; test ! -e /host; printf 'result\n' > out/result.txt"]
+outputs = ["out"]
+memory_mib = 256
+scratch_mib = 64
+cpus = 0.5
+timeout_secs = 30
+network = false
+retries = 1
+idempotent = true

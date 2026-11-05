@@ -1,0 +1,12 @@
+# 代码阅读顺序
+
+1. `main.rs`：CLI 输入、控制面启动、构建包装器。
+2. `config.rs` / `model.rs`：节点、资源策略和持久任务记录。Rust `struct` 可按 Kotlin `data class` 阅读。
+3. `client.rs` → `api.rs`：源码快照上传、任务提交、日志跟随、产物下载。
+4. `scheduler.rs`：兼容性与资源门槛，然后排序。
+5. `runner.rs`：受限容器创建、导入、执行、导出、核验清理及重启恢复。
+6. `transport.rs`：统一的系统 OpenSSH 调用与 shell 参数引用。
+7. `archive.rs`：源文件和产物的路径、类型及大小边界。
+8. `gateway.rs`：SSH 字节透传，后端负责整个 SSH 协议。
+
+示例入口：`sshpool run --project examples/project`。没有插件注册体系，也没有为单一实现增加 trait 或 DI 层。
