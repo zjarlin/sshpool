@@ -16,6 +16,7 @@ def check_errors(log):
         r'soft lockup', r'hard LOCKUP', r'blocked for more than',
         r'rcu.*(?:detected stalls|self-detected stall)',
         r'TSC warp', r'Marking TSC unstable',
+        r'hctosys: unable to read the hardware clock',
         r'Failed to (?:disable|set MAC)', r'EEPROM Checksum Is Not Valid',
         r'KVM_DSM_\w+ failed', r'access mismatch',
         r'failed to handle page fault', r'ktcp_receive.*error',

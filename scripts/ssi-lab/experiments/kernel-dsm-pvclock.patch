@@ -1,0 +1,58 @@
+--- a/arch/x86/kvm/x86.c
++++ b/arch/x86/kvm/x86.c
+@@ -3277,15 +3277,39 @@
+ 	struct pvclock_vcpu_time_info *guest_hv_clock;
+ 	struct pvclock_vcpu_time_info hv_clock;
+ 	unsigned long flags;
++#ifdef CONFIG_KVM_DSM
++	struct kvm_memory_slot *dsm_slot = NULL;
++	gfn_t dsm_gfn = (vcpu->arch.time & ~1ULL) >> PAGE_SHIFT;
++	bool dsm_locked = false;
++	int dsm_access;
+ 
++	/*
++	 * 同页中的其他 vCPU 记录可能由远端更新。必须先取得整页写权限，
++	 * 再使用缓存指针，避免覆盖远端版本；网络等待不能持有 gpc 自旋锁。
++	 * 这里只覆盖 KVM pvclock，Xen 的用户地址缓存需要另行验证。
++	 */
++	if (vcpu->kvm->arch.dsm_enabled && gpc == &vcpu->arch.pv_time) {
++		dsm_access = kvm_dsm_vcpu_acquire_page(vcpu, &dsm_slot,
++						     dsm_gfn, true);
++		if (dsm_access < 0) {
++			pr_err_ratelimited("kvm-dsm: pvclock write acquisition failed: %d\n",
++					   dsm_access);
++			kvm_make_request(KVM_REQ_CLOCK_UPDATE, vcpu);
++			return;
++		}
++		dsm_locked = true;
++	}
++#endif
++
+ 	memcpy(&hv_clock, ref_hv_clock, sizeof(hv_clock));
+ 
+ 	read_lock_irqsave(&gpc->lock, flags);
+ 	while (!kvm_gpc_check(gpc, offset + sizeof(*guest_hv_clock))) {
+ 		read_unlock_irqrestore(&gpc->lock, flags);
+ 
+-		if (kvm_gpc_refresh(gpc, offset + sizeof(*guest_hv_clock)))
+-			return;
++		if (kvm_gpc_refresh(gpc, offset + sizeof(*guest_hv_clock))) {
++			goto out;
++		}
+ 
+ 		read_lock_irqsave(&gpc->lock, flags);
+ 	}
+@@ -3315,6 +3339,13 @@
+ 	read_unlock_irqrestore(&gpc->lock, flags);
+ 
+ 	trace_kvm_pvclock_update(vcpu->vcpu_id, &hv_clock);
++out:
++#ifdef CONFIG_KVM_DSM
++	if (dsm_locked) {
++		kvm_dsm_vcpu_release_page(vcpu, dsm_slot, dsm_gfn);
++	}
++#endif
++	return;
+ }
+ 
+ int kvm_guest_time_update(struct kvm_vcpu *v)

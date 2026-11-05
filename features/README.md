@@ -28,5 +28,5 @@
 | [130-ssi-lab.feature](130-ssi-lab.feature) | 7 | 0 | 0 | 1 |
 | [140-ssi-workspace.feature](140-ssi-workspace.feature) | 2 | 2 | 0 | 1 |
 | [150-ssi-device-memory.feature](150-ssi-device-memory.feature) | 3 | 1 | 1 | 0 |
-| [160-ssi-clock.feature](160-ssi-clock.feature) | 1 | 2 | 0 | 2 |
-| 合计 | 34 | 12 | 18 | 18 |
+| [160-ssi-clock.feature](160-ssi-clock.feature) | 2 | 3 | 0 | 1 |
+| 合计 | 35 | 13 | 18 | 17 |

@@ -23,5 +23,6 @@ jobs:
         run: |
           cc -O2 -Wall -Wextra -Werror -static -pthread scripts/ssi-lab/guest-stress.c -o "$RUNNER_TEMP/guest-stress"
           cc -O2 -Wall -Wextra -Werror -static scripts/ssi-lab/guest-clock.c -o "$RUNNER_TEMP/guest-clock"
+          cc -O2 -Wall -Wextra -Werror -static scripts/ssi-lab/probe-pvclock.c -o "$RUNNER_TEMP/probe-pvclock"
           bash -n scripts/ssi-lab/run-node.sh scripts/ssi-lab/build-host-kernel.sh
           sh -n scripts/ssi-lab/guest-ssh-init.sh

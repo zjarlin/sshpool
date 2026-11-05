@@ -56,3 +56,7 @@ python3 scripts/ssi-lab/check-ssh-boot.py node0-serial.log \
 新增规格见 [160-ssi-clock.feature](../features/160-ssi-clock.feature)。`140-ssi-workspace.feature` 的完整 SSH 场景与时钟稳定场景仍未通过。
 
 保存日志后，两台专用实验节点均正常重启回原版 `6.8.0-147-generic`。已核对管理 SSH、`/lib -> usr/lib`、无 QEMU/DSM 残留和无待执行的 GRUB 一次性启动项；公司数据、业务 VM 和隧道配置未改动。
+
+## PF6 后续实验
+
+下一轮真实 KVM 探针已经复现 pvclock 在页面归远端后仍写本地副本的缺陷。增加 DSM 写权限获取后，两次新建双节点实例均通过受控页面交接。完整客体测试未再观察到旧的零读数和 TSC 不稳定告警，但 RTC 读取失败、watchdog 跳过检查、最高约 6.97 秒的定时器延迟及关闭连接错误仍存在。修复与证据见 [pvclock 页面实验](ssi-pvclock.md)，本页的旧记录保留用于前后对照。

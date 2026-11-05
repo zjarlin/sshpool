@@ -142,3 +142,5 @@ timeout --kill-after=5 45 python3 scripts/ssi-lab/probe-dsm-device.py \
 ## 跨 CPU 时钟探针
 
 `guest-clock.c` 静态编译后通过现有 SFTP 放入无磁盘客体运行；`check-clock.py` 核对 32 个有序采样与四个定时器记录。它检测 TSC 和三类应用时钟倒退、定时器提前返回，不代替启动 watchdog、长期漂移或宿主错误检查。使用方式、成功与失败的真实证据见 [时钟实验](../../docs/ssi-clock.md)。启动偏移候选仍在 `experiments/`，不进入默认构建路径。
+
+`probe-pvclock.c` 和 `probe-pvclock.py` 直接创建仅执行 HLT 的 KVM 实例，强制跨节点转移时钟页后核对内核写入的新版本。PF5 复现更新丢失，PF6 的受控交接通过；使用方式和限制见 [pvclock 实验](../../docs/ssi-pvclock.md)。该探针不在普通 CI 中执行，CI 只编译它并重新核对已保存的真实接口记录。

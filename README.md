@@ -4,7 +4,7 @@
 
 **目标差距：当前产品不满足“一个 Linux/数据库实例使用多台机器合计资源”的完整 SSI 要求。** 资源池与有状态恢复仍未交付。最新 GiantVM 调研、实际 KVM/ISA 阻塞和容量边界见 [严格 SSI 可行性](docs/ssi-feasibility.md)；不要把任务调度器的验收数量当作 SSI 完成度。
 
-**SSI 实验进展（2026-11-06）：** 已用 GiantVM 在同一 ESXi 的两个隔离 x86_64 节点上启动一个 Ubuntu 客体，同一 PID 的四线程与 32 MiB 共享内存校验通过，另通过三次全新客体的页面交接测试。PF5 通过跨节点客体 SSH 中的四线程测试和 1 MiB SFTP 往返；新增 [设备脏页与映射修复](docs/ssi-device-memory.md)。**后续已观察到双节点正常关机；新的 TSC offset 候选通过一次跨 CPU 时钟采样，但启动仍出现 kvm-clock 零读数与 watchdog 告警，完整 SSH 工作区未通过验收。** 新增 [时钟实验](docs/ssi-clock.md)。复现与证据见 [双节点实验](docs/ssi-lab.md) 和 [SSI 工作区](docs/ssi-workspace.md)。启动仍需数分钟；跨物理机、超单机内存、Docker、数据库和故障恢复均未验收。
+**SSI 实验进展（2026-11-06）：** 已在同一 ESXi 的两个隔离 x86_64 节点上启动一个 Ubuntu 客体，完成同进程跨节点内存测试、SSH、1 MiB SFTP 和正常关机。最新 PF6 修复了 pvclock 绕过 DSM 写权限导致远端读到旧版本的问题，两次真实接口探针通过；见 [pvclock 修复与证据](docs/ssi-pvclock.md)。**完整客体仍有 RTC 读取失败、约 6.97 秒的定时器延迟和 DSM 关闭错误，完整 SSI 工作区未通过验收。** 启动需数分钟；跨物理机、超单机内存、持久磁盘、Docker、数据库和故障恢复均未验收。此前 [设备内存](docs/ssi-device-memory.md)、[时钟](docs/ssi-clock.md) 和 [SSH 工作区](docs/ssi-workspace.md) 记录保留用于对照。
 
 SSHPool 面向只能配置一个远程主机的 AI 编程工具、Remote SSH IDE 和终端。工作台放在可靠的宿主上，源码与编辑会话留在工作台；明确加入的项目可以把构建交给资源合适的 SSH 节点。
 

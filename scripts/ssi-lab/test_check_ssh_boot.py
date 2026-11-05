@@ -28,6 +28,7 @@ class CheckSshBootTest(unittest.TestCase):
             'watchdog: BUG: soft lockup - CPU#1 stuck for 23s!',
             'Measured 2941101754 cycles TSC warp between CPUs, turning off TSC clock.',
             'tsc: Marking TSC unstable due to check_tsc_sync_source failed',
+            'rtc_cmos 00:04: hctosys: unable to read the hardware clock',
             'net eth0: Failed to set MAC filter table.',
             'e1000: The EEPROM Checksum Is Not Valid',
             'KVM_DSM_MEMCPY failed -14',

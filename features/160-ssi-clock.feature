@@ -27,7 +27,17 @@ Feature: SSI 客体计时信息保持跨节点一致
     Then 明确失败而不退回未经同步的时钟
     And 每种拒绝路径都有真实接口或故障注入证据
 
-  @research @p0
+  # evidence: docs/ssi-pvclock.md
+  @verified @p0
+  Scenario: 受控页面交接后远端能够读到新的 pvclock 记录
+    Given 两个隔离 KVM 实例在同一共享页各有一条时钟记录
+    When 强制将页面交给远端后再由本地内核更新时钟
+    Then PF5 基线两方向均复现旧版本而 PF6 八次检查全部取得新版本
+    And 同页另一条记录与远端标记保持正确
+    And 两边 VM fd 释放并退出后才记录探针完成
+    And 不把串行交接测试视为并发撕裂或长期计时验收
+
+  @partial @p0
   Scenario: pvclock 页面更新参与 DSM 一致性
     Given 两个执行节点更新位于同一共享页的 vCPU 时钟记录
     When 客体线程跨 CPU 读取记录且页面所有权反复转移
