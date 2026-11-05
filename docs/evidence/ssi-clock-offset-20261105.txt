@@ -1,0 +1,244 @@
+SSI startup TSC offset candidate, 2026-11-05 UTC / 11-06 Asia/Shanghai
+RESULT: bounded clock probe, SSH memory workload, SFTP and guest powerdown PASS.
+FULL ACCEPTANCE: FAIL (boot watchdog, zero kvm-clock read, DSM teardown errors).
+Only ONE paired run of this candidate; no repeatability or long-term stability claim.
+Two isolated VMs on ONE physical ESXi, 2 local vCPUs each, guest 4 vCPUs / 256 MiB.
+No physical capacity aggregation, oversized working set, persistent disk or failover test.
+QEMU source da3f3b05d23ba714a3e961f80c059c376007d7d7 plus single-node routing,
+virtio DSM cache, DMA unpin and experimental qemu-clock-offset.patch.
+Host kernel PF5 SHA256: 43c3fc7cc6ed92065b121948df87ae328db10e3a7563cda3d0dfae9d21c2edb9
+QEMU SHA256: 6f70ff7676f3ff711924e5c933ade1ee41b74932eaea0c4078c295b052ccf1b4
+Guest kernel SHA256: 41ba36d860aa0b0cd995f4ca8856d80249b244577e704929b55be13fbd1ebd2f
+Guest initramfs SHA256: 87342480b6393c24c82aa72125ffb328ff5b9c32e4af24116365a37fb87e9861
+Clock probe SHA256: 8620d70bf0e4f8ecbe0e6dc21900aee82019f81127839e60b0f173d36d646fee
+Preflight compared both nodes against all expected hashes and lab machine IDs.
+CPU qemu64,-x2apic,+tsc-adjust,enforce; SMP 4,sockets=2,cores=2,threads=1.
+No watchdog-related boot argument changes. QEMU timeout remained 1800 seconds.
+
+CANDIDATE STARTUP DIAGNOSTICS:
+SSI_CLOCK_SOURCE khz=2394374 flags=14 offset=18446735728142596686
+SSI_CLOCK_SAMPLE samples=16 khz=2394374 rtt_ns=57120 uncertainty_ns=28560 source_flags=14
+SSI_CLOCK_TARGET khz=2394374 offset=18446735767351796622 clock=7783458
+
+PAIRED HARNESS RESULT (phase durations include SSH/scheduling; not a benchmark):
+{
+  "mode": "pair",
+  "variant": "sync",
+  "phases": {
+    "identity": {
+      "exit": 0,
+      "seconds": 71.167
+    },
+    "clock-upload": {
+      "exit": 0,
+      "seconds": 59.525
+    },
+    "clock": {
+      "exit": 0,
+      "seconds": 68.378
+    },
+    "stress": {
+      "exit": 0,
+      "seconds": 189.832
+    },
+    "sftp": {
+      "exit": 0,
+      "seconds": 107.496
+    },
+    "poweroff": {
+      "exit": 255,
+      "seconds": 65.461
+    }
+  },
+  "samples_errors": [],
+  "sftp_matches": true,
+  "sftp_sha256": "fbbab289f7f94b25736c58be46a994c441fd02552cc6022352e3d86d2fab7c83",
+  "qemu_ssh_exits": [
+    0,
+    0
+  ],
+  "seconds": 957.7
+}
+
+PAIRED GUEST CLOCK RECORDS:
+CLOCK_START online_cpus=4 rounds=8
+CLOCK_SAMPLE round=0 cpu=0 tsc=1328812370228 mono=532614693563 raw=532509534587 boot=532614694205
+CLOCK_SAMPLE round=0 cpu=2 tsc=1332035019580 mono=533954626693 raw=533849467278 boot=533954626961
+CLOCK_SAMPLE round=0 cpu=1 tsc=1332093024820 mono=533978952499 raw=533873793139 boot=533978952761
+CLOCK_SAMPLE round=0 cpu=3 tsc=1332195834800 mono=534021790661 raw=533916631177 boot=534021790865
+CLOCK_SAMPLE round=1 cpu=0 tsc=1339056941810 mono=536887426506 raw=536782267267 boot=536887426923
+CLOCK_SAMPLE round=1 cpu=2 tsc=1348957452128 mono=541022207975 raw=540917048535 boot=541022208157
+CLOCK_SAMPLE round=1 cpu=1 tsc=1354043251828 mono=543146365026 raw=543041205608 boot=543146365236
+CLOCK_SAMPLE round=1 cpu=3 tsc=1355558705344 mono=543779310812 raw=543674151430 boot=543779311081
+CLOCK_SAMPLE round=2 cpu=0 tsc=1355745513672 mono=543857212378 raw=543752052908 boot=543857212555
+CLOCK_SAMPLE round=2 cpu=2 tsc=1361004631560 mono=546054565311 raw=545949405928 boot=546054565559
+CLOCK_SAMPLE round=2 cpu=1 tsc=1361061110014 mono=546077476675 raw=545972317433 boot=546077477086
+CLOCK_SAMPLE round=2 cpu=3 tsc=1365186006626 mono=547799994057 raw=547694834644 boot=547799994291
+CLOCK_SAMPLE round=3 cpu=0 tsc=1366758079132 mono=548456643126 raw=548351483723 boot=548456643365
+CLOCK_SAMPLE round=3 cpu=2 tsc=1368658581482 mono=549250383818 raw=549145224398 boot=549250384027
+CLOCK_SAMPLE round=3 cpu=1 tsc=1368694104948 mono=549265435188 raw=549160275901 boot=549265435533
+CLOCK_SAMPLE round=3 cpu=3 tsc=1368718488292 mono=549275321413 raw=549170161976 boot=549275321620
+CLOCK_SAMPLE round=4 cpu=0 tsc=1368757634574 mono=549291668550 raw=549186509090 boot=549291668716
+CLOCK_SAMPLE round=4 cpu=2 tsc=1368780011070 mono=549301014403 raw=549195854912 boot=549301014530
+CLOCK_SAMPLE round=4 cpu=1 tsc=1368804857128 mono=549311390791 raw=549206231327 boot=549311390952
+CLOCK_SAMPLE round=4 cpu=3 tsc=1371743202406 mono=550538740124 raw=550433580853 boot=550538740490
+CLOCK_SAMPLE round=5 cpu=0 tsc=1371969432086 mono=550633062021 raw=550527902550 boot=550633062186
+CLOCK_SAMPLE round=5 cpu=2 tsc=1373350098276 mono=551209812136 raw=551104652891 boot=551209812496
+CLOCK_SAMPLE round=5 cpu=1 tsc=1373408256050 mono=551235094475 raw=551129935367 boot=551235095029
+CLOCK_SAMPLE round=5 cpu=3 tsc=1382099435078 mono=554863814631 raw=554758655174 boot=554863814793
+CLOCK_SAMPLE round=6 cpu=0 tsc=1385841051442 mono=556426484231 raw=556321324757 boot=556426484372
+CLOCK_SAMPLE round=6 cpu=2 tsc=1386980484404 mono=556902363935 raw=556797204472 boot=556902364087
+CLOCK_SAMPLE round=6 cpu=1 tsc=1389548016882 mono=557974885651 raw=557869726406 boot=557974886048
+CLOCK_SAMPLE round=6 cpu=3 tsc=1389620435554 mono=558005459332 raw=557900300059 boot=558005459678
+CLOCK_SAMPLE round=7 cpu=0 tsc=1389676663976 mono=558028411429 raw=557923251940 boot=558028411563
+CLOCK_TIMER cpu=0 requested_ns=20000000 elapsed_ns=20218042
+CLOCK_SAMPLE round=7 cpu=2 tsc=1395989698346 mono=560665024358 raw=560559865450 boot=560665025302
+CLOCK_TIMER cpu=2 requested_ns=20000000 elapsed_ns=133406500
+CLOCK_SAMPLE round=7 cpu=1 tsc=1399230282964 mono=562018439392 raw=561913279996 boot=562018439689
+CLOCK_TIMER cpu=1 requested_ns=20000000 elapsed_ns=20352840
+CLOCK_SAMPLE round=7 cpu=3 tsc=1411290704972 mono=567056081975 raw=566950923084 boot=567056082704
+CLOCK_TIMER cpu=3 requested_ns=20000000 elapsed_ns=1883140850
+CLOCK_PASS cpus=4 samples=32 timers=4
+
+CLOCK LIMITATION:
+CPU 3 requested 20 ms but slept 1883140850 ns (about 1.88 seconds).
+The probe only rejects EARLY timers; this is not a latency or realtime pass.
+Long gaps between migration samples can hide offsets smaller than scheduling latency.
+There is no bound on long-term clock skew from these 32 samples.
+
+UNRESOLVED GUEST BOOT WATCHDOG AND NORMAL SHUTDOWN:
+[    1.831623] clocksource: timekeeping watchdog on CPU2: Marking clocksource 'tsc-early' as unstable because the skew is too large:
+[    1.967623] clocksource:                       'kvm-clock' wd_nsec: 0 wd_now: 0 wd_last: a8ea4afa mask: ffffffffffffffff
+[    2.095623] clocksource:                       'tsc-early' cs_nsec: 618080767 cs_now: 202d56252 cs_last: 1aa9fa658 mask: ffffffffffffffff
+[    2.238623] clocksource:                       Clocksource 'tsc-early' skewed 618080767 ns (618 ms) over watchdog 'kvm-clock' interval of 0 ns (0 ms)
+[    2.395623] clocksource:                       No current clocksource.
+[    2.472623] tsc: Marking TSC unstable due to clocksource watchdog
+[  930.744840] ACPI: PM: Preparing to enter system sleep state S5
+[  931.362064] reboot: Power down
+
+IDENTITY/MOUNTS:
+sshpool-ssi-guest
+6.8.0-147-generic
+4
+rootfs on / type rootfs (rw,size=98444k,nr_inodes=24611,inode64)
+proc on /proc type proc (rw,relatime)
+sysfs on /sys type sysfs (rw,relatime)
+devtmpfs on /dev type devtmpfs (rw,relatime,size=98444k,nr_inodes=24611,mode=755,inode64)
+devpts on /dev/pts type devpts (rw,relatime,mode=600,ptmxmode=000)
+tmpfs on /dev/shm type tmpfs (rw,relatime,inode64)
+tmpfs on /tmp type tmpfs (rw,relatime,inode64)
+tmpfs on /run type tmpfs (rw,relatime,inode64)
+kvm-clock
+kvm-clock hpet acpi_pm
+
+SSH MEMORY WORKLOAD:
+STRESS_START pid=157 online_cpus=4 bytes=4194304 rounds=8 allocations=2
+STRESS_ROUND allocation=0 round=0 counter=512
+STRESS_ROUND allocation=0 round=1 counter=1024
+STRESS_ROUND allocation=0 round=2 counter=1536
+STRESS_ROUND allocation=0 round=3 counter=2048
+STRESS_ROUND allocation=0 round=4 counter=2560
+STRESS_ROUND allocation=0 round=5 counter=3072
+STRESS_ROUND allocation=0 round=6 counter=3584
+STRESS_THREAD allocation=0 pid=157 tid=161 requested_cpu=3 observed_cpu=3
+STRESS_THREAD allocation=0 pid=157 tid=160 requested_cpu=2 observed_cpu=2
+STRESS_THREAD allocation=0 pid=157 tid=159 requested_cpu=1 observed_cpu=1
+STRESS_ROUND allocation=0 round=7 counter=4096
+STRESS_THREAD allocation=0 pid=157 tid=158 requested_cpu=0 observed_cpu=0
+STRESS_ROUND allocation=1 round=0 counter=512
+STRESS_ROUND allocation=1 round=1 counter=1024
+STRESS_ROUND allocation=1 round=2 counter=1536
+STRESS_ROUND allocation=1 round=3 counter=2048
+STRESS_ROUND allocation=1 round=4 counter=2560
+STRESS_ROUND allocation=1 round=5 counter=3072
+STRESS_ROUND allocation=1 round=6 counter=3584
+STRESS_THREAD allocation=1 pid=157 tid=165 requested_cpu=3 observed_cpu=3
+STRESS_THREAD allocation=1 pid=157 tid=164 requested_cpu=2 observed_cpu=2
+STRESS_ROUND allocation=1 round=7 counter=4096
+STRESS_THREAD allocation=1 pid=157 tid=163 requested_cpu=1 observed_cpu=1
+STRESS_THREAD allocation=1 pid=157 tid=162 requested_cpu=0 observed_cpu=0
+STRESS_PASS cpus=4 rounds=8 allocations=2 counter_per_allocation=4096 bytes=4194304
+STRESS_EXIT status=0
+
+SFTP (exit 0): put / get / rm /tmp/ssi-transfer.bin.
+Returned file matched all 1048576 bytes; SHA256 appears in the harness result.
+Guest root and /tmp are memory filesystems. No host folders or disks attached.
+
+LAST HOST EXECUTION SAMPLES:
+NODE 0
+   6588    6590 CPU 0/KVM       00:04:33 Dl
+   6588    6591 CPU 1/KVM       00:04:20 Dl
+   6588    6592 CPU 2/KVM       00:00:00 Sl
+   6588    6593 CPU 3/KVM       00:00:00 Sl
+NODE 1
+   3846    3848 CPU 0/KVM       00:00:00 Sl
+   3846    3849 CPU 1/KVM       00:00:00 Sl
+   3846    3850 CPU 2/KVM       00:04:12 Rl
+   3846    3851 CPU 3/KVM       00:04:12 Sl
+
+FINAL HOST LOG SCOPE:
+Both nodes logged DSM connection establishment at 16:26:03 UTC.
+The following teardown messages are from this run, at 16:41:58 UTC:
+node0: ktcp_receive: __ktcp_receive error, ret -104 (8 records)
+node0: kvm_dsm_free: node-0 dsm root server exited with -104
+node1: ktcp_receive: __ktcp_receive error, ret -4 (2 records)
+No new host WARNING/BUG/Oops or residual QEMU/DSM tasks were observed in this interval.
+These connection errors remain failures of the full log gate.
+Repeated guest workqueue CPU-hog notices also remain.
+QEMU exits [0, 0] and S5 do not override these errors.
+
+SINGLE-NODE CONTROL WITH THE SAME CANDIDATE:
+{
+  "mode": "control",
+  "variant": "sync",
+  "phases": {
+    "identity": {
+      "exit": 0,
+      "seconds": 0.573
+    },
+    "clock-upload": {
+      "exit": 0,
+      "seconds": 0.728
+    },
+    "clock": {
+      "exit": 0,
+      "seconds": 0.622
+    },
+    "stress": {
+      "exit": 0,
+      "seconds": 0.576
+    },
+    "sftp": {
+      "exit": 0,
+      "seconds": 1.214
+    },
+    "poweroff": {
+      "exit": 255,
+      "seconds": 0.571
+    }
+  },
+  "samples_errors": [],
+  "sftp_matches": true,
+  "sftp_sha256": "fbbab289f7f94b25736c58be46a994c441fd02552cc6022352e3d86d2fab7c83",
+  "qemu_ssh_exits": [
+    0
+  ],
+  "seconds": 20.5
+}
+Single-node clock, stress and guest boot log checkers all passed.
+Normal S5 shutdown and QEMU exit 0; all four 20 ms timers were about 20.1-20.2 ms.
+The single-node path does not execute the new cross-node synchronization protocol.
+
+SOURCE REPRODUCIBILITY:
+Applying the four patches to the pinned QEMU archive reproduced all four changed
+clock/router source files byte-for-byte with the files compiled on lab node 0.
+The final build had no new warning after fixing a local shadowed variable.
+
+No Ceph/RBD, Docker, PostgreSQL, Redis or sub2api used.
+Private addresses, credentials, host identifiers, key fingerprints and paths omitted.
+
+RESTORATION (verified 2026-11-05 16:47 UTC):
+Both dedicated lab nodes rebooted normally to stock Ubuntu 6.8.0-147-generic.
+Management SSH succeeded; /lib -> usr/lib; GRUB environment had no next_entry.
+No QEMU, KVM DSM or DSM connection tasks remained.
+Business hosts, databases, company directories and tunnel settings were untouched.

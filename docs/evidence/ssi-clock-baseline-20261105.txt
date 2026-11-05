@@ -1,0 +1,136 @@
+SSI clock baseline and paired shutdown, 2026-11-05 UTC
+RESULT: bounded single-node clock probe PASS; paired clock probe FAIL.
+Paired SSH stress and 1 MiB SFTP PASS; guest-requested shutdown completed.
+Both nodes are isolated VMs on ONE physical ESXi; no physical host aggregation claim.
+No drives, host directory mounts, Docker socket or business data.
+Host PF5 SHA256: 43c3fc7cc6ed92065b121948df87ae328db10e3a7563cda3d0dfae9d21c2edb9
+QEMU SHA256: 53757273c425959033d37d20d179feb0e1cfab64186aebddb825f992e63ea50b
+Guest kernel SHA256: 41ba36d860aa0b0cd995f4ca8856d80249b244577e704929b55be13fbd1ebd2f
+Guest initramfs SHA256: 87342480b6393c24c82aa72125ffb328ff5b9c32e4af24116365a37fb87e9861
+Clock probe SHA256: 8620d70bf0e4f8ecbe0e6dc21900aee82019f81127839e60b0f173d36d646fee
+Only launch changes: -cpu qemu64,-x2apic,+tsc-adjust,enforce
+                     -smp 4,sockets=2,cores=2,threads=1
+External QEMU timeout 1800 seconds. No watchdog-related boot arguments changed.
+
+PAIRED HARNESS RESULT (durations include SSH and scheduling; not a benchmark):
+{
+  "mode": "pair",
+  "variant": "adjust",
+  "phases": {
+    "identity": {
+      "exit": 0,
+      "seconds": 67.916
+    },
+    "clock-upload": {
+      "exit": 0,
+      "seconds": 39.97
+    },
+    "clock": {
+      "exit": 1,
+      "seconds": 52.127
+    },
+    "stress": {
+      "exit": 0,
+      "seconds": 147.323
+    },
+    "sftp": {
+      "exit": 0,
+      "seconds": 90.412
+    },
+    "poweroff": {
+      "exit": 255,
+      "seconds": 40.538
+    }
+  },
+  "samples_errors": [],
+  "sftp_matches": true,
+  "sftp_sha256": "fbbab289f7f94b25736c58be46a994c441fd02552cc6022352e3d86d2fab7c83",
+  "qemu_ssh_exits": [
+    0,
+    0
+  ],
+  "seconds": 742.01
+}
+
+PAIRED CLOCK PROBE:
+CLOCK_START online_cpus=4 rounds=8
+CLOCK_SAMPLE round=0 cpu=0 tsc=1101274420672 mono=400515986441 raw=400422170667 boot=400515986441
+CLOCK_ERROR operation=tsc_backwards round=0 cpu=2 previous=1101274420672 now=1101154532972
+
+PAIRED IDENTITY AND MOUNTS:
+sshpool-ssi-guest
+6.8.0-147-generic
+4
+rootfs on / type rootfs (rw,size=98444k,nr_inodes=24611,inode64)
+proc on /proc type proc (rw,relatime)
+sysfs on /sys type sysfs (rw,relatime)
+devtmpfs on /dev type devtmpfs (rw,relatime,size=98444k,nr_inodes=24611,mode=755,inode64)
+devpts on /dev/pts type devpts (rw,relatime,mode=600,ptmxmode=000)
+tmpfs on /dev/shm type tmpfs (rw,relatime,inode64)
+tmpfs on /tmp type tmpfs (rw,relatime,inode64)
+tmpfs on /run type tmpfs (rw,relatime,inode64)
+kvm-clock
+kvm-clock hpet acpi_pm
+
+PAIRED SSH MEMORY TEST:
+STRESS_START pid=154 online_cpus=4 bytes=4194304 rounds=8 allocations=2
+STRESS_ROUND allocation=0 round=0 counter=512
+STRESS_ROUND allocation=0 round=1 counter=1024
+STRESS_ROUND allocation=0 round=2 counter=1536
+STRESS_ROUND allocation=0 round=3 counter=2048
+STRESS_ROUND allocation=0 round=4 counter=2560
+STRESS_ROUND allocation=0 round=5 counter=3072
+STRESS_ROUND allocation=0 round=6 counter=3584
+STRESS_THREAD allocation=0 pid=154 tid=157 requested_cpu=1 observed_cpu=1
+STRESS_ROUND allocation=0 round=7 counter=4096
+STRESS_THREAD allocation=0 pid=154 tid=156 requested_cpu=0 observed_cpu=0
+STRESS_THREAD allocation=0 pid=154 tid=159 requested_cpu=3 observed_cpu=3
+STRESS_THREAD allocation=0 pid=154 tid=158 requested_cpu=2 observed_cpu=2
+STRESS_ROUND allocation=1 round=0 counter=512
+STRESS_ROUND allocation=1 round=1 counter=1024
+STRESS_ROUND allocation=1 round=2 counter=1536
+STRESS_ROUND allocation=1 round=3 counter=2048
+STRESS_ROUND allocation=1 round=4 counter=2560
+STRESS_ROUND allocation=1 round=5 counter=3072
+STRESS_ROUND allocation=1 round=6 counter=3584
+STRESS_THREAD allocation=1 pid=154 tid=164 requested_cpu=3 observed_cpu=3
+STRESS_THREAD allocation=1 pid=154 tid=163 requested_cpu=2 observed_cpu=2
+STRESS_ROUND allocation=1 round=7 counter=4096
+STRESS_THREAD allocation=1 pid=154 tid=161 requested_cpu=0 observed_cpu=0
+STRESS_THREAD allocation=1 pid=154 tid=162 requested_cpu=1 observed_cpu=1
+STRESS_PASS cpus=4 rounds=8 allocations=2 counter_per_allocation=4096 bytes=4194304
+STRESS_EXIT status=0
+
+SFTP OPERATIONS (client exit 0):
+put <local-test-file> /tmp/ssi-transfer.bin
+get /tmp/ssi-transfer.bin <local-result-file>
+rm /tmp/ssi-transfer.bin
+Returned file matches all 1048576 bytes; SHA256 is in the result above.
+Files reside in guest tmpfs and are not persistent after poweroff.
+
+GUEST SERIAL: unresolved watchdog and completed S5 powerdown:
+[    6.455310] clocksource: timekeeping watchdog on CPU0: Marking clocksource 'tsc-early' as unstable because the skew is too large:
+[    6.458771] clocksource:                       'kvm-clock' wd_nsec: 876127310 wd_now: f35094d90 wd_last: f00d0a942 mask: ffffffffffffffff
+[    6.458771] clocksource:                       'tsc-early' cs_nsec: 954172083 cs_now: 248d86e424 cs_last: 240559fa2c mask: ffffffffffffffff
+[    6.458771] clocksource:                       Clocksource 'tsc-early' skewed 78044773 ns (78 ms) over watchdog 'kvm-clock' interval of 876127310 ns (876 ms)
+[    6.458771] tsc: Marking TSC unstable due to clocksource watchdog
+[  678.348783] ACPI: PM: Preparing to enter system sleep state S5
+[  678.519503] reboot: Power down
+
+TERMINATION ERRORS ARE RETAINED (these fail the full host-log gate):
+node0: ktcp_receive: __ktcp_receive error, ret -104 (8 records)
+node0: kvm_dsm_free: node-0 dsm root server exited with -104
+node1: ktcp_receive: __ktcp_receive error, ret -4 (2 records)
+These occurred at connection teardown. They are not classified as harmless.
+No timeout/SIGTERM termination, new WARN/BUG/Oops or DSM tasks remaining was observed.
+Do not interpret QEMU exit 0 as all kernel/transport checks passing.
+
+SINGLE-NODE CONTROL:
+identity, clock upload, clock probe, stress and SFTP exited 0.
+poweroff SSH exited 255 as the guest closed the connection; QEMU exited 0.
+Normal S5 powerdown was present. Total 23.3 seconds.
+Complete clock records: ssi-clock-control-20261105.txt.
+This probe samples 32 readings and four 20 ms timers, not long-term synchronization.
+
+No Ceph/RBD, persistent volumes, Docker, PostgreSQL, Redis, sub2api or failover tested.
+Private host addresses, keys, credentials and paths omitted.

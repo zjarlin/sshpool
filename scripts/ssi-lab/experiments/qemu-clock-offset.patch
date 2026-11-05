@@ -1,0 +1,436 @@
+--- a/hw/i386/kvm/clock.c
++++ b/hw/i386/kvm/clock.c
+@@ -16,6 +16,8 @@
+ #include "qemu/osdep.h"
+ #include "qemu/host-utils.h"
+ #include "qemu/module.h"
++#include "qemu/atomic.h"
++#include "qemu/error-report.h"
+ #include "system/kvm.h"
+ #include "system/runstate.h"
+ #include "system/hw_accel.h"
+@@ -50,6 +52,8 @@
+     /* whether the 'clock' value was obtained in a host with
+      * reliable KVM_GET_CLOCK */
+     bool clock_is_reliable;
++    /* 实验协议只覆盖冷启动，暂停、迁移和重置不能复用旧偏移。 */
++    bool cluster_started;
+ };
+ 
+ struct pvclock_vcpu_time_info {
+@@ -163,6 +167,226 @@
+ 
+ extern int local_cpu_start_index;
+ 
++/* 源节点在启动 vCPU 之前发布，路由线程不获取 BQL 或运行中 vCPU 的锁。 */
++static bool cluster_clock_ready;
++static uint64_t cluster_tsc_offset;
++static uint32_t cluster_tsc_khz;
++
++static int cluster_tsc_attr(CPUState *cpu, int command, uint64_t *offset)
++{
++    struct kvm_device_attr attr = {
++        .group = KVM_VCPU_TSC_CTRL,
++        .attr = KVM_VCPU_TSC_OFFSET,
++        .addr = (uintptr_t)offset,
++    };
++
++    return kvm_vcpu_ioctl(cpu, command, &attr);
++}
++
++static int cluster_read_clock(struct kvm_clock_data *data)
++{
++    int ret;
++    uint32_t required = KVM_CLOCK_TSC_STABLE | KVM_CLOCK_HOST_TSC |
++                        KVM_CLOCK_REALTIME;
++
++    memset(data, 0, sizeof(*data));
++    ret = kvm_vm_ioctl(kvm_state, KVM_GET_CLOCK, data);
++    if (ret < 0) {
++        return ret;
++    }
++    if ((data->flags & required) != required) {
++        error_report("SSI clock requires reliable host TSC, flags=%u", data->flags);
++        return -ENOTSUP;
++    }
++    return 0;
++}
++
++/* 只支持原生且一致的频率；缩放 TSC 需要另外实现比例换算。 */
++static int cluster_prepare_tsc(uint64_t *offset, uint32_t *khz)
++{
++    CPUState *cpu;
++    int ret = cluster_tsc_attr(first_cpu, KVM_GET_DEVICE_ATTR, offset);
++
++    if (ret < 0) {
++        return ret;
++    }
++    *khz = 0;
++    CPU_FOREACH(cpu) {
++        CPUX86State *env = cpu_env(cpu);
++        int frequency = kvm_vcpu_ioctl(cpu, KVM_GET_TSC_KHZ);
++
++        if (frequency <= 0 || env->user_tsc_khz) {
++            return -ENOTSUP;
++        }
++        if (*khz && *khz != frequency) {
++            return -EINVAL;
++        }
++        *khz = frequency;
++        ret = cluster_tsc_attr(cpu, KVM_HAS_DEVICE_ATTR, offset);
++        if (ret < 0) {
++            return ret;
++        }
++    }
++    return 0;
++}
++
++static int cluster_set_offsets(uint64_t offset)
++{
++    CPUState *cpu;
++
++    CPU_FOREACH(cpu) {
++        uint64_t observed = 0;
++        int ret = cluster_tsc_attr(cpu, KVM_SET_DEVICE_ATTR, &offset);
++
++        if (ret < 0) {
++            return ret;
++        }
++        ret = cluster_tsc_attr(cpu, KVM_GET_DEVICE_ATTR, &observed);
++        if (ret < 0) {
++            return ret;
++        }
++        if (observed != offset) {
++            return -EIO;
++        }
++    }
++    return 0;
++}
++
++int kvmclock_get_sample(KVMClockSample *sample)
++{
++    struct kvm_clock_data data;
++    int ret;
++
++    if (!qatomic_load_acquire(&cluster_clock_ready)) {
++        return -EAGAIN;
++    }
++    ret = cluster_read_clock(&data);
++    if (ret < 0) {
++        return ret;
++    }
++    sample->clock = data.clock;
++    sample->host_tsc = data.host_tsc;
++    sample->offset = cluster_tsc_offset;
++    sample->flags = data.flags;
++    sample->khz = cluster_tsc_khz;
++    return 0;
++}
++
++static int cluster_fetch_best(KVMClockSample *best, uint64_t *midpoint,
++                              uint64_t *best_rtt, uint32_t khz)
++{
++    int completed = 0;
++
++    *best_rtt = UINT64_MAX;
++    for (int attempt = 0; attempt < 100 && completed < 16; attempt++) {
++        struct kvm_clock_data before, after;
++        KVMClockSample sample = {};
++        int ret = cluster_read_clock(&before);
++
++        if (ret < 0) {
++            return ret;
++        }
++        ret = kvmclock_fetching(&sample);
++        if (ret == -EAGAIN) {
++            g_usleep(10000);
++            continue;
++        }
++        if (ret < 0) {
++            return ret;
++        }
++        ret = cluster_read_clock(&after);
++        if (ret < 0) {
++            return ret;
++        }
++        if (sample.khz != khz || after.host_tsc < before.host_tsc) {
++            return -ERANGE;
++        }
++        uint64_t rtt = after.host_tsc - before.host_tsc;
++        if (rtt < *best_rtt) {
++            *best = sample;
++            *best_rtt = rtt;
++            *midpoint = before.host_tsc + rtt / 2;
++        }
++        completed++;
++    }
++    if (completed != 16) {
++        return -ETIMEDOUT;
++    }
++    uint64_t rtt_ns = muldiv64(*best_rtt, 1000000, khz);
++    fprintf(stderr, "SSI_CLOCK_SAMPLE samples=%d khz=%u rtt_ns=%" PRIu64
++            " uncertainty_ns=%" PRIu64 " source_flags=%u\n",
++            completed, khz, rtt_ns, rtt_ns / 2, best->flags);
++    if (rtt_ns > 5000000) {
++        return -ETIMEDOUT;
++    }
++    return 0;
++}
++
++static int cluster_start_clock(struct kvm_clock_data *data)
++{
++    KVMClockSample source = {};
++    struct kvm_clock_data local;
++    uint64_t offset, midpoint = 0, rtt;
++    uint32_t khz;
++    int ret = cluster_prepare_tsc(&offset, &khz);
++
++    if (ret < 0) {
++        return ret;
++    }
++    ret = cluster_set_offsets(offset);
++    if (ret < 0) {
++        return ret;
++    }
++    /* 刷新 KVM masterclock，使第一次采样就具有原子时钟/TSC 对。 */
++    ret = kvm_vm_ioctl(kvm_state, KVM_SET_CLOCK, data);
++    if (ret < 0) {
++        return ret;
++    }
++    if (local_cpu_start_index == 0) {
++        ret = cluster_read_clock(&local);
++        if (ret < 0) {
++            return ret;
++        }
++        cluster_tsc_offset = offset;
++        cluster_tsc_khz = khz;
++        qatomic_store_release(&cluster_clock_ready, true);
++        fprintf(stderr, "SSI_CLOCK_SOURCE khz=%u flags=%u offset=%" PRIu64 "\n",
++                khz, local.flags, offset);
++        return 0;
++    }
++
++    ret = cluster_fetch_best(&source, &midpoint, &rtt, khz);
++    if (ret < 0) {
++        return ret;
++    }
++    /* 无符号加减保留 KVM 偏移的模 2^64 语义。 */
++    offset = source.host_tsc + source.offset - midpoint;
++    ret = cluster_set_offsets(offset);
++    if (ret < 0) {
++        return ret;
++    }
++    ret = cluster_read_clock(&local);
++    if (ret < 0) {
++        return ret;
++    }
++    if (local.host_tsc < midpoint ||
++        local.host_tsc - midpoint > (uint64_t)khz * 60000) {
++        return -ERANGE;
++    }
++    data->clock = source.clock +
++                  muldiv64(local.host_tsc - midpoint, 1000000, khz);
++    /* 只用目标机自己的 REALTIME 补偿 ioctl 延迟，不假设两宿主墙钟同步。 */
++    data->realtime = local.realtime;
++    data->flags = KVM_CLOCK_REALTIME;
++    ret = kvm_vm_ioctl(kvm_state, KVM_SET_CLOCK, data);
++    if (ret < 0) {
++        return ret;
++    }
++    fprintf(stderr, "SSI_CLOCK_TARGET khz=%u offset=%" PRIu64
++            " clock=%" PRIu64 "\n", khz, offset, (uint64_t)data->clock);
++    return 0;
++}
++
+ static void kvmclock_vm_state_change(void *opaque, bool running,
+                                      RunState state)
+ {
+@@ -170,7 +394,6 @@
+     CPUState *cpu;
+     int cap_clock_ctrl = kvm_check_extension(kvm_state, KVM_CAP_KVMCLOCK_CTRL);
+     int ret;
+-    uint64_t time_clock;
+ 
+     if (running) {
+         struct kvm_clock_data data = {};
+@@ -192,25 +415,21 @@
+ 
+         data.clock = s->clock;
+ 
+-        /* AP should get BSP kvmclock and apply it to its own kvmclock */
+-        if (local_cpus != smp_cpus && local_cpu_start_index != 0) {
+-            struct timespec begin_ts, end_ts;
+-            clock_gettime(CLOCK_MONOTONIC, &begin_ts);
+-            kvmclock_fetching(&time_clock);
+-            clock_gettime(CLOCK_MONOTONIC, &end_ts);
+-            uint64_t rtt = (end_ts.tv_sec - begin_ts.tv_sec) * 1000000000 + end_ts.tv_nsec - begin_ts.tv_nsec;
+-            printf("kvmclock sync time_clock[%lu] RTT[%lu]\n", time_clock, rtt);
+-            time_clock += rtt / 2;
+-            s->clock = time_clock;
+-            data.clock = time_clock;
+-        }
+-
+         printf("QEMU %d set kvmclock: %llu\n", local_cpu_start_index, data.clock);
+ 
+-        ret = kvm_vm_ioctl(kvm_state, KVM_SET_CLOCK, &data);
++        if (local_cpus != smp_cpus) {
++            if (s->cluster_started) {
++                error_report("SSI clock candidate supports cold start only");
++                exit(1);
++            }
++            ret = cluster_start_clock(&data);
++            s->cluster_started = true;
++        } else {
++            ret = kvm_vm_ioctl(kvm_state, KVM_SET_CLOCK, &data);
++        }
+         if (ret < 0) {
+-            fprintf(stderr, "KVM_SET_CLOCK failed: %s\n", strerror(-ret));
+-            abort();
++            error_report("SSI/KVM clock startup failed: %s", strerror(-ret));
++            exit(1);
+         }
+ 
+         if (!cap_clock_ctrl) {
+@@ -220,6 +439,7 @@
+             run_on_cpu(cpu, do_kvmclock_ctrl, RUN_ON_CPU_NULL);
+         }
+     } else {
++        qatomic_store_release(&cluster_clock_ready, false);
+ 
+         if (s->clock_valid) {
+             return;
+@@ -239,21 +459,6 @@
+     }
+ }
+ 
+-uint64_t kvmclock_getclock(void) {
+-    struct kvm_clock_data data;
+-    int ret;
+-    printf("enter kvmclock_getclock\n");
+-
+-    /* kvm_synchronize_all_tsc(); */
+-
+-    ret = kvm_vm_ioctl(kvm_state, KVM_GET_CLOCK, &data);
+-    if (ret < 0) {
+-        fprintf(stderr, "KVM_GET_CLOCK failed: %s\n", strerror(ret));
+-        abort();
+-    }
+-    return data.clock;
+-}
+-
+ static void kvmclock_realize(DeviceState *dev, Error **errp)
+ {
+     KVMClockState *s = KVM_CLOCK(dev);
+--- a/hw/i386/kvm/clock.h
++++ b/hw/i386/kvm/clock.h
+@@ -15,6 +15,15 @@
+ 
+ void kvmclock_create(bool create_always);
+ 
+-#endif
++/* 仅供配对的实验运行时使用，线上协议通过显式版本拒绝误配。 */
++typedef struct KVMClockSample {
++    uint64_t clock;
++    uint64_t host_tsc;
++    uint64_t offset;
++    uint32_t flags;
++    uint32_t khz;
++} KVMClockSample;
+ 
+-uint64_t kvmclock_getclock(void);
+\ No newline at end of file
++int kvmclock_get_sample(KVMClockSample *sample);
++
++#endif
+--- a/interrupt-router.c
++++ b/interrupt-router.c
+@@ -164,7 +164,6 @@
+     int trigger_mode; /* FIXED_INT */
+     int isrv; /* IOAPIC */
+ 
+-    uint64_t kvmclock;
+     __u64 x2data;
+ 
+     int host;
+@@ -335,11 +334,20 @@
+                 free(routing);
+                 break;
+ 
+-            case KVMCLOCK:
+-                kvmclock = kvmclock_getclock();
+-                qemu_put_be64(rsp_file, kvmclock);
++            case KVMCLOCK: {
++                KVMClockSample sample = {};
++                int sample_ret = kvmclock_get_sample(&sample);
++
++                qemu_put_be32(rsp_file, 1);
++                qemu_put_sbe32(rsp_file, sample_ret);
++                qemu_put_be64(rsp_file, sample.clock);
++                qemu_put_be64(rsp_file, sample.host_tsc);
++                qemu_put_be64(rsp_file, sample.offset);
++                qemu_put_be32(rsp_file, sample.flags);
++                qemu_put_be32(rsp_file, sample.khz);
+                 qemu_fflush(rsp_file);
+                 break;
++            }
+ 
+             case SHUTDOWN:
+                 qemu_system_shutdown_request(SHUTDOWN_CAUSE_GUEST_SHUTDOWN);
+@@ -1167,8 +1175,11 @@
+     qemu_mutex_unlock(&io_forwarding_mutex);
+ }
+ 
+-void kvmclock_fetching(uint64_t *kvmclock)
++int kvmclock_fetching(KVMClockSample *sample)
+ {
++    int ret;
++    uint32_t version;
++
+     qemu_mutex_lock(&io_forwarding_mutex);
+ 
+     QEMUFile *io_connect_file = req_files[0];
+@@ -1178,7 +1189,21 @@
+     qemu_put_sbe32(io_connect_file, CPU_INDEX_ANY);
+     qemu_fflush(io_connect_file);
+ 
+-    *kvmclock = qemu_get_be64(io_connect_return_file);
++    version = qemu_get_be32(io_connect_return_file);
++    ret = qemu_get_sbe32(io_connect_return_file);
++    sample->clock = qemu_get_be64(io_connect_return_file);
++    sample->host_tsc = qemu_get_be64(io_connect_return_file);
++    sample->offset = qemu_get_be64(io_connect_return_file);
++    sample->flags = qemu_get_be32(io_connect_return_file);
++    sample->khz = qemu_get_be32(io_connect_return_file);
++    if (qemu_file_get_error(io_connect_file)) {
++        ret = qemu_file_get_error(io_connect_file);
++    } else if (qemu_file_get_error(io_connect_return_file)) {
++        ret = qemu_file_get_error(io_connect_return_file);
++    } else if (version != 1) {
++        ret = -EPROTO;
++    }
+     qemu_mutex_unlock(&io_forwarding_mutex);
++    return ret;
+ }
+ 
+--- a/interrupt-router.h
++++ b/interrupt-router.h
+@@ -6,6 +6,7 @@
+ #include "io/channel-socket.h"
+ #include "exec/hwaddr.h"
+ #include "linux/kvm.h"
++#include "hw/i386/kvm/clock.h"
+ 
+ extern QemuMutex ipi_mutex;
+ extern QemuMutex io_forwarding_mutex;
+@@ -44,8 +45,8 @@
+ void shutdown_forwarding(void);
+ void reset_forwarding(void);
+ void exit_forwarding(void);
+-void kvmclock_fetching(uint64_t *kvmclock);
++int kvmclock_fetching(KVMClockSample *sample);
+ 
+ void disconnect_io_router(void);
+ 
+-#endif /* INTERRUPT_ROUTER_H */
+\ No newline at end of file
++#endif /* INTERRUPT_ROUTER_H */

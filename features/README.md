@@ -26,6 +26,7 @@
 | [110-pooled-linux.feature](110-pooled-linux.feature) | 0 | 0 | 0 | 7 |
 | [120-stateful-recovery.feature](120-stateful-recovery.feature) | 0 | 0 | 2 | 3 |
 | [130-ssi-lab.feature](130-ssi-lab.feature) | 7 | 0 | 0 | 1 |
-| [140-ssi-workspace.feature](140-ssi-workspace.feature) | 1 | 2 | 1 | 1 |
+| [140-ssi-workspace.feature](140-ssi-workspace.feature) | 2 | 2 | 0 | 1 |
 | [150-ssi-device-memory.feature](150-ssi-device-memory.feature) | 3 | 1 | 1 | 0 |
-| 合计 | 32 | 10 | 19 | 16 |
+| [160-ssi-clock.feature](160-ssi-clock.feature) | 1 | 2 | 0 | 2 |
+| 合计 | 34 | 12 | 18 | 18 |

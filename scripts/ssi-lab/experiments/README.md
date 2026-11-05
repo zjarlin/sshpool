@@ -1,4 +1,4 @@
-# 未通过完整验收的设备一致性候选补丁
+# 未通过完整验收的设备与时钟候选补丁
 
 本目录不是默认安装路径，不能部署到业务宿主。QEMU 补丁为 GPL-2.0-or-later，Linux 内核补丁为 GPL-2.0-only，正文见上级目录的 `COPYING.GPL-2.0`。PF2 历史内存测试不等于稳定性保证，后续探针已复现其设备脏页与映射销毁缺陷。
 
@@ -48,3 +48,14 @@ patch -d GVM-qemu -p1 < scripts/ssi-lab/experiments/qemu-dma-unpin.patch
 两节点 PF5 实际接口探针的五项测试均通过，单节点完整对照通过；双节点 SSH 四线程测试和 SFTP 往返也通过。时钟门槛仍失败，900 秒限时终止导致正常关机未验证，因此继续作为实验补丁保存。所有地址别名的脏位传播、用户缓冲区异常、并发内存槽变动、DMA 取消及设备复位仍未全部覆盖。
 
 精确哈希、重现与已知限制见 [设备内存实验](../../../docs/ssi-device-memory.md) 和 [PF5 SSH 输出](../../../docs/evidence/ssi-ssh-pf5-20261105.txt)。后续先解决时钟与生命周期，重复完整实验，再考虑持久磁盘和数据库。
+
+## TSC offset 冷启动候选
+
+在上述 QEMU 补丁之后应用 `qemu-clock-offset.patch`，另存二进制。两边必须先核对同一候选哈希，再共同启动；它扩展了原 KVMCLOCK 消息，与旧版本不兼容。默认 `run-node.sh` 没有自动应用此补丁。实验配置额外使用 `-cpu qemu64,-x2apic,+tsc-adjust,enforce` 和 `-smp 4,sockets=2,cores=2,threads=1`，外层限时为 1800 秒。
+
+```sh
+patch -d GVM-qemu -p1 < scripts/ssi-lab/experiments/qemu-clock-offset.patch
+ninja -C GVM-qemu/build -j2 qemu-system-x86_64
+```
+
+该候选同步原生同频 TSC 初始偏移和 KVM 纳秒时钟，支持一次冷启动。最短 RTT 采样不能保证长期同步，也不支持暂停恢复、迁移、重连或故障接管。实测单节点完整对照通过，双节点有限时钟探针通过，但启动 watchdog 仍记录 kvm-clock 零读数，**不是已完成的时钟修复**。真实内核和新协议的所有拒绝分支仍需故障注入验证。算法、哈希与其余结果见 [时钟实验](../../../docs/ssi-clock.md)。

@@ -138,3 +138,7 @@ timeout --kill-after=5 45 python3 scripts/ssi-lab/probe-dsm-device.py \
 ```
 
 只适用于可重置的隔离 VM。PF2 实测在关闭 VM 时进入无法被 timeout 杀死的内核循环，需恢复实验 VM；这是已知缺陷，不是超时工具提供的安全隔离。两个节点的 PF5 五组测试均通过，具体覆盖范围与尚未测试的别名写入、并发和取消路径见 [设备内存记录](../../docs/ssi-device-memory.md)。该探针不在普通 CI 中运行，CI 不具备配套研究内核。
+
+## 跨 CPU 时钟探针
+
+`guest-clock.c` 静态编译后通过现有 SFTP 放入无磁盘客体运行；`check-clock.py` 核对 32 个有序采样与四个定时器记录。它检测 TSC 和三类应用时钟倒退、定时器提前返回，不代替启动 watchdog、长期漂移或宿主错误检查。使用方式、成功与失败的真实证据见 [时钟实验](../../docs/ssi-clock.md)。启动偏移候选仍在 `experiments/`，不进入默认构建路径。

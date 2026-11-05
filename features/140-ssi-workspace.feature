@@ -35,7 +35,8 @@ Feature: 从普通 SSH 登录真实的共享 Linux 客体
     Then 不出现 TSC 偏移计时器队列告警或软锁死
     And 不通过关闭 watchdog 或隐藏告警获得通过结果
 
-  @planned @p0
+  # evidence: docs/evidence/ssi-clock-baseline-20261105.txt
+  @verified @p0
   Scenario: 实验文件系统与宿主数据没有共享挂载
     Given SSH 客体只使用自身 initramfs 和内存文件系统
     When 通过 SFTP 创建读取和删除测试文件
