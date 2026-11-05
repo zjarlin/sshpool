@@ -1,0 +1,15 @@
+diff --git a/accel/kvm/kvm-all.c b/accel/kvm/kvm-all.c
+--- a/accel/kvm/kvm-all.c
++++ b/accel/kvm/kvm-all.c
+@@ -2075,7 +2075,10 @@ void kvm_irqchip_commit_routes(KVMState *s)
+ 
+     s->irq_routes->flags = 0;
+     trace_kvm_irqchip_commit_routes();
+-    if (io_forwarding_mutex.initialized) {
++    MachineState *ms = MACHINE(qdev_get_machine());
++    /* 单节点没有路由连接；只有分布式客体的主节点负责广播路由。 */
++    if (ms->local_cpus != ms->smp.cpus &&
++        ms->local_cpu_start_index == 0 && io_forwarding_mutex.initialized) {
+         ioapic_router_forwarding(s->irq_routes);
+     }
+     ret = kvm_vm_ioctl(s, KVM_SET_GSI_ROUTING, s->irq_routes);

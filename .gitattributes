@@ -1,0 +1,2 @@
+# 补丁上下文行必须保留 diff 格式前缀，不能按普通源码修剪空白。
+scripts/ssi-lab/*.patch -whitespace

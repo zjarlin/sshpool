@@ -8,6 +8,8 @@
 
 ## 1. 核心需求
 
+2026-11-05 进一步明确：用户要求的是操作系统/虚拟机层面的多机资源汇聚，包含未修改的 Docker、sub2api、PostgreSQL 和 Redis；仅将整任务派到其中一台机器不符合目标。现有实现仍是任务调度器。详细硬件阻塞与严格验收见 [SSI 可行性](docs/ssi-feasibility.md) 和 `features/110-pooled-linux.feature`。
+
 把多台能够通过互联网或局域网访问的设备组织成一个计算池。用户只连接一个固定的 SSH 地址，看到的是一台长期在线的 Linux 主机；在终端、文件传输、IDE Remote SSH 和 ChatGPT 的远程开发功能中，都只需配置这一个入口。
 
 底层可以包含不同操作系统和 CPU 架构的设备，例如：

@@ -1,0 +1,36 @@
+# 2026-11-05 GiantVM 双节点验收摘录
+# 同一物理 ESXi 内的两个独立 Linux/KVM 节点；不证明跨物理宿主故障恢复。
+# 运行版本：kernel 6317a6b + kernel-page-reference.patch；QEMU da3f3b0 + qemu-single-node-routing.patch。
+# 完整原始日志保存在操作者的私有实验目录，本文件仅摘录公开验收字段。
+
+[    2.114356] smp: Brought up 1 node, 4 CPUs
+PROOF_START pid=1 online_cpus=4 bytes=33554432
+PROOF_THREAD pid=1 tid=105 requested_cpu=0 observed_cpu=0 checksum=9881296914831760266
+PROOF_THREAD pid=1 tid=106 requested_cpu=1 observed_cpu=1 checksum=14269900721331050332
+PROOF_THREAD pid=1 tid=107 requested_cpu=2 observed_cpu=2 checksum=5704288491290152150
+PROOF_THREAD pid=1 tid=108 requested_cpu=3 observed_cpu=3 checksum=5860889749692592215
+PROOF_PASS cpus=4 shared_counter=512 memory_verified_bytes=33554432
+PROOF_EXIT status=0
+[  497.625304] reboot: Power down
+
+# 宿主 ps -eLo pid,tid,comm,time 实测；UTC 10:30:34（节点零）、10:30:35（节点一）。
+# 节点零
+1935 1937 CPU 0/KVM 00:02:25
+1935 1938 CPU 1/KVM 00:02:43
+1935 1939 CPU 2/KVM 00:00:00
+1935 1940 CPU 3/KVM 00:00:00
+# 节点一
+1577 1579 CPU 0/KVM 00:00:00
+1577 1580 CPU 1/KVM 00:00:00
+1577 1581 CPU 2/KVM 00:01:59
+1577 1582 CPU 3/KVM 00:02:23
+
+# 两节点实际文件 SHA-256 相同
+# QEMU
+1727011af95b7993a6c2e590f68ef2b9ee9428375dfc5c885f3a68077940f1a6
+# 未修改的 Ubuntu 客体内核
+41ba36d860aa0b0cd995f4ca8856d80249b244577e704929b55be13fbd1ebd2f
+# 要求四 CPU 的测试 initramfs
+d2c92382133792c5355e29a94862d7dc1b5fbc678dcc7e19227d04b45052e9bb
+# 含页引用修正的宿主内核
+8c5ba335e7610b9f692e1dd6d86917e203f7480d291bdaedf00efa23349d1b00

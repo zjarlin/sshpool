@@ -1,0 +1,22 @@
+diff --git a/arch/x86/kvm/mmu/mmu.c b/arch/x86/kvm/mmu/mmu.c
+--- a/arch/x86/kvm/mmu/mmu.c
++++ b/arch/x86/kvm/mmu/mmu.c
+@@ -4928,18 +4928,13 @@ static int direct_page_fault(struct kvm_vcpu *vcpu, struct kvm_page_fault *fault)
+ 		goto out_unlock;
+ 
+ 	r = direct_map(vcpu, fault);
+-	write_unlock(&vcpu->kvm->mmu_lock);
+-#ifdef CONFIG_KVM_DSM
+-	dsm_mmu_post_fault(vcpu, fault);
+-#endif
+-	return r;
+ out_unlock:
++	/* 成功和重试共用清理路径，每次获取的页引用只释放一次。 */
+ 	kvm_mmu_finish_page_fault(vcpu, fault, r);
+ 	write_unlock(&vcpu->kvm->mmu_lock);
+ #ifdef CONFIG_KVM_DSM
+ 	dsm_mmu_post_fault(vcpu, fault);
+ #endif
+-	kvm_release_page_unused(fault->refcounted_page);
+ 	return r;
+ }

@@ -23,4 +23,7 @@
 | [080-audit.feature](080-audit.feature) | 1 | 0 | 2 | 0 |
 | [090-delivery.feature](090-delivery.feature) | 2 | 0 | 2 | 0 |
 | [100-ssi-research.feature](100-ssi-research.feature) | 0 | 0 | 0 | 3 |
-| 合计 | 21 | 7 | 15 | 4 |
+| [110-pooled-linux.feature](110-pooled-linux.feature) | 0 | 0 | 0 | 7 |
+| [120-stateful-recovery.feature](120-stateful-recovery.feature) | 0 | 0 | 2 | 3 |
+| [130-ssi-lab.feature](130-ssi-lab.feature) | 4 | 0 | 0 | 1 |
+| 合计 | 25 | 7 | 17 | 15 |
