@@ -73,3 +73,9 @@ retries = 0
 保存为 `sshpool.toml` 后执行 `sshpool run`，记下任务 ID，再用 `sshpool events <id>` 和 `sshpool fetch <id>` 核对。复现示例使用更短的循环；上表记录对应实际验收的 1000 万次循环。Worker 管理员可以同时检查该任务标签的容器进程；仅打印 `uname` 不足以单独证明未使用仿真。
 
 macOS ARM64 Worker 本次只完成资源探测：可用内存约 2.7 GiB，小于保留给原有业务的 4 GiB，系统负载约 36。未降低预留、停止原有业务或强行执行。其任务执行验收仍未完成；未完成不能记作已经贡献硬件。不同 Worker 的可用内存没有合并，普通 SSH 命令和现有 sub2api 服务仍在各自原主机运行。
+
+## publication
+
+公开源码已发布到 [zjarlin/sshpool](https://github.com/zjarlin/sshpool)，MIT 许可，包含 Cargo.lock、Linux/macOS CI 和 Gherkin 验收清单。首个源码提交为 `b27c835`。提交前检查真实地址、节点 SSH 别名、用户目录、私钥标记和常见 token 格式，没有将私有配置或任务归档加入仓库。
+
+本地 14 项 Rust 测试、格式检查、Clippy 和 release build 通过；工作台客户端与 Mac 控制面均已更新。CI 每次运行以 [GitHub Actions](https://github.com/zjarlin/sshpool/actions) 上相应提交的结果为准，公开源码不代表生产可用或全部验收场景通过。

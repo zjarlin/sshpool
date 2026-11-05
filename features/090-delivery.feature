@@ -9,7 +9,8 @@ Feature: 部署发布和运维
     Then 登录后启动工作台与控制面
     And 服务不会修改公司既有数据目录
 
-  @partial @p0
+  # evidence: docs/validation.md#publication
+  @verified @manual @p0
   Scenario: 可审查的公开源码交付
     Given 代码和文档完成检查
     When 发布到 GitHub

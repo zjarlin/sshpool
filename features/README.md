@@ -21,6 +21,6 @@
 | [060-isolation.feature](060-isolation.feature) | 0 | 2 | 1 | 1 |
 | [070-access-network.feature](070-access-network.feature) | 2 | 0 | 3 | 0 |
 | [080-audit.feature](080-audit.feature) | 1 | 0 | 2 | 0 |
-| [090-delivery.feature](090-delivery.feature) | 1 | 1 | 2 | 0 |
+| [090-delivery.feature](090-delivery.feature) | 2 | 0 | 2 | 0 |
 | [100-ssi-research.feature](100-ssi-research.feature) | 0 | 0 | 0 | 3 |
-| 合计 | 20 | 8 | 15 | 4 |
+| 合计 | 21 | 7 | 15 | 4 |
