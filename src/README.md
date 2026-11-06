@@ -8,5 +8,6 @@
 6. `transport.rs`：统一的系统 OpenSSH 调用与 shell 参数引用。
 7. `archive.rs`：源文件和产物的路径、类型及大小边界。
 8. `gateway.rs`：SSH 字节透传，后端负责整个 SSH 协议。
+9. `ssi.rs` → `ssi_probe.py`：`sshpool ssi-preflight node-a node-b` 的独立预检；复用 OpenSSH，创建临时空 KVM 对象，拒绝不同原生 TSC 频率。预检不会登记 Worker 或启动 SSI。
 
 示例入口：`sshpool run --project examples/project`。没有插件注册体系，也没有为单一实现增加 trait 或 DI 层。

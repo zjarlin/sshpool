@@ -31,5 +31,5 @@
 | [160-ssi-clock.feature](160-ssi-clock.feature) | 6 | 4 | 0 | 1 |
 | [170-ssi-transport.feature](170-ssi-transport.feature) | 20 | 6 | 0 | 4 |
 | [180-ssi-device-order.feature](180-ssi-device-order.feature) | 1 | 1 | 0 | 4 |
-| [190-ssi-physical-storage.feature](190-ssi-physical-storage.feature) | 0 | 0 | 3 | 2 |
-| 合计 | 71 | 23 | 21 | 30 |
+| [190-ssi-physical-storage.feature](190-ssi-physical-storage.feature) | 2 | 1 | 3 | 1 |
+| 合计 | 73 | 24 | 21 | 29 |

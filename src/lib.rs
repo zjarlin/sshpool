@@ -8,5 +8,6 @@ pub mod model;
 pub mod probe;
 pub mod runner;
 pub mod scheduler;
+pub mod ssi;
 pub mod state;
 pub mod transport;

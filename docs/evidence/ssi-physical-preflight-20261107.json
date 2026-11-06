@@ -1,0 +1,676 @@
+{
+  "schema": 1,
+  "date": "2026-11-07",
+  "scope": "Native TSC frequency/interface preflight using fresh empty KVM objects; no KVM_RUN, provisioning, block-device access or SSI launch.",
+  "full_ssi_accepted": false,
+  "cross_physical_execution_verified": false,
+  "ceph_deployed": false,
+  "runs": [
+    {
+      "label": "esxi-control-final",
+      "exit": 0,
+      "report": {
+        "schema": 1,
+        "scope": "native-tsc-preflight-only",
+        "peers": [
+          {
+            "ssh": "lab-vm-a",
+            "probe": {
+              "schema": 1,
+              "collected_unix_ns": 1794006909241187124,
+              "system": "Linux",
+              "arch": "x86_64",
+              "kernel": "6.8.0-147-generic",
+              "machine_id_sha256": "ef1bc3eb2e781d2beb5a290e66540a9cf60048ce29e0bfa95c7bdd466e72f8e1",
+              "logical_cpus": 2,
+              "memory_bytes": 1007833088,
+              "api_version": 12,
+              "get_tsc_khz": 1,
+              "tsc_control": 0,
+              "adjust_clock": 14,
+              "tsc_adjust": true,
+              "vcpus": [
+                {
+                  "index": 0,
+                  "tsc_khz": 2394374,
+                  "offset_supported": true,
+                  "clock": 695426,
+                  "clock_flags": 0,
+                  "realtime": 0,
+                  "host_tsc": 0
+                },
+                {
+                  "index": 1,
+                  "tsc_khz": 2394374,
+                  "offset_supported": true,
+                  "clock": 798781,
+                  "clock_flags": 0,
+                  "realtime": 0,
+                  "host_tsc": 0
+                }
+              ],
+              "closed_fds": 4,
+              "errors": []
+            },
+            "error": null
+          },
+          {
+            "ssh": "lab-vm-b",
+            "probe": {
+              "schema": 1,
+              "collected_unix_ns": 1794006909108378496,
+              "system": "Linux",
+              "arch": "x86_64",
+              "kernel": "6.8.0-147-generic",
+              "machine_id_sha256": "527826a6829f26681be433b3f26fd89fb1c42808bb6c749eeff146e30dc1a1c4",
+              "logical_cpus": 2,
+              "memory_bytes": 1007833088,
+              "api_version": 12,
+              "get_tsc_khz": 1,
+              "tsc_control": 0,
+              "adjust_clock": 14,
+              "tsc_adjust": true,
+              "vcpus": [
+                {
+                  "index": 0,
+                  "tsc_khz": 2394374,
+                  "offset_supported": true,
+                  "clock": 1576723,
+                  "clock_flags": 0,
+                  "realtime": 0,
+                  "host_tsc": 0
+                },
+                {
+                  "index": 1,
+                  "tsc_khz": 2394374,
+                  "offset_supported": true,
+                  "clock": 1735433,
+                  "clock_flags": 0,
+                  "realtime": 0,
+                  "host_tsc": 0
+                }
+              ],
+              "closed_fds": 4,
+              "errors": []
+            },
+            "error": null
+          }
+        ],
+        "native_tsc_precheck_passed": true,
+        "blockers": [],
+        "physical_topology_verified": false,
+        "running_clock_verified": false,
+        "full_ssi_accepted": false,
+        "remaining": [
+          "空 VM 未执行客体，快照 flags 不能替代运行时可靠时钟检查",
+          "专用实验 VM、宿主故障域与回退记录",
+          "精确研究内核/QEMU 哈希、完整 CPU 模型交集与网络访问控制",
+          "实际配对启动、长期时钟漂移和跨物理 CPU/内存执行证据",
+          "持久存储、Ceph、Docker、数据库恢复与故障接管"
+        ]
+      },
+      "stderr": "",
+      "binary_sha256": "eab7ff8341b815d7165cbe958542838a55c485008207a859050832ca5a09121e"
+    },
+    {
+      "label": "cross-physical-final",
+      "exit": 2,
+      "report": {
+        "schema": 1,
+        "scope": "native-tsc-preflight-only",
+        "peers": [
+          {
+            "ssh": "lab-vm-a",
+            "probe": {
+              "schema": 1,
+              "collected_unix_ns": 1794006909560314674,
+              "system": "Linux",
+              "arch": "x86_64",
+              "kernel": "6.8.0-147-generic",
+              "machine_id_sha256": "ef1bc3eb2e781d2beb5a290e66540a9cf60048ce29e0bfa95c7bdd466e72f8e1",
+              "logical_cpus": 2,
+              "memory_bytes": 1007833088,
+              "api_version": 12,
+              "get_tsc_khz": 1,
+              "tsc_control": 0,
+              "adjust_clock": 14,
+              "tsc_adjust": true,
+              "vcpus": [
+                {
+                  "index": 0,
+                  "tsc_khz": 2394374,
+                  "offset_supported": true,
+                  "clock": 842427,
+                  "clock_flags": 0,
+                  "realtime": 0,
+                  "host_tsc": 0
+                },
+                {
+                  "index": 1,
+                  "tsc_khz": 2394374,
+                  "offset_supported": true,
+                  "clock": 950511,
+                  "clock_flags": 0,
+                  "realtime": 0,
+                  "host_tsc": 0
+                }
+              ],
+              "closed_fds": 4,
+              "errors": []
+            },
+            "error": null
+          },
+          {
+            "ssh": "physical-candidate",
+            "probe": {
+              "schema": 1,
+              "collected_unix_ns": 1794006909607477411,
+              "system": "Linux",
+              "arch": "x86_64",
+              "kernel": "7.0.0-43-generic",
+              "machine_id_sha256": "13480eadc6fd85d117e76a0de3334a5f4be486801a0de00e4b76c8e7a094d212",
+              "logical_cpus": 32,
+              "memory_bytes": 64973488128,
+              "api_version": 12,
+              "get_tsc_khz": 1,
+              "tsc_control": 0,
+              "adjust_clock": 14,
+              "tsc_adjust": true,
+              "vcpus": [
+                {
+                  "index": 0,
+                  "tsc_khz": 2095147,
+                  "offset_supported": true,
+                  "clock": 754343,
+                  "clock_flags": 0,
+                  "realtime": 0,
+                  "host_tsc": 0
+                },
+                {
+                  "index": 1,
+                  "tsc_khz": 2095147,
+                  "offset_supported": true,
+                  "clock": 831214,
+                  "clock_flags": 0,
+                  "realtime": 0,
+                  "host_tsc": 0
+                }
+              ],
+              "closed_fds": 4,
+              "errors": []
+            },
+            "error": null
+          }
+        ],
+        "native_tsc_precheck_passed": false,
+        "blockers": [
+          "原生 TSC 频率不一致或缺失: [2095147, 2394374] kHz；当前运行时只支持偏移校准，不支持频率转换"
+        ],
+        "physical_topology_verified": false,
+        "running_clock_verified": false,
+        "full_ssi_accepted": false,
+        "remaining": [
+          "空 VM 未执行客体，快照 flags 不能替代运行时可靠时钟检查",
+          "专用实验 VM、宿主故障域与回退记录",
+          "精确研究内核/QEMU 哈希、完整 CPU 模型交集与网络访问控制",
+          "实际配对启动、长期时钟漂移和跨物理 CPU/内存执行证据",
+          "持久存储、Ceph、Docker、数据库恢复与故障接管"
+        ]
+      },
+      "stderr": "",
+      "binary_sha256": "eab7ff8341b815d7165cbe958542838a55c485008207a859050832ca5a09121e"
+    },
+    {
+      "label": "duplicate-alias-final",
+      "exit": 2,
+      "report": {
+        "schema": 1,
+        "scope": "native-tsc-preflight-only",
+        "peers": [
+          {
+            "ssh": "duplicate-a",
+            "probe": {
+              "schema": 1,
+              "collected_unix_ns": 1794006909965634533,
+              "system": "Linux",
+              "arch": "x86_64",
+              "kernel": "7.0.0-43-generic",
+              "machine_id_sha256": "13480eadc6fd85d117e76a0de3334a5f4be486801a0de00e4b76c8e7a094d212",
+              "logical_cpus": 32,
+              "memory_bytes": 64973488128,
+              "api_version": 12,
+              "get_tsc_khz": 1,
+              "tsc_control": 0,
+              "adjust_clock": 14,
+              "tsc_adjust": true,
+              "vcpus": [
+                {
+                  "index": 0,
+                  "tsc_khz": 2095147,
+                  "offset_supported": true,
+                  "clock": 828393,
+                  "clock_flags": 0,
+                  "realtime": 0,
+                  "host_tsc": 0
+                },
+                {
+                  "index": 1,
+                  "tsc_khz": 2095147,
+                  "offset_supported": true,
+                  "clock": 894009,
+                  "clock_flags": 0,
+                  "realtime": 0,
+                  "host_tsc": 0
+                }
+              ],
+              "closed_fds": 4,
+              "errors": []
+            },
+            "error": null
+          },
+          {
+            "ssh": "duplicate-b",
+            "probe": {
+              "schema": 1,
+              "collected_unix_ns": 1794006909962064030,
+              "system": "Linux",
+              "arch": "x86_64",
+              "kernel": "7.0.0-43-generic",
+              "machine_id_sha256": "13480eadc6fd85d117e76a0de3334a5f4be486801a0de00e4b76c8e7a094d212",
+              "logical_cpus": 32,
+              "memory_bytes": 64973488128,
+              "api_version": 12,
+              "get_tsc_khz": 1,
+              "tsc_control": 0,
+              "adjust_clock": 14,
+              "tsc_adjust": true,
+              "vcpus": [
+                {
+                  "index": 0,
+                  "tsc_khz": 2095147,
+                  "offset_supported": true,
+                  "clock": 724788,
+                  "clock_flags": 0,
+                  "realtime": 0,
+                  "host_tsc": 0
+                },
+                {
+                  "index": 1,
+                  "tsc_khz": 2095147,
+                  "offset_supported": true,
+                  "clock": 791177,
+                  "clock_flags": 0,
+                  "realtime": 0,
+                  "host_tsc": 0
+                }
+              ],
+              "closed_fds": 4,
+              "errors": []
+            },
+            "error": null
+          }
+        ],
+        "native_tsc_precheck_passed": false,
+        "blockers": [
+          "peer1: 重复节点身份，不能把两个 SSH 别名当成两个节点"
+        ],
+        "physical_topology_verified": false,
+        "running_clock_verified": false,
+        "full_ssi_accepted": false,
+        "remaining": [
+          "空 VM 未执行客体，快照 flags 不能替代运行时可靠时钟检查",
+          "专用实验 VM、宿主故障域与回退记录",
+          "精确研究内核/QEMU 哈希、完整 CPU 模型交集与网络访问控制",
+          "实际配对启动、长期时钟漂移和跨物理 CPU/内存执行证据",
+          "持久存储、Ceph、Docker、数据库恢复与故障接管"
+        ]
+      },
+      "stderr": "",
+      "binary_sha256": "eab7ff8341b815d7165cbe958542838a55c485008207a859050832ca5a09121e"
+    },
+    {
+      "label": "unreachable-final",
+      "exit": 2,
+      "report": {
+        "schema": 1,
+        "scope": "native-tsc-preflight-only",
+        "peers": [
+          {
+            "ssh": "duplicate-a",
+            "probe": {
+              "schema": 1,
+              "collected_unix_ns": 1794006910328324449,
+              "system": "Linux",
+              "arch": "x86_64",
+              "kernel": "7.0.0-43-generic",
+              "machine_id_sha256": "13480eadc6fd85d117e76a0de3334a5f4be486801a0de00e4b76c8e7a094d212",
+              "logical_cpus": 32,
+              "memory_bytes": 64973488128,
+              "api_version": 12,
+              "get_tsc_khz": 1,
+              "tsc_control": 0,
+              "adjust_clock": 14,
+              "tsc_adjust": true,
+              "vcpus": [
+                {
+                  "index": 0,
+                  "tsc_khz": 2095147,
+                  "offset_supported": true,
+                  "clock": 769745,
+                  "clock_flags": 0,
+                  "realtime": 0,
+                  "host_tsc": 0
+                },
+                {
+                  "index": 1,
+                  "tsc_khz": 2095147,
+                  "offset_supported": true,
+                  "clock": 838876,
+                  "clock_flags": 0,
+                  "realtime": 0,
+                  "host_tsc": 0
+                }
+              ],
+              "closed_fds": 4,
+              "errors": []
+            },
+            "error": null
+          },
+          {
+            "ssh": "unreachable",
+            "probe": null,
+            "error": "preflight-1: command exited 255: ssh: connect to host 127.0.0.1 port 9: Connection refused\r\n"
+          }
+        ],
+        "native_tsc_precheck_passed": false,
+        "blockers": [
+          "peer1: SSH/探针失败: preflight-1: command exited 255: ssh: connect to host 127.0.0.1 port 9: Connection refused\r\n",
+          "peer1: 没有有效探针结果"
+        ],
+        "physical_topology_verified": false,
+        "running_clock_verified": false,
+        "full_ssi_accepted": false,
+        "remaining": [
+          "空 VM 未执行客体，快照 flags 不能替代运行时可靠时钟检查",
+          "专用实验 VM、宿主故障域与回退记录",
+          "精确研究内核/QEMU 哈希、完整 CPU 模型交集与网络访问控制",
+          "实际配对启动、长期时钟漂移和跨物理 CPU/内存执行证据",
+          "持久存储、Ceph、Docker、数据库恢复与故障接管"
+        ]
+      },
+      "stderr": "",
+      "binary_sha256": "eab7ff8341b815d7165cbe958542838a55c485008207a859050832ca5a09121e"
+    }
+  ],
+  "initial_runs": [
+    {
+      "label": "esxi-control",
+      "exit": 2,
+      "stderr": "",
+      "binary_sha256": "355e3bbae20f0be50a7008808d7c85b568e392249cb137154ce413de2e4bf879",
+      "collected_unix_ns": 1794006779881626000,
+      "report": {
+        "schema": 1,
+        "scope": "native-clock-preflight-only",
+        "peers": [
+          {
+            "ssh": "lab-vm-a",
+            "probe": {
+              "schema": 1,
+              "collected_unix_ns": 1794006779847760903,
+              "system": "Linux",
+              "arch": "x86_64",
+              "kernel": "6.8.0-147-generic",
+              "machine_id_sha256": "ef1bc3eb2e781d2beb5a290e66540a9cf60048ce29e0bfa95c7bdd466e72f8e1",
+              "logical_cpus": 2,
+              "memory_bytes": 1007833088,
+              "api_version": 12,
+              "get_tsc_khz": 1,
+              "tsc_control": 0,
+              "adjust_clock": 14,
+              "tsc_adjust": true,
+              "vcpus": [
+                {
+                  "index": 0,
+                  "tsc_khz": 2394374,
+                  "offset_supported": true,
+                  "clock": 1029160,
+                  "clock_flags": 0,
+                  "realtime": 0,
+                  "host_tsc": 0
+                },
+                {
+                  "index": 1,
+                  "tsc_khz": 2394374,
+                  "offset_supported": true,
+                  "clock": 1177943,
+                  "clock_flags": 0,
+                  "realtime": 0,
+                  "host_tsc": 0
+                }
+              ],
+              "closed_fds": 4,
+              "errors": []
+            },
+            "error": null
+          },
+          {
+            "ssh": "lab-vm-b",
+            "probe": {
+              "schema": 1,
+              "collected_unix_ns": 1794006779849888043,
+              "system": "Linux",
+              "arch": "x86_64",
+              "kernel": "6.8.0-147-generic",
+              "machine_id_sha256": "527826a6829f26681be433b3f26fd89fb1c42808bb6c749eeff146e30dc1a1c4",
+              "logical_cpus": 2,
+              "memory_bytes": 1007833088,
+              "api_version": 12,
+              "get_tsc_khz": 1,
+              "tsc_control": 0,
+              "adjust_clock": 14,
+              "tsc_adjust": true,
+              "vcpus": [
+                {
+                  "index": 0,
+                  "tsc_khz": 2394374,
+                  "offset_supported": true,
+                  "clock": 1080128,
+                  "clock_flags": 0,
+                  "realtime": 0,
+                  "host_tsc": 0
+                },
+                {
+                  "index": 1,
+                  "tsc_khz": 2394374,
+                  "offset_supported": true,
+                  "clock": 1354340,
+                  "clock_flags": 0,
+                  "realtime": 0,
+                  "host_tsc": 0
+                }
+              ],
+              "closed_fds": 4,
+              "errors": []
+            },
+            "error": null
+          }
+        ],
+        "native_clock_precheck_passed": false,
+        "blockers": [
+          "peer0: vCPU 0 缺少原生频率、偏移或可靠快照",
+          "peer0: vCPU 1 缺少原生频率、偏移或可靠快照",
+          "peer1: vCPU 0 缺少原生频率、偏移或可靠快照",
+          "peer1: vCPU 1 缺少原生频率、偏移或可靠快照"
+        ],
+        "physical_topology_verified": false,
+        "full_ssi_accepted": false,
+        "remaining": [
+          "专用实验 VM、宿主故障域与回退记录",
+          "精确研究内核/QEMU 哈希、完整 CPU 模型交集与网络访问控制",
+          "实际配对启动、长期时钟漂移和跨物理 CPU/内存执行证据",
+          "持久存储、Ceph、Docker、数据库恢复与故障接管"
+        ]
+      }
+    },
+    {
+      "label": "cross-physical",
+      "exit": 2,
+      "stderr": "",
+      "binary_sha256": "355e3bbae20f0be50a7008808d7c85b568e392249cb137154ce413de2e4bf879",
+      "collected_unix_ns": 1794006780286429000,
+      "report": {
+        "schema": 1,
+        "scope": "native-clock-preflight-only",
+        "peers": [
+          {
+            "ssh": "lab-vm-a",
+            "probe": {
+              "schema": 1,
+              "collected_unix_ns": 1794006780130035694,
+              "system": "Linux",
+              "arch": "x86_64",
+              "kernel": "6.8.0-147-generic",
+              "machine_id_sha256": "ef1bc3eb2e781d2beb5a290e66540a9cf60048ce29e0bfa95c7bdd466e72f8e1",
+              "logical_cpus": 2,
+              "memory_bytes": 1007833088,
+              "api_version": 12,
+              "get_tsc_khz": 1,
+              "tsc_control": 0,
+              "adjust_clock": 14,
+              "tsc_adjust": true,
+              "vcpus": [
+                {
+                  "index": 0,
+                  "tsc_khz": 2394374,
+                  "offset_supported": true,
+                  "clock": 1002964,
+                  "clock_flags": 0,
+                  "realtime": 0,
+                  "host_tsc": 0
+                },
+                {
+                  "index": 1,
+                  "tsc_khz": 2394374,
+                  "offset_supported": true,
+                  "clock": 1264244,
+                  "clock_flags": 0,
+                  "realtime": 0,
+                  "host_tsc": 0
+                }
+              ],
+              "closed_fds": 4,
+              "errors": []
+            },
+            "error": null
+          },
+          {
+            "ssh": "physical-candidate",
+            "probe": {
+              "schema": 1,
+              "collected_unix_ns": 1794006780249391923,
+              "system": "Linux",
+              "arch": "x86_64",
+              "kernel": "7.0.0-43-generic",
+              "machine_id_sha256": "13480eadc6fd85d117e76a0de3334a5f4be486801a0de00e4b76c8e7a094d212",
+              "logical_cpus": 32,
+              "memory_bytes": 64973488128,
+              "api_version": 12,
+              "get_tsc_khz": 1,
+              "tsc_control": 0,
+              "adjust_clock": 14,
+              "tsc_adjust": true,
+              "vcpus": [
+                {
+                  "index": 0,
+                  "tsc_khz": 2095147,
+                  "offset_supported": true,
+                  "clock": 756079,
+                  "clock_flags": 0,
+                  "realtime": 0,
+                  "host_tsc": 0
+                },
+                {
+                  "index": 1,
+                  "tsc_khz": 2095147,
+                  "offset_supported": true,
+                  "clock": 827766,
+                  "clock_flags": 0,
+                  "realtime": 0,
+                  "host_tsc": 0
+                }
+              ],
+              "closed_fds": 4,
+              "errors": []
+            },
+            "error": null
+          }
+        ],
+        "native_clock_precheck_passed": false,
+        "blockers": [
+          "peer0: vCPU 0 缺少原生频率、偏移或可靠快照",
+          "peer0: vCPU 1 缺少原生频率、偏移或可靠快照",
+          "peer1: vCPU 0 缺少原生频率、偏移或可靠快照",
+          "peer1: vCPU 1 缺少原生频率、偏移或可靠快照",
+          "原生 TSC 频率不一致或缺失: [2095147, 2394374] kHz；当前运行时只支持偏移校准，不支持频率转换"
+        ],
+        "physical_topology_verified": false,
+        "full_ssi_accepted": false,
+        "remaining": [
+          "专用实验 VM、宿主故障域与回退记录",
+          "精确研究内核/QEMU 哈希、完整 CPU 模型交集与网络访问控制",
+          "实际配对启动、长期时钟漂移和跨物理 CPU/内存执行证据",
+          "持久存储、Ceph、Docker、数据库恢复与故障接管"
+        ]
+      }
+    },
+    {
+      "label": "duplicate",
+      "exit": 1,
+      "stdout": "",
+      "stderr": "sshpool: SSH 目标不能重复\n",
+      "binary_sha256": "355e3bbae20f0be50a7008808d7c85b568e392249cb137154ce413de2e4bf879",
+      "collected_unix_ns": 1794006780308607000
+    }
+  ],
+  "initial_probe_issue": "Unstarted KVM snapshots have flags=0 even after ephemeral TSC MSR initialization. These are not running-clock failures; the final precheck covers frequency/interfaces only and explicitly leaves running_clock_verified=false. The QEMU runtime flags=14 gate is unchanged.",
+  "host_audit": {
+    "before": {
+      "exit": 0,
+      "stdout": "7.0.0-43-generic\n0285374513e040ce40256d74e2c930860824333616ecc34ea7d8948b15a2c2a1  /etc/machine-id\nabed64fc2985ebdcb7a37eba8bd1ffb39a4706adb46ea5032238e995794bb75f  /etc/fstab\n90c43ba40b497af0a5ed7e3655710731bce21cc1c9c2bdf9bd772fda69be5e39  /etc/default/grub\nf5f0b40412fd9a84b787d967efbcb576728d398e8d40d0d32c825004a04a4999  /etc/ssh/sshd_config\nloop0 66.8M loop\nloop1 260.3M loop\nloop2 614.5M loop\nloop3 16.5M loop\nloop4 1.5M loop\nloop5 402M loop\nloop6 4K loop\nloop7 20M loop\nloop8 18.8M loop\nloop9 828K loop\nloop10 11.8M loop\nloop11 50.1M loop\nloop12 91.7M loop\nloop13 1.5M loop\nloop14 14.2M loop\nloop15 18.4M loop\nsda 2.7T disk\nsdb 2.7T disk\n",
+      "stderr": ""
+    },
+    "after": {
+      "exit": 0,
+      "stdout": "7.0.0-43-generic\n0285374513e040ce40256d74e2c930860824333616ecc34ea7d8948b15a2c2a1  /etc/machine-id\nabed64fc2985ebdcb7a37eba8bd1ffb39a4706adb46ea5032238e995794bb75f  /etc/fstab\n90c43ba40b497af0a5ed7e3655710731bce21cc1c9c2bdf9bd772fda69be5e39  /etc/default/grub\nf5f0b40412fd9a84b787d967efbcb576728d398e8d40d0d32c825004a04a4999  /etc/ssh/sshd_config\nloop0 66.8M loop\nloop1 260.3M loop\nloop2 614.5M loop\nloop3 16.5M loop\nloop4 1.5M loop\nloop5 402M loop\nloop6 4K loop\nloop7 20M loop\nloop8 18.8M loop\nloop9 828K loop\nloop10 11.8M loop\nloop11 50.1M loop\nloop12 91.7M loop\nloop13 1.5M loop\nloop14 14.2M loop\nloop15 18.4M loop\nsda 2.7T disk\nsdb 2.7T disk\n",
+      "stderr": ""
+    },
+    "matching": true
+  },
+  "source_sha256": {
+    "src/ssi.rs": "273e8c3735eaf88c27a78e6c726d76bc86ad42ce6d91d6175acd3754c9629fd8",
+    "src/ssi_probe.py": "c2f068a8d0f5674fea4c72e44dab3c69adf8dbfa463af34c6a99d3a26fd121b1",
+    "src/main.rs": "9e33aa69568a46897fdfcc781956f743adc7578d205f2c1fad8eefbb1e14f0b3",
+    "src/lib.rs": "52d3ac13a65522409625021721dbd9cdcf22057e6daf477159db2ad75cb61fad"
+  },
+  "raw_artifact_sha256": {
+    "cross-physical-20261107.json": "3863a03f30af9398230f93406c6e966cac6855cf1ace2244e7ad3d12eb892ccf",
+    "cross-physical-final.json": "8b7e55995372775feda74ea4333ee9aacbac7774c0b7b03208686a91ccb50895",
+    "duplicate-20261107.json": "b8facc735cc469f1941f7e8c150292e3a89d974d1d0aa9f30235e1768ba0cb66",
+    "duplicate-alias-final.json": "00a1658762d576ca40e1f712705aaeab5b01ebf03e5f7430ffb3c20e2f08fe04",
+    "esxi-control-20261107.json": "b60c1a717aec93afb41f924bc394486af31957aaa9a861b9435b3a108282565d",
+    "esxi-control-final.json": "8f49b5b660a56924148e8588e05e222e9315f864ed79d651332eb87b8c8cf4a8",
+    "host-audit.json": "a514afc12181f979bcfe21d8ccfbce4b2e8d7bdf8e04707df6e2480ea3e9c2bd",
+    "tsc-init-diagnostic.json": "2d7a0fda118f25d83ed2de17facf8d80e9af79205e860f3124f70c356cff1192",
+    "unreachable-final.json": "87c4340090b0ac8d6dc70da81b71f8a25b88fda8b2698e7efad5ef26270a1399"
+  },
+  "remaining": [
+    "dedicated VM on the new physical host",
+    "native frequency conversion for unequal TSCs",
+    "full CPU model and physical topology verification",
+    "cross-physical SSI CPU/RAM proof",
+    "Ceph",
+    "Docker",
+    "database consistency and failover"
+  ]
+}

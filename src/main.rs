@@ -34,6 +34,13 @@ enum Action {
     },
     /// 只读探测已登记节点。
     Doctor,
+    /// 探测两个 SSH 目标的 SSI 原生 TSC 频率与接口；不安装软件或加入集群。
+    SsiPreflight {
+        #[arg(required = true, num_args = 2)]
+        ssh: Vec<String>,
+        #[arg(long)]
+        ssh_config: Option<PathBuf>,
+    },
     /// 从运行中的控制面读取节点状态。
     Status,
     /// 列出持久化任务记录。
@@ -144,6 +151,15 @@ async fn dispatch(cli: Cli) -> Result<i32> {
         }
         Action::Serve => serve(home).await?,
         Action::Node { command } => node_command(&home, command).await?,
+        Action::SsiPreflight { ssh, ssh_config } => {
+            let report = sshpool::ssi::preflight(ssh, ssh_config.as_deref()).await?;
+            println!("{}", serde_json::to_string_pretty(&report)?);
+            return Ok(if report.native_tsc_precheck_passed {
+                0
+            } else {
+                2
+            });
+        }
         Action::Doctor => {
             println!(
                 "{}",

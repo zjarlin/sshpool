@@ -6,7 +6,24 @@ SSH 能连接、KVM 能创建 VM，只说明设备有资格进入实验。当前
 
 ## 时钟与隔离先于加入
 
-该候选支持 `KVM_CAP_GET_TSC_KHZ`，不支持 `KVM_CAP_TSC_CONTROL`。现有 QEMU 候选要求执行节点使用相同的 TSC 频率；当前偏移校准不能解决不同频率的长期漂移。下一阶段先测各节点真实频率和 CPU 能力交集，再决定是否能使用共同频率或必须实现新的时间转换。不能去掉相等检查就宣称兼容。
+该候选支持 `KVM_CAP_GET_TSC_KHZ`，不支持 `KVM_CAP_TSC_CONTROL`。现有 QEMU 候选要求执行节点使用相同的 TSC 频率；当前偏移校准不能解决不同频率的长期漂移。现已核验实际频率，仍需实现并验证跨频率时间转换与完整 CPU 能力交集。不能去掉相等检查就宣称兼容。
+
+2026-11-07 已用 Rust CLI 完成真实接口预检。ESXi 两个实验 VM 的 `KVM_GET_TSC_KHZ` 均为 **2,394,374**；新物理候选为 **2,095,147**，双方 `KVM_CAP_TSC_CONTROL` 均为零。候选能免交互 SSH，KVM API 12、TSC_ADJUST 和偏移查询接口成立，但当前运行时无法配对这两个频率。**尚未在新物理机创建专用实验 VM，也未安装 Docker、QEMU、研究内核或 Ceph。** 不能把原生频率相近、逻辑 CPU 数量或 SSH 登录成功当作已接入。
+
+复现入口不需要 `sshpool init` 或 Worker 注册，目标使用本地已有的 SSH 别名：
+
+```sh
+cargo run --locked -- ssi-preflight lab-vm-a lab-vm-b
+cargo run --locked -- ssi-preflight lab-vm-a physical-candidate
+# 可使用已有的私有 OpenSSH 配置；主机密钥必须预先验证。
+sshpool ssi-preflight --ssh-config /path/to/private/ssh_config node-a node-b
+```
+
+退出码零只表示 `native_tsc_precheck_passed`；硬件前提或 SSH 检查失败返回二，无效参数返回非零。命令不修改节点配置，不安装密钥、不运行 sudo，不访问块设备或公司目录。探针通过标准 KVM 接口创建一台空 VM、两个 vCPU，查询后按子到父顺序关闭四个描述符；它没有调用 `KVM_RUN`。报告只展示各节点容量，不相加。相同 machine-id 的摘要用于拒绝重复目标；克隆 VM 需要先正确配置独立身份，不同摘要仍不能证明独立物理主机。
+
+[原始实测记录](evidence/ssi-physical-preflight-20261107.json) 包含同宿主对照、跨物理频率拒绝、两个别名实际指向同一主机的拒绝、单端 SSH 拒绝连接，以及候选上内核、选定配置文件哈希和设备列表的前后核对。它不证明整个文件系统逐字节不变。采集地址已脱敏；私有原始文件哈希保留。
+
+首版探针曾把空 VM 的 `clock_flags=0` 判为失败；向临时 vCPU 初始化 TSC MSR 后仍为零。空 VM 尚未执行，不具备运行中时钟验证语义。因此最终预检明确限定为频率和接口，报告 `running_clock_verified=false`；QEMU 实际启动时要求可靠快照 flags 包含 14 的检查保持原样。初版失败记录保留，不能拿预检通过替代真正的运行时快照、长期漂移或定时器验收。完整客体 CPU 模型交集也尚未验证，本轮仅读取 KVM 可提供的 TSC_ADJUST。
 
 实验应运行在专用、可回退的 Linux VM 中，限额覆盖 CPU、内存和磁盘占用，不把研究内核装到承载原有数据的物理宿主。记录 VM 与物理宿主的对应关系；同一机器上的多个 VM 仍只有一个物理故障域。
 
