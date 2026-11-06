@@ -1,0 +1,415 @@
+--- a/arch/x86/include/asm/kvm_host.h
++++ b/arch/x86/include/asm/kvm_host.h
+@@ -1772,6 +1772,8 @@
+ 	kconnection_t *dsm_listen_sock;
+ 	kconnection_t **dsm_conn_socks;
+ 	bool dsm_stopped;
++	/* 首次失败一旦锁存，本 VM 不再恢复页面服务。 */
++	int dsm_error;
+ 
+ 	u32 cluster_iplist_len;
+ 	char **cluster_iplist;
+--- a/arch/x86/kvm/dsm-util.h
++++ b/arch/x86/kvm/dsm-util.h
+@@ -36,9 +36,12 @@
+ 	int (*accept)(kconnection_t *listen_conn, kconnection_t **accept_conn,
+ 		      unsigned long flags);
+ 	int (*release)(kconnection_t *conn);
++	int (*abort)(kconnection_t *conn, int error);
+ };
+ 
+ extern struct kvm_network_ops network_ops;
++
++void kvm_dsm_fail(struct kvm *kvm, int error);
+ 
+ struct dsm_address {
+ 	const char *host;
+--- a/arch/x86/kvm/dsm.c
++++ b/arch/x86/kvm/dsm.c
+@@ -270,6 +270,8 @@
+ 		return -EINVAL;
+ 	if (!kvm->arch.dsm_enabled)
+ 		return ACC_ALL;
++	if (READ_ONCE(kvm->arch.dsm_error))
++		return READ_ONCE(kvm->arch.dsm_error);
+ 
+ 	/*
+ 	 * We should ignore private memslots since they are not really visible
+@@ -473,6 +475,23 @@
+ 	kvm->arch.cluster_iplist_len = 0;
+ }
+ 
++/* 通知标准 KVM 管理接口，并唤醒根线程统一中止全部连接。 */
++void kvm_dsm_fail(struct kvm *kvm, int error)
++{
++	struct task_struct *root;
++
++	if (WARN_ON_ONCE(error >= 0))
++		error = -EIO;
++	if (cmpxchg(&kvm->arch.dsm_error, 0, error))
++		return;
++	pr_err("kvm-dsm: node-%d failed with %d; VM cannot continue\n",
++	       kvm->arch.dsm_id, error);
++	kvm_vm_dead(kvm);
++	root = READ_ONCE(kvm->arch.dsm_thread);
++	if (root && root != current)
++		send_sig(SIGKILL, root, 1);
++}
++
+ static int kvm_dsm_threadfn(void *data)
+ {
+ 	struct kvm *kvm = data;
+@@ -480,11 +499,11 @@
+ 	struct dsm_conn *conn;
+ 	struct task_struct *thread;
+ 	LIST_HEAD(conn_list);
+-	int ret = 0, stopped, i, count = 0;
++	int ret = 0, stopped, i, count = 0, abort_error;
+ 	char comm[TASK_COMM_LEN];
+ 
+ 	allow_signal(SIGKILL);
+-	while (!kthread_should_stop()) {
++	while (!kthread_should_stop() && !READ_ONCE(kvm->arch.dsm_error)) {
+ 		ret = network_ops.accept(kvm->arch.dsm_listen_sock, &accept_sock, 0);
+ 		if (ret < 0) {
+ 			if (ret == -ERESTARTSYS)
+@@ -517,6 +536,19 @@
+ 		}
+ 	}
+ out:
++	if (ret && !READ_ONCE(kvm->arch.dsm_stopped))
++		kvm_dsm_fail(kvm, ret);
++	abort_error = READ_ONCE(kvm->arch.dsm_error) ?: -EPIPE;
++	/* 先中断网络，避免处理线程或 vCPU 持页锁等待永远不会到来的响应。 */
++	network_ops.abort(kvm->arch.dsm_listen_sock, abort_error);
++	for (i = 0; i < DSM_MAX_INSTANCES * 2; i++) {
++		kconnection_t *outgoing = smp_load_acquire(&kvm->arch.dsm_conn_socks[i]);
++
++		if (outgoing)
++			network_ops.abort(outgoing, abort_error);
++	}
++	list_for_each_entry(conn, &conn_list, link)
++		network_ops.abort(conn->sock, abort_error);
+ 	/* 先通知所有线程，避免先等待的线程依赖尚未收到退出信号的同伴。 */
+ 	list_for_each_entry(conn, &conn_list, link) {
+ 		for (i = 0; i < NDSM_CONN_THREADS; i++) {
+@@ -544,7 +576,7 @@
+ 		kfree(conn);
+ 	}
+ 	clean_couter();
+-	return ret;
++	return READ_ONCE(kvm->arch.dsm_error) ?: ret;
+ }
+ 
+ static int kvm_dsm_init(struct kvm *kvm, struct kvm_dsm_params *params)
+@@ -605,6 +637,7 @@
+ 	network_ops.listen = ktcp_listen;
+ 	network_ops.accept = ktcp_accept;
+ 	network_ops.release = ktcp_release;
++	network_ops.abort = ktcp_abort;
+ 	kvm->arch.dsm_conn_socks = kcalloc(DSM_MAX_INSTANCES * 2,
+ 					 sizeof(kconnection_t *), GFP_KERNEL);
+ 	if (!kvm->arch.dsm_conn_socks) {
+@@ -655,7 +688,7 @@
+ 	if (kvm->arch.dsm_enabled && kvm->arch.dsm_thread) {
+ 		pr_devel("kvm-dsm: node-%d stopping dsm server\n",
+ 			 kvm->arch.dsm_id);
+-		kvm->arch.dsm_stopped = true;
++		WRITE_ONCE(kvm->arch.dsm_stopped, true);
+ 		/* Ensure dsm_enabled is visible before checking dsm_thread */
+ 		smp_mb();
+ 		send_sig(SIGKILL, kvm->arch.dsm_thread, 1);
+--- a/arch/x86/kvm/ivy.c
++++ b/arch/x86/kvm/ivy.c
+@@ -97,15 +97,17 @@
+ 			 const struct dsm_request *req, void *data,
+ 			 struct dsm_response *resp)
+ {
+-	kconnection_t **conn_sock;
++	kconnection_t **conn_sock, *connection;
+ 	int ret;
+ 	tx_add_t tx_add = {
+ 		.txid = generate_txid(kvm, dest_id),
+ 	};
+ 	int retry_cnt = 0;
+ 
+-	if (kvm->arch.dsm_stopped)
+-		return -EINVAL;
++	if (READ_ONCE(kvm->arch.dsm_error))
++		return READ_ONCE(kvm->arch.dsm_error);
++	if (READ_ONCE(kvm->arch.dsm_stopped))
++		return -EPIPE;
+ 
+ 	if (!from_server)
+ 		conn_sock = &kvm->arch.dsm_conn_socks[dest_id];
+@@ -116,33 +118,46 @@
+ 	/*
+ 	 * Multiple vCPUs/servers may connect to a remote node simultaneously.
+ 	 */
+-	if (!*conn_sock) {
++	connection = smp_load_acquire(conn_sock);
++	if (!connection) {
+ 		mutex_lock(&kvm->arch.conn_init_lock);
++		if (READ_ONCE(kvm->arch.dsm_error) || READ_ONCE(kvm->arch.dsm_stopped)) {
++			ret = READ_ONCE(kvm->arch.dsm_error) ?: -EPIPE;
++			mutex_unlock(&kvm->arch.conn_init_lock);
++			return ret;
++		}
+ 		if (!*conn_sock) {
+ 			ret = kvm_dsm_connect(kvm, dest_id, conn_sock);
+ 			if (ret < 0) {
+ 				mutex_unlock(&kvm->arch.conn_init_lock);
+-				return ret;
++				goto done;
+ 			}
+ 		}
++		connection = *conn_sock;
+ 		mutex_unlock(&kvm->arch.conn_init_lock);
++	}
++	/* 中止扫描可能先于连接发布；发布者必须补做故障检查和关闭。 */
++	if (READ_ONCE(kvm->arch.dsm_error) || READ_ONCE(kvm->arch.dsm_stopped)) {
++		ret = READ_ONCE(kvm->arch.dsm_error) ?: -EPIPE;
++		network_ops.abort(connection, ret);
++		return ret;
+ 	}
+ 
+ 	pr_devel(
+ 		"dsm: kvm[%d] sent request[0x%x] to kvm[%d] req_type[%s] gfn[0x%llx,%d]",
+ 		kvm->arch.dsm_id, tx_add.txid, dest_id, req_desc[req->req_type],
+ 		req->gfn, req->is_smm);
+-	ret = network_ops.send(*conn_sock, (const char *)req,
++	ret = network_ops.send(connection, (const char *)req,
+ 			       sizeof(struct dsm_request), 0, &tx_add);
+ 	if (ret < 0)
+ 		goto done;
+ 
+ 	retry_cnt = 0;
+ 	if (req->req_type == DSM_REQ_INVALIDATE) {
+-		ret = network_ops.receive(*conn_sock, data, sizeof(u8), 0, &tx_add);
++		ret = network_ops.receive(connection, data, sizeof(u8), 0, &tx_add);
+ 	} else {
+ retry:
+-		ret = network_ops.receive(*conn_sock, data, PAGE_SIZE, SOCK_NONBLOCK,
++		ret = network_ops.receive(connection, data, PAGE_SIZE, SOCK_NONBLOCK,
+ 					  &tx_add);
+ 		if (ret == -EAGAIN) {
+ 			retry_cnt++;
+@@ -162,6 +177,8 @@
+ 		goto done;
+ 
+ done:
++	if (ret < 0 && !READ_ONCE(kvm->arch.dsm_stopped))
++		kvm_dsm_fail(kvm, ret);
+ 	pr_devel(
+ 		"dsm: kvm[%d] received response[0x%x] from kvm[%d] req_type[%s] gfn[0x%llx,%d], ret=%d",
+ 		kvm->arch.dsm_id, tx_add.txid, dest_id, req_desc[req->req_type],
+@@ -526,8 +543,10 @@
+ 
+ 	/* Size of the maximum buffer is PAGE_SIZE */
+ 	page = kmalloc(PAGE_SIZE, GFP_KERNEL);
+-	if (!page)
++	if (!page) {
++		kvm_dsm_fail(kvm, -ENOMEM);
+ 		return -ENOMEM;
++	}
+ 
+ 	while (1) {
+ 		tx_add_t tx_add = {
+@@ -678,6 +697,7 @@
+ 		ret = 0;
+ 	}
+ 	if (ret) {
++		kvm_dsm_fail(kvm, ret);
+ 		get_task_comm(comm, current);
+ 		pr_err("kvm[%d] %s exited server loop, error %d\n",
+ 		       kvm->arch.dsm_id, comm, ret);
+--- a/arch/x86/kvm/ktcp.c
++++ b/arch/x86/kvm/ktcp.c
+@@ -54,9 +54,26 @@
+ 	struct mutex rlock; /* protects recv buffer */
+ 	ktcp_msg_t recv_trans_buf[KTCP_RECV_BUF_SIZE];
+ 	struct socket *socket;
++	/* 不依赖收发锁，故障线程可以唤醒持锁的网络等待者。 */
++	int error;
+ };
+ 
+ #define KTCP_BUFFER_SIZE (sizeof(struct ktcp_hdr) + PAGE_SIZE)
++
++/* 锁存首个错误；shutdown 唤醒收发，但 socket 仍由原生命周期释放。 */
++int ktcp_abort(struct ktcp_cb *cb, int error)
++{
++	int first;
++
++	if (WARN_ON_ONCE(error >= 0))
++		error = -EIO;
++	first = cmpxchg(&cb->error, 0, error);
++	if (!first) {
++		kernel_sock_shutdown(cb->socket, SHUT_RDWR);
++		first = error;
++	}
++	return first;
++}
+ 
+ static bool ktcp_should_stop(void)
+ {
+@@ -69,7 +86,6 @@
+ {
+ 	struct kvec vec;
+ 	int len, written = 0, left = length;
+-	int ret;
+ 	struct msghdr msg = {
+ 		.msg_name = 0,
+ 		.msg_namelen = 0,
+@@ -95,8 +111,10 @@
+ 			goto repeat_send;
+ 	}
+ 
+-	ret = written != 0 ? written : len;
+-	return ret;
++	/* 已发送部分帧后出现错误，不能把正数短写伪装为完整请求。 */
++	if (left)
++		return len < 0 ? len : -ECONNRESET;
++	return written;
+ }
+ 
+ int ktcp_send(struct ktcp_cb *cb, const char *buffer, size_t length,
+@@ -108,9 +126,16 @@
+ 
+ 	if (length > PAGE_SIZE)
+ 		return -EMSGSIZE;
+-
++	ret = READ_ONCE(cb->error);
++	if (ret)
++		return ret;
+ 	if (mutex_lock_killable(&cb->slock))
+-		return -EINTR;
++		return ktcp_abort(cb, -EINTR);
++	ret = READ_ONCE(cb->error);
++	if (ret) {
++		mutex_unlock(&cb->slock);
++		return ret;
++	}
+ 	hdr.tx_add = *tx_add;
+ 	hdr.length = sizeof(hdr) + length;
+ 	/* 固定帧的未使用尾部必须清零，不能把旧堆内容发送给对端。 */
+@@ -123,9 +148,9 @@
+ 	memcpy(local_buffer + sizeof(hdr), buffer, length);
+ 	ret = __ktcp_send(cb->socket, local_buffer, KTCP_BUFFER_SIZE, flags);
+ 	if (ret < 0)
+-		goto out;
+-
+-out:
++		ret = ktcp_abort(cb, ret);
++	else if (READ_ONCE(cb->error))
++		ret = READ_ONCE(cb->error);
+ 	kfree(local_buffer);
+ 	mutex_unlock(&cb->slock);
+ 	return ret < 0 ? ret : hdr.length;
+@@ -247,16 +272,18 @@
+ 		return -EINVAL;
+ 
+ 	if (mutex_lock_killable(&cb->rlock))
+-		return -EINTR;
++		return ktcp_abort(cb, -EINTR);
+ repoll:
++	ret = READ_ONCE(cb->error);
++	if (ret)
++		goto out;
+ 	if (ktcp_should_stop()) {
+ 		ret = -EINTR;
+ 		goto out;
+ 	}
+ 	if (search_recv_buf(cb, tx_add->txid, &msg)) {
+ 		ret = build_ktcp_recv_output(msg, buffer, capacity, tx_add);
+-		mutex_unlock(&cb->rlock);
+-		return ret;
++		goto out;
+ 	}
+ 	local_buffer = kmalloc(KTCP_BUFFER_SIZE, GFP_KERNEL);
+ 	if (!local_buffer) {
+@@ -274,11 +301,16 @@
+ 							       (usec_sleep + 1);
+ 			usleep_range(usec_sleep, usec_sleep + 1);
+ 			if (mutex_lock_killable(&cb->rlock))
+-				return -EINTR;
++				return ktcp_abort(cb, -EINTR);
+ 			goto repoll;
+ 		}
+ 		kfree(local_buffer);
+ 		pr_err("%s: __ktcp_receive error, ret %d\n", __func__, ret);
++		goto out;
++	}
++	ret = READ_ONCE(cb->error);
++	if (ret) {
++		kfree(local_buffer);
+ 		goto out;
+ 	}
+ 	usec_sleep = 0;
+@@ -292,9 +324,9 @@
+ 	msg.txid = hdr.tx_add.txid;
+ 	if (hdr.tx_add.txid != tx_add->txid && tx_add->txid != 0xFF) {
+ 		while (!insert_into_recv_buf(cb, msg)) {
+-			if (ktcp_should_stop()) {
++			if (READ_ONCE(cb->error) || ktcp_should_stop()) {
+ 				kfree(local_buffer);
+-				ret = -EINTR;
++				ret = READ_ONCE(cb->error) ?: -EINTR;
+ 				goto out;
+ 			}
+ 			mutex_unlock(&cb->rlock);
+@@ -303,7 +335,7 @@
+ 			usleep_range(usec_sleep, usec_sleep + 1);
+ 			if (mutex_lock_killable(&cb->rlock)) {
+ 				kfree(local_buffer);
+-				return -EINTR;
++				return ktcp_abort(cb, -EINTR);
+ 			}
+ 		}
+ 		usec_sleep = 0;
+@@ -312,6 +344,8 @@
+ 		ret = build_ktcp_recv_output(msg, buffer, capacity, tx_add);
+ 	}
+ out:
++	if (ret < 0)
++		ret = ktcp_abort(cb, ret);
+ 	mutex_unlock(&cb->rlock);
+ 	return ret;
+ }
+@@ -361,7 +395,8 @@
+ 		goto out_socket;
+ 	}
+ 	cb->socket = conn_socket;
+-	*conn_cb = cb;
++	/* 根线程可无锁读取已完成初始化的连接，以中断网络等待。 */
++	smp_store_release(conn_cb, cb);
+ 	return 0;
+ out_socket:
+ 	sock_release(conn_socket);
+@@ -428,12 +463,18 @@
+ 	if (ret)
+ 		goto out_cb;
+ re_accept:
++	ret = READ_ONCE(listen_cb->error);
++	if (ret)
++		goto out_socket;
+ 	ret = listen_socket->ops->accept(listen_socket, accept_socket, &arg);
+ 	if (ret == -ERESTARTSYS && !ktcp_should_stop())
+ 		goto re_accept;
+ 	if (ret)
+ 		goto out_socket;
+ 	accept_socket->ops = listen_socket->ops;
++	ret = READ_ONCE(listen_cb->error);
++	if (ret)
++		goto out_socket;
+ 	cb->socket = accept_socket;
+ 	*accept_cb = cb;
+ 	return 0;
+--- a/arch/x86/kvm/ktcp.h
++++ b/arch/x86/kvm/ktcp.h
+@@ -42,4 +42,6 @@
+ 
+ int ktcp_release(struct ktcp_cb *conn_cb);
+ 
++int ktcp_abort(struct ktcp_cb *cb, int error);
++
+ #endif /* __KVM_X86_KTCP_H */

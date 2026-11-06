@@ -119,7 +119,7 @@ Feature: SSI 传输等待与启动资源生命周期
   # evidence: docs/evidence/ssi-request-safety-20261106.json
   @verified @p0
   Scenario: 请求接收在复制前检查容量并拒绝无效字段
-    Given 独占实验 VM 接收十五种长度类型与节点字段异常的完整帧
+    Given PF11 历史内核的独占实验 VM 接收十五种长度类型与节点字段异常的完整帧
     When 超过二十四字节容量或请求字段非法
     Then 返回 EMSGSIZE 或 EPROTO 且不获取 KVM SRCU 与页面锁
     And 每个处理器的临时页面分配和释放均有配对的真实跟踪事件
@@ -129,12 +129,36 @@ Feature: SSI 传输等待与启动资源生命周期
   # evidence: docs/evidence/ssi-request-safety-20261106.json
   @verified @p0
   Scenario: 同页锁等待者可在持锁者等待远端响应时单独取消
-    Given 真实处理器持有页面锁并等待受控对端的响应
+    Given PF11 历史内核中的真实处理器持有页面锁并等待受控对端的响应
     And 第二个处理器进入同一页面锁但尚未获得锁
     When 仅向第二个处理器定向发送取消信号
     Then 等待者在五百毫秒内返回 EINTR 并释放 SRCU 和临时页面
     And 等待者没有解锁自己未持有的锁且先于持锁者释放完成退出
     And 随后释放对端响应时持锁者仍返回完整正确页面
+
+  # evidence: docs/evidence/ssi-failure-propagation-20261106.json
+  @verified @p0
+  Scenario: 请求故障终止本地 VM 并唤醒已建立连接中的等待者
+    Given PF16 与 PF17 在两台独占 VM 各运行同一真实 KVM 探针和合成协议对端
+    And 本地写入正在等远端页面且另一连接的请求正在等缺失内存槽
+    When 注入非法请求类型超长请求或对端断开
+    Then PF16 基线仍等待而 PF17 在五百毫秒内向本地写入返回首次错误
+    And PF17 的十七个 DSM 线程在探针清理前全部退出
+    And KVM_RUN 与 VM 及 vCPU 管理接口均拒绝继续运行故障实例
+    And 正常页面响应的写入内容通过校验且管理接口仍可用
+    And 清理后才返回的错误不能作为故障传播证据
+    And 不把故障停止当作正常关闭握手自动恢复或节点接管
+
+  # evidence: docs/evidence/ssi-failure-propagation-20261106.json
+  @verified @p0
+  Scenario: 双节点执行错误能传播至 QEMU 并避免递归转储崩溃
+    Given 同一 PF17 内核分别搭配旧 QEMU 和故障退出候选运行真实双节点客体
+    When 完成 SSH 时钟内存与 SFTP 后向真实 KVM 监听器注入非法请求
+    Then 两端保留协议错误与对端断连并向 KVM 执行接口返回错误
+    And 旧版递归同步 CPU 状态并段错误的完整记录必须保留
+    And 新候选两端返回退出码一且没有同步递归段错误或强制终止
+    And 普通单节点回归返回零但双节点正常关闭仍因连接重置而未验收
+    And 失败退出不代表客体刷盘数据库恢复自动接管或跨物理机容量相加
 
   @research @p0
   Scenario: 更多异常事务与内部不变量分支也能安全回收

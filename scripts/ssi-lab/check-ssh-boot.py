@@ -23,6 +23,10 @@ def check_errors(log):
         r'Failed to (?:disable|set MAC)', r'EEPROM Checksum Is Not Valid',
         r'KVM_DSM_\w+ failed', r'access mismatch',
         r'failed to handle page fault', r'ktcp_receive.*error',
+        r'kvm-dsm:.*failed with -\d+', r'error: kvm run failed',
+        r'dsm.*exited (?:server loop, error|with) -\d+',
+        r'Failed to synchronize CPU state', r'segfault|segmentation fault',
+        r'dumped core', r'Distributed KVM failure; terminating this node',
         r'virtio: .*failed', r'RTNETLINK answers:',
     )
     for pattern in failures:

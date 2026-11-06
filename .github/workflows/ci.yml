@@ -37,6 +37,11 @@ jobs:
             --output "$RUNNER_TEMP/copyset-must-not-exist.json" || copyset_status=$?
           test "$copyset_status" -eq 2
           test ! -e "$RUNNER_TEMP/copyset-must-not-exist.json"
+          failure_status=0
+          python3 scripts/ssi-lab/probe-failure-propagation.py --require-kernel kernel-must-not-match \
+            --mode malformed --output "$RUNNER_TEMP/failure-must-not-exist.json" || failure_status=$?
+          test "$failure_status" -eq 2
+          test ! -e "$RUNNER_TEMP/failure-must-not-exist.json"
           cc -O2 -Wall -Wextra -Werror -static scripts/ssi-lab/probe-pvclock.c -o "$RUNNER_TEMP/probe-pvclock"
           cc -O2 -Wall -Wextra -Werror -static scripts/ssi-lab/probe-dsm-startup.c -o "$RUNNER_TEMP/probe-dsm-startup"
           cc -O2 -Wall -Wextra -Werror -static scripts/ssi-lab/probe-dsm-request.c -o "$RUNNER_TEMP/probe-dsm-request"

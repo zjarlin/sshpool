@@ -1,0 +1,14 @@
+--- a/accel/kvm/kvm-all.c
++++ b/accel/kvm/kvm-all.c
+@@ -3521,6 +3521,11 @@
+     bql_lock();
+ 
+     if (ret < 0) {
++        /* 分布式故障后状态不可恢复；转储会再次读取已失效的 KVM 状态。 */
++        if (ms->local_cpus != ms->smp.cpus) {
++            error_report("Distributed KVM failure; terminating this node");
++            exit(EXIT_FAILURE);
++        }
+         cpu_dump_state(cpu, stderr, CPU_DUMP_CODE);
+         vm_stop(RUN_STATE_INTERNAL_ERROR);
+     }

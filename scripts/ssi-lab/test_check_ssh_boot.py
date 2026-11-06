@@ -41,6 +41,15 @@ class CheckSshBootTest(unittest.TestCase):
             'rcu: INFO: rcu_preempt detected stalls on CPUs/tasks:',
             'WARNING: arch/x86/kvm/../../../virt/kvm/kvm_main.c:3523 at mark_page_dirty_in_slot',
             'kvm-dsm: node-0 failed to handle page fault on gfn[62896,0], error: -4',
+            'kvm-dsm: node-0 failed with -71; VM cannot continue',
+            'error: kvm run failed Input/output error',
+            'kvm[0] dsm-conn/0:4 exited server loop, error -71',
+            'kvm_dsm_stop: node-0 dsm root server exited with -71',
+            'qemu: Failed to synchronize CPU state: Failed to get vCPU events: Input/output error',
+            'qemu-system-x86[301]: segfault at 8 ip 00000123',
+            'Segmentation fault',
+            'timeout: the monitored command dumped core',
+            'qemu: Distributed KVM failure; terminating this node',
         )
         for error in errors:
             with self.subTest(error=error), self.assertRaises(ValueError):
