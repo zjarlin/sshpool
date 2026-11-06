@@ -1,0 +1,22 @@
+--- a/arch/x86/kvm/x86.c
++++ b/arch/x86/kvm/x86.c
+@@ -41,6 +41,7 @@
+ #endif
+ 
+ #include <linux/clocksource.h>
++#include <linux/hrtimer_rearm.h>
+ #include <linux/interrupt.h>
+ #include <linux/kvm.h>
+ #include <linux/fs.h>
+@@ -11649,6 +11650,11 @@
+ 	 * stat.exits increment will do nicely.
+ 	 */
+ 	kvm_before_interrupt(vcpu, KVM_HANDLING_IRQ);
++	/*
++	 * VM-Exit 以关中断现场分发定时器，IRQ 返回不会重装。
++	 * 在重新开启中断之前兑现本 CPU 的延期请求。
++	 */
++	hrtimer_rearm_deferred();
+ 	local_irq_enable();
+ 	++vcpu->stat.exits;
+ 	local_irq_disable();

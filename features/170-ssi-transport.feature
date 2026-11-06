@@ -1,6 +1,26 @@
 Feature: SSI 传输等待与启动资源生命周期
   先在真实 KVM 监听器和独占实验 VM 中验证，不将同一 ESXi 的结果当作跨物理机性能。
 
+  # evidence: docs/evidence/ssi-host-timers-20261106.json
+  @verified @p0
+  Scenario: 宿主定时器中断退出与延期重装使用同一时钟核查
+    Given 两节点完整记录定时器中断重装与 LAPIC 编程入口
+    When 分析同 CPU 的中断退出至首次重装间隔
+    Then 拒绝丢失记录并区分中断内重装和采样边界
+    And 以期限与设备指针匹配后续编程调用且不混用期限时钟与跟踪时钟
+    And LAPIC 函数入口仅证明编程尝试不能冒充中断已经送达
+    And 导出空间不足必须在启用跟踪前拒绝且损坏文件不得作为通过证据
+
+  # evidence: docs/evidence/ssi-host-timers-20261106.json
+  @partial @p0
+  Scenario: KVM 返回路径兑现宿主定时器延期重装
+    Given PF15 研究内核在重新开启中断前调用已有重装函数
+    When 两个独占节点运行相同客体与定时器负载
+    Then 完整跟踪核查延期缩短并独立执行三轮无跟踪测试
+    And 普通单节点虚拟机仍须单独通过回归
+    And RTC 与 watchdog 告警和 DSM 关闭错误仍阻止完整工作区验收
+    And 本项不代表持久 I/O 容器数据库或跨物理机故障接管已经完成
+
   # evidence: docs/evidence/ssi-vcpu-residency-20261106.json
   @verified @p0
   Scenario: KVM 进入退出区间与宿主中断使用完整记录核查

@@ -85,3 +85,7 @@ ninja -C GVM-qemu/build -j2 qemu-system-x86_64
 在 PF11 后应用 `kernel-dsm-pause-exit.patch`，单独构建 `-sshpool-gvm-pf14`。诊断开关 `kvm_intel.dsm_force_pause_exit=1` 默认关闭，仅针对已启用 DSM、没有 PLE 且支持 PAUSE 拦截的 VM。它显式覆盖该 VM 的禁止 PAUSE 退出策略，在进入客体前设置控制位；退出处理使用实际 CPL，覆盖用户态指令。普通 VM 不启用此路径。
 
 PF12、PF13 是未实际启用拦截的中间候选，不是补丁依赖。公开补丁直接从 PF11 重放到 PF14。实验包括真实退出事件、用户态进度、同内核开关对照与无跟踪运行，并保留缓冲溢出、建连超时和工作区未通过的结果。证据、额外退出开销及边界见 [KVM 停顿实验](../../../docs/ssi-vcpu-residency.md)。默认安装流程不自动应用此候选。
+
+## PF15：宿主定时器延期重装
+
+在 PF14 后应用 `kernel-dsm-host-timer-rearm.patch`，单独构建 `-sshpool-gvm-pf15`。它在 x86 KVM 返回、重新开启中断前调用已有 `hrtimer_rearm_deferred()`，影响该配置下的普通 KVM 返回路径，因此另有单节点回归；不是只针对 DSM 的开关。两侧完整跟踪与两次无跟踪三轮时钟测试见 [宿主定时器实验](../../../docs/ssi-host-timers.md)。RTC、watchdog、关闭协议以及所有业务持久化门槛仍未完成。默认安装流程不应用此候选，不应部署到业务宿主。
