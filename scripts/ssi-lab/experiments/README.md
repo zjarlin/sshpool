@@ -79,3 +79,9 @@ ninja -C GVM-qemu/build -j2 qemu-system-x86_64
 ## PF11：请求容量与可取消页锁
 
 在 PF8 启动、PF9 销毁顺序、PF10 缺失槽取消补丁之后应用 `kernel-dsm-request-safety.patch`。它为接收调用传入实际容量、在复制前拒绝超长载荷、验证请求字段并统一回收异常分支；接收处理器使用可取消页锁。两个节点的直接异常请求和同页锁竞争通过独立探针，事务缓存和超长失效响应等分支尚未完成动态验证。精确构建来源与限制见 [请求安全实验](../../../docs/ssi-request-safety.md)。
+
+## PF14：无 PLE 宿主上的显式 PAUSE 拦截
+
+在 PF11 后应用 `kernel-dsm-pause-exit.patch`，单独构建 `-sshpool-gvm-pf14`。诊断开关 `kvm_intel.dsm_force_pause_exit=1` 默认关闭，仅针对已启用 DSM、没有 PLE 且支持 PAUSE 拦截的 VM。它显式覆盖该 VM 的禁止 PAUSE 退出策略，在进入客体前设置控制位；退出处理使用实际 CPL，覆盖用户态指令。普通 VM 不启用此路径。
+
+PF12、PF13 是未实际启用拦截的中间候选，不是补丁依赖。公开补丁直接从 PF11 重放到 PF14。实验包括真实退出事件、用户态进度、同内核开关对照与无跟踪运行，并保留缓冲溢出、建连超时和工作区未通过的结果。证据、额外退出开销及边界见 [KVM 停顿实验](../../../docs/ssi-vcpu-residency.md)。默认安装流程不自动应用此候选。

@@ -27,6 +27,7 @@ jobs:
           "$RUNNER_TEMP/guest-io-order" || probe_status=$?
           test "$probe_status" -eq 2
           cc -O2 -Wall -Wextra -Werror -static scripts/ssi-lab/guest-clock.c -o "$RUNNER_TEMP/guest-clock"
+          cc -O2 -Wall -Wextra -Werror -static scripts/ssi-lab/guest-pause.c -o "$RUNNER_TEMP/guest-pause"
           cc -O2 -Wall -Wextra -Werror -static scripts/ssi-lab/probe-pvclock.c -o "$RUNNER_TEMP/probe-pvclock"
           cc -O2 -Wall -Wextra -Werror -static scripts/ssi-lab/probe-dsm-startup.c -o "$RUNNER_TEMP/probe-dsm-startup"
           cc -O2 -Wall -Wextra -Werror -static scripts/ssi-lab/probe-dsm-request.c -o "$RUNNER_TEMP/probe-dsm-request"

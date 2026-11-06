@@ -1,0 +1,64 @@
+--- a/arch/x86/kvm/vmx/vmx.c
++++ b/arch/x86/kvm/vmx/vmx.c
+@@ -155,6 +155,11 @@
+ /* Guest_tsc -> host_tsc conversion requires 64-bit division.  */
+ static int __read_mostly cpu_preemption_timer_multi;
+ static bool __read_mostly enable_preemption_timer = 1;
++#ifdef CONFIG_KVM_DSM
++/* 仅在独占实验节点显式启用；普通 VM 和具备 PLE 的宿主保持原路径。 */
++static bool __read_mostly dsm_force_pause_exit;
++module_param(dsm_force_pause_exit, bool, 0444);
++#endif
+ #ifdef CONFIG_X86_64
+ module_param_named(preemption_timer, enable_preemption_timer, bool, S_IRUGO);
+ #endif
+@@ -6090,22 +6095,13 @@
+ 	return 1;
+ }
+ 
+-/*
+- * Indicate a busy-waiting vcpu in spinlock. We do not enable the PAUSE
+- * exiting, so only get here on cpu with PAUSE-Loop-Exiting.
+- */
++/* PLE 仅捕获内核循环；显式 PAUSE 拦截也会捕获用户态，必须使用真实 CPL。 */
+ static int handle_pause(struct kvm_vcpu *vcpu)
+ {
+-	if (!kvm_pause_in_guest(vcpu->kvm))
++	if (cpu_has_vmx_ple() && !kvm_pause_in_guest(vcpu->kvm))
+ 		grow_ple_window(vcpu);
+ 
+-	/*
+-	 * Intel sdm vol3 ch-25.1.3 says: The "PAUSE-loop exiting"
+-	 * VM-execution control is ignored if CPL > 0. OTOH, KVM
+-	 * never set PAUSE_EXITING and just set PLE if supported,
+-	 * so the vcpu must be CPL=0 if it gets a PAUSE exit.
+-	 */
+-	kvm_vcpu_on_spin(vcpu, true);
++	kvm_vcpu_on_spin(vcpu, vmx_get_cpl(vcpu) == 0);
+ 	return kvm_skip_emulated_instruction(vcpu);
+ }
+ 
+@@ -7556,6 +7552,23 @@
+ 		return EXIT_FASTPATH_NONE;
+ 	}
+ 
++#ifdef CONFIG_KVM_DSM
++	/*
++	 * DSM 在 vCPU 创建后才启用。无 PLE 时 vmx_vm_init 自动禁用 PAUSE
++	 * 退出；本诊断开关显式覆盖该策略，只影响已启用 DSM 的 VM。
++	 */
++	if (dsm_force_pause_exit && vcpu->kvm->arch.dsm_enabled &&
++	    !cpu_has_vmx_ple() &&
++	    !(exec_controls_get(vmx) & CPU_BASED_PAUSE_EXITING)) {
++		if (vmcs_config.cpu_based_exec_ctrl & CPU_BASED_PAUSE_EXITING) {
++			exec_controls_setbit(vmx, CPU_BASED_PAUSE_EXITING);
++			pr_info_once("kvm-dsm: PAUSE interception enabled without PLE\n");
++		} else {
++			pr_warn_once("kvm-dsm: requested PAUSE interception is unavailable\n");
++		}
++	}
++#endif
++
+ 	trace_kvm_entry(vcpu, force_immediate_exit);
+ 
+ 	if (vmx->ple_window_dirty) {

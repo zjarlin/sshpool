@@ -1,6 +1,25 @@
 Feature: SSI 传输等待与启动资源生命周期
   先在真实 KVM 监听器和独占实验 VM 中验证，不将同一 ESXi 的结果当作跨物理机性能。
 
+  # evidence: docs/evidence/ssi-vcpu-residency-20261106.json
+  @verified @p0
+  Scenario: KVM 进入退出区间与宿主中断使用完整记录核查
+    Given 两个独占实验节点记录目标 vCPU 以及宿主调度和中断事件
+    When 分析 KVM 进入退出与本地定时器间隔
+    Then 检查线程身份全局时钟事件总数和每 CPU 丢失计数
+    And 区间包含 KVM 准备和返回代码且不能直接当作有效客体计算时间
+    And 开关产生更多事件导致缓冲溢出时必须拒绝该次时间分析
+    And 缩短诊断窗口不改变三轮无跟踪运行的原时钟验收门槛
+
+  # evidence: docs/evidence/ssi-vcpu-residency-20261106.json
+  @partial @p0
+  Scenario: 无 PLE 实验宿主可显式强制 DSM 客体从 PAUSE 返回
+    Given 默认关闭的实验开关和缺少 PLE 的两个独占 x86 VMX 节点
+    When 对同一候选内核分别开启和关闭该开关
+    Then 仅开启时捕获真实 PAUSE 退出且四个客体 vCPU 的用户态探针能继续执行
+    And 记录开关对 KVM 区间和调度等待的影响及额外退出开销
+    And 仍需解决剩余时钟关闭与性能问题后才能通过完整 SSI 验收
+
   # evidence: docs/evidence/ssi-latency-20261106.json
   @verified @p0
   Scenario: 页面交接计时排除管理 SSH 且可以独立复核
