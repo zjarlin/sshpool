@@ -23,6 +23,8 @@ TCP 版本不能与共享内存分支混配。使用上游源码地址，不使�
 
 `probe-request-safety.py` 在 PF11 上发送十五类异常请求，并用受控对端制造同页锁竞争；`check-request-safety.py` 从真实分配/释放、锁、SRCU 和线程事件重算验收。先看 [异常请求与页面锁实验](../../docs/ssi-request-safety.md)，再运行探针；不能把异常超长帧发送给未修复的旧内核。
 
+`probe-dsm-latency.c` / `.py` 在真实 KVM 页面交接的 ioctl 内计时，`trace-dsm-latency.py` 配对页面锁和网络调用，`check-dsm-latency.py` 重算顺序/并发数据与耗时。附加 QEMU 的窗口另记录客体缺页位置，入口和返回落在窗口外的调用单独报告。使用与限制见 [延迟定位](../../docs/ssi-latency.md)；不得将空闲监听等待当作响应延迟。
+
 ```sh
 git init GVM-kernel
 git -C GVM-kernel remote add origin https://github.com/GiantVM/GVM-kernel.git

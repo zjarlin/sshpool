@@ -1,6 +1,25 @@
 Feature: SSI 传输等待与启动资源生命周期
   先在真实 KVM 监听器和独占实验 VM 中验证，不将同一 ESXi 的结果当作跨物理机性能。
 
+  # evidence: docs/evidence/ssi-latency-20261106.json
+  @verified @p0
+  Scenario: 页面交接计时排除管理 SSH 且可以独立复核
+    Given 单节点对照与两个实验 VM 都创建没有 vCPU 的真实 KVM 页面
+    When 执行一百六十次顺序操作和每节点两个线程各二百五十六次写入
+    Then 每次 ioctl 使用工作进程内的单调时钟计时并按线程对应内核入口和返回
+    And 各次顺序读取内容正确且并发结束后各节点得到相同的完整最终页面
+    And 验收重新计算页面校验和与所有耗时而不采信通过标记
+    And 所有调用配对且跟踪没有丢失并确认工作进程完成关闭
+    And 空闲监听等待单独报告且不能当作响应延迟
+
+  @partial @p0
+  Scenario: 完整客体的慢取页可以定位但尚未消除
+    Given 两个实验 VM 上运行同一未经修改的 Linux 客体
+    When 在应用时钟采样期间同时记录页面获取网络与锁调用
+    Then 报告热点页面与函数等待并区分测量窗口边缘的不完整调用
+    And 两侧窗口在导出任一大文件之前同时停止避免导出污染对端
+    And 仍须在无跟踪运行中消除秒级停顿与 watchdog 告警后才通过完整工作区验收
+
   # evidence: docs/evidence/ssi-receive-probes-20261106.json
   @verified @p0
   Scenario: 空闲连接和未完整接收的帧都能让出 CPU
