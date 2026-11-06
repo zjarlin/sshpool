@@ -177,4 +177,8 @@ timeout --kill-after=5 45 python3 scripts/ssi-lab/probe-dsm-device.py \
 
 `probe-pin-release.py` 只允许独占 PF23 对照或 PF24 候选，使用 `--mode dependency|pending|pending-write|empty|rollback|duplicate --require-kernel <精确内核名> --output <新文件>`。PF23 只允许 dependency，PF24 覆盖全部六种场景。`check-pin-release.py <记录.json>` 核对解除先于远端响应、暂存保护、回滚、重复解除与活动操作的槽保护，使用方式和失败记录见 [解除进展实验](../../docs/ssi-pin-release.md)。
 
+## QEMU 设备映射失败
+
+`probe-qemu-map.py` 对显式启用诊断的暂停双节点实例执行真实 QEMU map/unmap，捕获 KVM 原生 ioctl；`check-qemu-map.py <记录.json>` 核对返回、控制流、引用与失败退出。需要精确 PF24 内核、实际 PID、QMP 路径和二进制哈希。普通候选不含诊断入口。先读 [映射失败实验](../../docs/ssi-qemu-map-failure.md)，不能把直接 API 诊断当成真实设备 reset/unrealize 或完整关闭验收。
+
 探针使用回环 37710/37711，临时例外必须同时允许回环目标端口和源端口，避免随机客户端端口落入实验防火墙受保护段而拦截返回包。仅允许 `lo` 与 `127.0.0.0/8`，执行前核对所有方向的 TCP 状态为空，执行后恢复精确原规则。它不需要外网或业务网段的新权限，不应在业务宿主运行。

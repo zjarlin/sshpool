@@ -139,3 +139,9 @@ PF22 后应用 `kernel-dsm-pin-lifecycle.patch`，构建独立 `-sshpool-gvm-pf2
 ## PF24：等待取页时解除旧引用
 
 PF23 后应用 `kernel-dsm-pin-release.patch`，单独构建 `-sshpool-gvm-pf24`。用独立引用锁与暂存计数保护整段提交，解除路径避开持有网络等待的全局 DSM 锁和页面锁；在途固定令牌在引用为零时也保护槽。补丁为 GPL-2.0-only，ABI 不变，默认流程不应用。两节点对照、六类探针和未完成的全程取消与设备关闭见 [解除进展实验](../../../docs/ssi-pin-release.md)。
+
+## QEMU 的映射与解除失败
+
+在路由排空候选后应用 `qemu-dsm-map-failure.patch`，另存普通候选运行时；宿主保持 PF24。真实 KVM 固定或解除失败后平衡 QEMU 区域引用、直接写 stderr 并失败退出，不继续交出成功映射或清理结果。它不执行数据库安全关闭，也不提供接管。
+
+`qemu-map-probe.patch` 只用于独立诊断变体，增加受环境变量、内核和暂停拓扑限制的 HMP 命令；普通候选必须不含此入口。两补丁均为 GPL-2.0-or-later，不进入默认安装路径。实际 ioctl、保留的失败记录、完整客体回归和边界见 [映射失败实验](../../../docs/ssi-qemu-map-failure.md)。

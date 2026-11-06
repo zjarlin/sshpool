@@ -122,7 +122,8 @@ Feature: SSI 设备访问的脏页和反向映射
     And 取消与超时释放本次资源但保留既有引用和首次错误
     And 全部设备后台任务停止后才允许最终 DSM 关闭确认
 
-  @planned @p0
+  # evidence: docs/ssi-qemu-map-failure.md
+  @partial @p0
   Scenario: 设备映射不能把固定失败当作可用内存
     Given QEMU 的设备映射已经找到 RAM 但真实 KVM 固定返回错误
     When 设备申请映射或清理时解除固定失败
@@ -130,3 +131,14 @@ Feature: SSI 设备访问的脏页和反向映射
     And 平衡内存区域引用并向调用者保留失败状态
     And 解除失败阻止正常关闭通过而不是只打印日志
     And 用真实设备接口对照验证失败回滚与普通映射成功路径
+
+  # evidence: docs/evidence/ssi-qemu-map-failure-20261106.json
+  @verified @p0
+  Scenario: 真实 QEMU 地址空间 API 遇到固定错误时明确失败停止
+    Given 两台 PF24 实验 VM 分别复现旧 QEMU 在映射和解除失败后继续返回
+    When 暂停的诊断实例通过真实 KVM 产生 ESHUTDOWN 或 EINVAL
+    Then 候选的读映射和跨页写映射失败都不返回成功指针
+    And 读写解除失败保留 stderr 错误并以失败码退出
+    And QEMU 区域引用平衡且正常读映射与解除仍成功
+    And 实际 ioctl 参数返回控制流退出状态与无漏采跟踪相互一致
+    And 不把直接 API 诊断当作真实设备复位完整关闭或接管验收

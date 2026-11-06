@@ -1,0 +1,170 @@
+--- a/monitor/hmp-cmds.c
++++ b/monitor/hmp-cmds.c
+@@ -458,3 +458,5 @@
+     monitor_printf(mon, "DTB dumped to '%s'\n", filename);
+ }
+ #endif
++
++#include "ssi-map-probe.inc"
+--- a/include/monitor/hmp.h
++++ b/include/monitor/hmp.h
+@@ -16,6 +16,8 @@
+ 
+ #include "qemu/readline.h"
+ #include "qapi/qapi-types-common.h"
++
++void hmp_ssi_map_probe(Monitor *mon, const QDict *qdict);
+ 
+ bool hmp_handle_error(Monitor *mon, Error *err);
+ void hmp_help_cmd(Monitor *mon, const char *name);
+--- a/hmp-commands.hx
++++ b/hmp-commands.hx
+@@ -1888,3 +1888,11 @@
+   List event channels in the guest
+ ERST
+ #endif
++
++    {
++        .name       = "ssi_map_probe",
++        .args_type  = "mode:i",
++        .params     = "mode",
++        .help       = "隔离实验的真实 DSM 映射错误探针",
++        .cmd        = hmp_ssi_map_probe,
++    },
+--- /dev/null
++++ b/monitor/ssi-map-probe.inc
+@@ -0,0 +1,134 @@
++/* SPDX-License-Identifier: GPL-2.0-or-later */
++/* 仅供隔离研究运行时：调用真实 QEMU 映射和 KVM ioctl，不伪造返回值。 */
++#include "system/kvm.h"
++#include "system/runstate.h"
++#include "qemu/units.h"
++#include <linux/kvm.h>
++#include "hw/boards.h"
++#include <sys/utsname.h>
++
++#define SSI_MAP_PIN_STATUS 0x8020aef9
++#define SSI_MAP_SEAL 0x4018aef6
++
++static Object *ssi_map_owner;
++static uint32_t ssi_map_owner_before;
++static int ssi_map_mode;
++static bool ssi_map_returned;
++
++static void ssi_map_exit_record(void)
++{
++    fprintf(stderr, "SSI_MAP {\"phase\":\"exit\",\"mode\":%d,"
++            "\"returned\":%s,\"owner_before\":%u,\"owner_after\":%u}\n",
++            ssi_map_mode, ssi_map_returned ? "true" : "false",
++            ssi_map_owner_before, qatomic_read(&ssi_map_owner->ref));
++}
++
++static void ssi_map_status(const char *phase)
++{
++    struct {
++        uint32_t version, active_ops;
++        uint64_t read_refs, write_refs;
++        int32_t error;
++        uint32_t reserved;
++    } status = { 0 };
++    int ret = kvm_vm_ioctl(kvm_state, SSI_MAP_PIN_STATUS, &status);
++
++    fprintf(stderr, "SSI_MAP {\"phase\":\"%s\",\"ret\":%d,\"version\":%u,"
++            "\"active_ops\":%u,\"read_refs\":%" PRIu64 ","
++            "\"write_refs\":%" PRIu64 ",\"error\":%d,\"reserved\":%u}\n",
++            phase, ret, status.version, status.active_ops, status.read_refs,
++            status.write_refs, status.error, status.reserved);
++    if (ret || status.version != 1 || status.error || status.reserved) {
++        exit(2);
++    }
++}
++
++void hmp_ssi_map_probe(Monitor *mon, const QDict *qdict)
++{
++    MachineState *ms = MACHINE(qdev_get_machine());
++    struct utsname system;
++    const char *enabled = getenv("SSHPOOL_LAB_MAP_PROBE");
++    hwaddr addr = 32 * MiB, translated, length = 8192;
++    MemoryRegion *mr;
++    bool is_dsm = false, write;
++    void *ptr;
++    int ret;
++
++    ssi_map_mode = qdict_get_int(qdict, "mode");
++    if (!enabled || strcmp(enabled, "1") || uname(&system) ||
++        strcmp(system.release, "7.1.0-rc3-sshpool-gvm-pf24") ||
++        !kvm_enabled() || runstate_is_running() ||
++        ms->smp.cpus != 4 || ms->local_cpus != 2 || ms->shm_path ||
++        ssi_map_mode < 0 || ssi_map_mode > 4 || ssi_map_owner) {
++        monitor_printf(mon, "只允许独占 PF24 上暂停的双节点诊断实例，且每个进程只运行一次\n");
++        return;
++    }
++    write = ssi_map_mode == 2 || ssi_map_mode == 4;
++    mr = address_space_translate(&address_space_memory, addr, &translated,
++                                 &length, write, MEMTXATTRS_UNSPECIFIED);
++    if (!memory_region_is_ram(mr) || !mr->owner || length < 8192) {
++        monitor_printf(mon, "诊断地址不是完整的有所有者 RAM\n");
++        return;
++    }
++    ssi_map_owner = mr->owner;
++    ssi_map_owner_before = qatomic_read(&ssi_map_owner->ref);
++    if (atexit(ssi_map_exit_record)) {
++        exit(2);
++    }
++    fprintf(stderr, "SSI_MAP {\"phase\":\"begin\",\"mode\":%d,\"write\":%s,"
++            "\"owner_before\":%u,\"pid\":%d}\n", ssi_map_mode,
++            write ? "true" : "false", ssi_map_owner_before, getpid());
++    ssi_map_status("initial_status");
++    if (ssi_map_mode == 1 || ssi_map_mode == 2) {
++        struct {
++            uint32_t version, flags;
++            uint64_t generation;
++            uint32_t timeout_ms, reserved;
++        } request = { 1, 0, 0x534449002025ULL, 1000, 0 };
++        ret = kvm_vm_ioctl(kvm_state, SSI_MAP_SEAL, &request);
++        fprintf(stderr, "SSI_MAP {\"phase\":\"seal\",\"ret\":%d}\n", ret);
++        if (ret) {
++            exit(2);
++        }
++    }
++    length = write ? 8192 : 4096;
++    ptr = address_space_map(&address_space_memory, addr, &length, write,
++                            MEMTXATTRS_UNSPECIFIED, true, &is_dsm);
++    fprintf(stderr, "SSI_MAP {\"phase\":\"map_return\",\"pointer\":%s,"
++            "\"length\":%" PRIu64 ",\"dsm\":%s,\"owner_after\":%u}\n",
++            ptr ? "true" : "false", length, is_dsm ? "true" : "false",
++            qatomic_read(&ssi_map_owner->ref));
++    if (!ptr || !is_dsm || length != (write ? 8192 : 4096)) {
++        exit(2);
++    }
++    if (ssi_map_mode == 1 || ssi_map_mode == 2) {
++        /* 对照证明错误返回后只撤销 QEMU 引用；没有成功的 KVM 固定可解除。 */
++        ssi_map_returned = true;
++        memory_region_unref(mr);
++        ssi_map_status("final_status");
++        exit(0);
++    }
++    ssi_map_status("mapped_status");
++    if (ssi_map_mode == 3 || ssi_map_mode == 4) {
++        struct kvm_dsm_mempin release = {
++            .write = write,
++            .unpin = true,
++            .host_virt_addr = (__u64)ptr,
++            .length = length,
++        };
++        /* 先用真实 ioctl 消费引用，再让真实设备解除路径遇到 EINVAL。 */
++        ret = kvm_vm_ioctl(kvm_state, KVM_DSM_MEMPIN, &release);
++        fprintf(stderr, "SSI_MAP {\"phase\":\"consume_pin\",\"ret\":%d}\n", ret);
++        if (ret) {
++            exit(2);
++        }
++        ssi_map_status("consumed_status");
++    }
++    address_space_unmap(&address_space_memory, ptr, length, write, 0, true);
++    ssi_map_returned = true;
++    fprintf(stderr, "SSI_MAP {\"phase\":\"unmap_return\",\"owner_after\":%u}\n",
++            qatomic_read(&ssi_map_owner->ref));
++    ssi_map_status("final_status");
++    /* 这是直接 API 诊断的结束，不冒充客体正常关闭。 */
++    exit(0);
++}

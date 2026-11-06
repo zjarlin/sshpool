@@ -1,0 +1,30 @@
+--- a/system/physmem.c
++++ b/system/physmem.c
+@@ -3545,7 +3545,14 @@
+         };
+         ret = kvm_vm_ioctl(kvm_state, KVM_DSM_MEMPIN, &pin);
+         if (ret < 0) {
+-            fprintf(stderr, "KVM_DSM_MEMPIN failed %d\n", ret);
++            /* 固定失败不能交出裸指针；DMA 的空映射重试也无法恢复该错误。 */
++            *plen = 0;
++            if (is_dsm) {
++                *is_dsm = false;
++            }
++            memory_region_unref(mr);
++            fprintf(stderr, "Distributed DSM map pin failed (%d); terminating this node\n", ret);
++            exit(EXIT_FAILURE);
+         }
+     }
+ 
+@@ -3583,7 +3590,10 @@
+             };
+             ret = kvm_vm_ioctl(kvm_state, KVM_DSM_MEMPIN, &pin);
+             if (ret < 0) {
+-                fprintf(stderr, "KVM_DSM_MEMPIN failed %d\n", ret);
++                /* 解除失败代表设备生命周期已不可信，不能继续正常关闭。 */
++                memory_region_unref(mr);
++                fprintf(stderr, "Distributed DSM unmap unpin failed (%d); terminating this node\n", ret);
++                exit(EXIT_FAILURE);
+             }
+         }
+         memory_region_unref(mr);

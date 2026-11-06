@@ -67,6 +67,12 @@ jobs:
             --mode dependency --output "$RUNNER_TEMP/release-must-not-exist.json" || release_status=$?
           test "$release_status" -eq 2
           test ! -e "$RUNNER_TEMP/release-must-not-exist.json"
+          map_status=0
+          python3 scripts/ssi-lab/probe-qemu-map.py --require-kernel kernel-must-not-match \
+            --require-sha256 invalid --pid 1 --qmp "$RUNNER_TEMP/no-qmp.sock" --mode 0 \
+            --output "$RUNNER_TEMP/map-must-not-exist.json" || map_status=$?
+          test "$map_status" -eq 2
+          test ! -e "$RUNNER_TEMP/map-must-not-exist.json"
           cc -O2 -Wall -Wextra -Werror -static scripts/ssi-lab/probe-pvclock.c -o "$RUNNER_TEMP/probe-pvclock"
           cc -O2 -Wall -Wextra -Werror -static scripts/ssi-lab/probe-dsm-startup.c -o "$RUNNER_TEMP/probe-dsm-startup"
           cc -O2 -Wall -Wextra -Werror -static scripts/ssi-lab/probe-dsm-request.c -o "$RUNNER_TEMP/probe-dsm-request"
