@@ -27,9 +27,9 @@
 | [120-stateful-recovery.feature](120-stateful-recovery.feature) | 0 | 0 | 2 | 3 |
 | [130-ssi-lab.feature](130-ssi-lab.feature) | 8 | 0 | 0 | 1 |
 | [140-ssi-workspace.feature](140-ssi-workspace.feature) | 2 | 2 | 0 | 1 |
-| [150-ssi-device-memory.feature](150-ssi-device-memory.feature) | 12 | 2 | 1 | 4 |
+| [150-ssi-device-memory.feature](150-ssi-device-memory.feature) | 13 | 3 | 1 | 3 |
 | [160-ssi-clock.feature](160-ssi-clock.feature) | 4 | 3 | 0 | 2 |
 | [170-ssi-transport.feature](170-ssi-transport.feature) | 20 | 6 | 0 | 4 |
 | [180-ssi-device-order.feature](180-ssi-device-order.feature) | 1 | 1 | 0 | 4 |
 | [190-ssi-physical-storage.feature](190-ssi-physical-storage.feature) | 0 | 0 | 3 | 2 |
-| 合计 | 68 | 21 | 21 | 32 |
+| 合计 | 69 | 22 | 21 | 31 |

@@ -192,3 +192,7 @@ timeout --kill-after=5 45 python3 scripts/ssi-lab/probe-dsm-device.py \
 ## 真实设备请求的原生 DSM 引用
 
 `probe-virtio-dsm-pins.py` 在两台独占 PF24 实验 VM 上分别启动实际 Linux 客体的同一个分布式实例，通过标准输入 JSON 协调写入、快照、暂停、销毁与退出。它使用只读诊断 HMP 查询 QEMU 自己所属 KVM 的引用；`check-virtio-dsm-pins.py <记录.json>` 将原始 QMP、请求 trace、队列、引用、磁盘内容和退出码相互核对。普通候选不含该诊断入口。两台节点的实验盘彼此独立，不能当作存储副本；复现方法和保留的 reset／resume 失败见 [实际设备页引用](../../docs/ssi-virtio-dsm-pins.md)。
+
+## 复位后路由存活
+
+同一采集器使用 `--pin-query none` 可测试不含诊断 HMP 的普通运行时；空采样不代表引用为零。快照增加进程线程清单，退出记录增加单调时间；`crash` 标准输入操作仅允许节点零杀死自己新建的 QEMU 子进程并记录 SIGKILL。`check-reset-router.py <记录.json>` 复用真实写入检查，并要求两边出现每一次原生 RESET、保留错误、按预期退出。基线超时作为缺陷复现保存，不能算通过。用法和边界见 [复位路由实验](../../docs/ssi-reset-router.md)。

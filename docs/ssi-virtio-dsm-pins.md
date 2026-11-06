@@ -1,5 +1,7 @@
 # 真实 virtio 请求的 DSM 引用与暂停边界
 
+后续已修复本轮发现的 RESET 后接收循环退出，并完成暂停后多次复位再关闭／断连的对照；见 [复位路由实验](ssi-reset-router.md)。本文保留发现时的失败记录，时钟恢复与完整 SSI 仍未通过。
+
 在两个 PF24 实验节点组成的同一 Linux 客体中，已经复现并修复了 virtio-blk 管理销毁遗漏重试请求的问题：写入 EIO 后设备消失，旧版仍持有两个读引用和一个写引用；候选在销毁前排空并取消重试请求，原生 KVM 查询确认引用归零。ENOSPC 交换两台实验 VM 的逻辑角色后也通过。**两台 VM 仍属于同一物理 ESXi；尚未实现跨物理容量聚合、Ceph、数据库或接管。**
 
 先看 [场景](../features/150-ssi-device-memory.feature)，再看 [引用清理补丁](../scripts/ssi-lab/experiments/qemu-virtio-blk-unrealize.patch)、[暂停补丁](../scripts/ssi-lab/experiments/qemu-remote-pause.patch)、[采集器](../scripts/ssi-lab/probe-virtio-dsm-pins.py)、[检查器](../scripts/ssi-lab/check-virtio-dsm-pins.py) 和 [原始回复及实测证据](evidence/ssi-virtio-dsm-pins-20261107.json)。QEMU 补丁为 GPL-2.0-or-later，只用于独占研究环境，不进入默认安装。

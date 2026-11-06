@@ -69,13 +69,15 @@ def capture(args, process, record):
                     entry['queue'] = monitor.command('x-query-virtio-queue-status',
                         {'path': pending.VIRTIO_PATH, 'queue': 0})
                 entry['pins'] = []
-                for _ in range(2):
+                for _ in range(2 if args.pin_query == 'native' else 0):
                     raw = monitor.command('human-monitor-command', {'command-line': 'ssi_device_pins'})
                     pins = json.loads(raw)
                     if pins.get('ret') != 0 or pins.get('version') != 1 or pins.get('error') != 0 or pins.get('reserved') != 0:
                         raise ValueError('原生引用查询失败 ' + raw)
                     entry['pins'].append(pins)
                 entry['qmp_end'] = len(record['qmp'])
+                entry['threads'] = [{'tid': int(task.name), 'name': (task / 'comm').read_text().strip()}
+                                    for task in sorted(Path(f'/proc/{process.pid}/task').iterdir())]
                 record['snapshots'].append(entry)
                 return entry
 
@@ -115,8 +117,8 @@ def capture(args, process, record):
                     if name == 'qom-set':
                         arguments = {'path': '/machine/peripheral/ssi-disk', 'property': 'realized', 'value': False}
                     value = monitor.command(name, arguments)
-                elif op in ('quit', 'wait_exit'):
-                    if (op == 'quit') != (args.node == 0):
+                elif op in ('quit', 'wait_exit', 'crash'):
+                    if (op in ('quit', 'crash')) != (args.node == 0):
                         raise ValueError('只能由节点零关闭双节点实例')
                     if op == 'quit':
                         try:
@@ -126,7 +128,12 @@ def capture(args, process, record):
                             record['quit_transport'] = 'reset'
                         except EOFError:
                             record['quit_transport'] = 'eof'
+                    elif op == 'crash':
+                        # 只杀死本次新建的 QEMU 子进程，作为显式记录的断连注入。
+                        record['injected_fault'] = 'SIGKILL'
+                        process.kill()
                     process.wait(timeout=40)
+                    record['exit_observed_ns'] = time.monotonic_ns()
                     emit({'op': op, 'ok': True, 'exit': process.returncode})
                     return
                 else:
@@ -143,6 +150,7 @@ def main():
     parser.add_argument('--node', type=int, choices=(0, 1), required=True)
     parser.add_argument('--peers', nargs=2, required=True)
     parser.add_argument('--error', type=int, choices=(0, 5, 28), required=True)
+    parser.add_argument('--pin-query', choices=('native', 'none'), default='native')
     args = parser.parse_args()
     if (platform.system() != 'Linux' or platform.machine() != 'x86_64' or
             args.require_kernel != RESEARCH or platform.release() != RESEARCH):
@@ -161,6 +169,7 @@ def main():
     except (ValueError, OSError) as error:
         parser.error(str(error))
     command = pending.command(args)
+    command += ['-name', 'sshpool-device-probe,debug-threads=on']
     command[command.index('-cpu') + 1] = 'qemu64,-x2apic,+tsc-adjust,enforce'
     command[command.index('-smp') + 1] = '4,sockets=2,cores=2,threads=1'
     command += ['-local-cpu', f'cpus=2,start={args.node * 2},iplist=' + ' '.join(args.peers)]
@@ -168,7 +177,8 @@ def main():
               'qemu_sha256': args.require_sha256, 'guest_kernel_sha256': args.guest_kernel_sha256,
               'initramfs_sha256': args.initramfs_sha256, 'capture_sha256': pending.digest(Path(__file__)),
               'qmp': [], 'snapshots': [], 'actions': [], 'serial': '', 'injected_errno': args.error,
-              'blkdebug_config': config, 'errors': [], 'forced_cleanup': False}
+              'blkdebug_config': config, 'pin_query': args.pin_query,
+              'errors': [], 'forced_cleanup': False}
     process = None
     with (args.directory / 'stdout.log').open('xb') as out, (args.directory / 'stderr.log').open('xb') as err:
         try:

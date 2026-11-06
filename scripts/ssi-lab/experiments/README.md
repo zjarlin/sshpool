@@ -159,3 +159,7 @@ PF23 后应用 `kernel-dsm-pin-release.patch`，单独构建 `-sshpool-gvm-pf24`
 在上述候选后依次应用 `qemu-remote-pause.patch` 和 `qemu-virtio-blk-unrealize.patch`。前者令本进程远端占位线程确认 stop；后者在 unrealize 销毁队列前复用 reset 的排空和重试请求取消。内核仍为 PF24。实际另一节点仍须单独停止，时钟恢复和 reset 后关闭尚未通过。
 
 `qemu-device-pins-probe.patch` 只供诊断变体查询原生 KVM 引用；普通候选不应用此补丁。诊断还要求 `SSHPOOL_LAB_DEVICE_PINS=1`、精确 PF24 内核及受限拓扑，查询失败必须保留。三个补丁均为 GPL-2.0-or-later，均不进入默认安装。原生 EIO／ENOSPC、暂停栈、失败记录和普通工作区回归见 [真实设备页引用实验](../../../docs/ssi-virtio-dsm-pins.md)。
+
+## QEMU 复位后保留接收循环
+
+在暂停和 virtio 销毁候选后应用 `qemu-reset-router.patch`，构建普通运行时，不应用页引用诊断补丁。RESET 不再退出路由接收循环，后续关闭、排空标记和 EOF 仍能处理；消息格式不变，但两端必须使用一致候选。补丁为 GPL-2.0-or-later，不进入默认安装。实际测试只覆盖分别暂停后的复位再关闭或断连，不包括复位后继续运行；时钟冷启动限制保持。对照、原始事件和剩余工作见 [复位路由实验](../../../docs/ssi-reset-router.md)。

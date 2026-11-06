@@ -1,0 +1,21 @@
+--- a/interrupt-router.c
++++ b/interrupt-router.c
+@@ -488,6 +488,7 @@
+                 break;
+             }
+             case RESET:
++                /* 复位保留连接，继续接收关闭通知、排空标记和对端断连。 */
+                 qemu_system_reset_request(SHUTDOWN_CAUSE_GUEST_RESET);
+                 break;
+             case EXIT:
+@@ -499,10 +500,6 @@
+                 printf("unknown type[%u]\n", type);
+                 exit(1);
+         }
+-
+-        if (type == RESET || type == EXIT) {
+-            break;
+-        }
+     }
+     if (argp->channel) {
+         qio_channel_close(argp->channel, &err);

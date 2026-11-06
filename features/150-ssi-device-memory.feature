@@ -144,14 +144,26 @@ Feature: SSI 设备访问的脏页和反向映射
     And 未恢复写入仍保留后端错误并令两端失败退出
     And 不把引用清零当作持久化恢复磁盘复制或完整 reset 生命周期通过
 
-  # evidence: docs/ssi-virtio-dsm-pins.md
-  @research @p0
+  # evidence: docs/ssi-reset-router.md
+  @partial @p0
   Scenario: 复位后的路由继续处理对端故障和关闭
     Given EIO 请求经过复位且真实队列与 DSM 引用已清零
     When 主节点随后关闭或断开连接
     Then 副节点在截止时间内自行失败退出或完成协调关闭
     And 不让复位终止必要的路由接收和故障通知
     And 保留副节点退出超时并被强制清理的现有失败记录
+
+  # evidence: docs/evidence/ssi-reset-router-20261107.json
+  @verified @p0
+  Scenario: 已暂停客体的复位不终止后续关闭接收
+    Given 同一物理 ESXi 的两个 PF24 实验 VM 已分别暂停真实客体
+    When 主节点发起一次或三次 reset 后正常关闭或显式杀死本次主 QEMU
+    Then 双方原始 QMP 记录具有对应数量和来源的 RESET 事件
+    And 旧版 EIO 对照在复位后丢失接收能力并需四十秒后强制清理
+    And 候选 EIO 和反向节点 ENOSPC 保留错误并由两端自行失败退出
+    And 正常写入后三次复位仍可退出零且暂停副节点能自行检测主进程断连
+    And 无强制清理残留进程或将空引用采样冒充原生计数
+    And 不宣称已支持复位恢复运行网络分区或持久化接管
 
   # evidence: docs/evidence/ssi-virtio-pending-20261106.json
   @verified @p0

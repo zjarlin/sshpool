@@ -15,7 +15,8 @@ RUNTIMES = {
     'candidate': '30da605a7cfa058512ded7d134123f2f8f3b1f8bcee5cd1a8a5f9d5db383e467',
 }
 CAPTURES = {'ad1f3de1e281758fe18499b4febbb02f03785aef948431f227c2d2c90d04568b',
-            '469a42f62601738f45951c5913ebe6a0260beb97e79bf7bcf511e90432b53705'}
+            '469a42f62601738f45951c5913ebe6a0260beb97e79bf7bcf511e90432b53705',
+            'a2fba6dab8a868bf86472ec8f18232785165fce0d0dcd3baf07864c23ba88249'}
 DEVICE = '/machine/peripheral/ssi-disk'
 DISK_SHA = {False: '3b6a07d0d404fab4e23b6d34bc6696a6a312dd92821332385e5af7c01c421351',
             True: '2728a87677da0a44b53028a9a6973c893993c70646565058e67670a6c342db6d'}
@@ -132,17 +133,9 @@ def inspect_snapshots(record, action, error, variant):
                    '客体描述符未配置或完成计数不符')
 
 
-def inspect_record(record, run, node):
-    error, action = run['error'], run['action']
+def inspect_device_write(record, node, error, expect_peer_timeout=False):
+    """核对真实块设备请求与内容，供原生引用和复位路由实验共用。"""
     local_error = error if node == 0 else 0
-    demand(record['schema'] == 1 and record['kernel'] == '7.1.0-rc3-sshpool-gvm-pf24' and
-           record['node'] == node and record['injected_errno'] == local_error, '节点或实验身份不符')
-    demand(record['qemu_sha256'] == RUNTIMES[run['variant']] and record['capture_sha256'] in CAPTURES,
-           '未核对的运行时或采集器')
-    demand(record['guest_kernel_sha256'] == '41ba36d860aa0b0cd995f4ca8856d80249b244577e704929b55be13fbd1ebd2f' and
-           record['initramfs_sha256'] == 'b32e4dccc48587ed4123a57d9c1bc80bdc3de2750b6d6182c19e3194772c2db7', '客体镜像身份不符')
-    demand(not record['errors'] and record['forced_cleanup'] is False and
-           type(record['qemu_exit']) is int and record['qemu_exit'] == int(bool(error)), '采集失败或实际退出码不符')
     config = '' if not local_error else ('[inject-error]\nevent = "pwritev"\n' +
         f'errno = "{local_error}"\niotype = "write"\nonce = "on"\nimmediately = "on"\n')
     demand(record['blkdebug_config'] == config, '错误注入配置不符')
@@ -161,7 +154,13 @@ def inspect_record(record, run, node):
     demand(all(s['blocks'][0]['inserted']['file'] == drive.split('file=', 1)[1] for s in record['snapshots']),
            '查询的磁盘不属于本次实验')
     serial, stderr = record['serial'], record['stderr']
-    demand(not re.search(r'Kernel panic|segmentation fault|terminating on signal|core dumped', serial + stderr, re.I), '客体崩溃')
+    demand(not re.search(r'Kernel panic|segmentation fault|core dumped', serial + stderr, re.I), '客体崩溃')
+    if expect_peer_timeout:
+        # 已由调用方核对的基线超时，保留采集器 SIGTERM；它不属于正常关闭通过。
+        demand(node == 1 and record['forced_cleanup'] is True and
+               re.search(r'terminating on signal 15 from pid \d+', stderr), '未保留基线清理信号')
+    else:
+        demand(not re.search(r'terminating on signal', serial + stderr, re.I), '存在未声明的外部终止')
     writes = re.findall(r'^virtio_blk_handle_write vdev (0x[0-9a-f]+) req (0x[0-9a-f]+) sector (\d+) nsectors (\d+)$', stderr, re.M)
     if node == 0:
         demand(serial.count('SSI_BLOCK_READY') == serial.count('SSI_BLOCK_WRITE_BEGIN') == 1 and
@@ -177,7 +176,7 @@ def inspect_record(record, run, node):
         demand((fatal in stderr) == bool(error), '未保留后端错误')
     else:
         demand(not writes and 'SSI_BLOCK_WRITE_BEGIN' not in serial, '副节点意外执行了磁盘写入')
-        if error:
+        if error and not expect_peer_timeout:
             demand(any(message in stderr for message in ('SSI missing or invalid drain acknowledgement',
                    'SSI router EOF before acknowledged drain')), '缺少对端故障传播证据')
     flushes = re.findall(r'^vm_stop_flush_all ret (-?\d+)$', stderr, re.M)
@@ -185,6 +184,21 @@ def inspect_record(record, run, node):
     written = node == 0 and not error
     demand(record['payload_matches'] is written and record['payload_zero'] is (not written) and
            record['disk_sha256'] == DISK_SHA[written], '取消或副节点空盘被当成恢复')
+    return written
+
+
+def inspect_record(record, run, node):
+    error, action = run['error'], run['action']
+    local_error = error if node == 0 else 0
+    demand(record['schema'] == 1 and record['kernel'] == '7.1.0-rc3-sshpool-gvm-pf24' and
+           record['node'] == node and record['injected_errno'] == local_error, '节点或实验身份不符')
+    demand(record['qemu_sha256'] == RUNTIMES[run['variant']] and record['capture_sha256'] in CAPTURES,
+           '未核对的运行时或采集器')
+    demand(record['guest_kernel_sha256'] == '41ba36d860aa0b0cd995f4ca8856d80249b244577e704929b55be13fbd1ebd2f' and
+           record['initramfs_sha256'] == 'b32e4dccc48587ed4123a57d9c1bc80bdc3de2750b6d6182c19e3194772c2db7', '客体镜像身份不符')
+    demand(not record['errors'] and record['forced_cleanup'] is False and
+           type(record['qemu_exit']) is int and record['qemu_exit'] == int(bool(error)), '采集失败或实际退出码不符')
+    written = inspect_device_write(record, node, error)
     inspect_qmp(record, action, error)
     inspect_snapshots(record, action, error, run['variant'])
     return {'node': node, 'qemu_exit': record['qemu_exit'], 'payload_written': written,
