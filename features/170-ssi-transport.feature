@@ -98,13 +98,24 @@ Feature: SSI 传输等待与启动资源生命周期
     And 半帧由同一读者接收完整后再解析
     And 跨节点 pvclock 探针与完整客体内存和 SFTP 校验分别通过
 
-  @research @p0
+  # evidence: docs/evidence/ssi-router-drain-20261106.json
+  @partial @p0
   Scenario: 显式关闭协议区分任务结束与节点故障
     Given 请求仍在传输或者对端已退出
     When 客体正常关机或某个节点失联
     Then 正常关闭须完成双方确认和在途请求排空
     And 故障退出必须传递给客体管理层且不能伪装成干净关机
     And 正在处理的页面请求与缺失内存槽重试都应响应停止信号
+
+  # evidence: docs/evidence/ssi-router-drain-20261106.json
+  @verified @p0
+  Scenario: QEMU 关闭路由前核对本地停止和双向排空确认
+    Given 两个 PF17 实验 VM 使用相同的路由协议三候选
+    When 客体关机并停止 vCPU 后交换本次排空标记
+    Then 两端发送和收到的确认具有匹配节点与序号且先于关闭完成
+    And 非法版本帧失败退出且本地尚未停止时不能提前确认
+    And 原来没有屏障但退出码为零的日志不能通过验收
+    And 内核 DSM 连接重置继续阻止完整关闭验收且持久化仍未验证
 
   # evidence: docs/evidence/ssi-request-cancel-20261106.json
   @verified @p0

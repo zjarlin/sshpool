@@ -1,0 +1,511 @@
+--- a/interrupt-router.c
++++ b/interrupt-router.c
+@@ -20,9 +20,13 @@
+ #include "qom/object_interfaces.h"
+ #include "hw/boards.h"
+ #include "migration/rdma.h"
+-
+-/* 时钟启动握手同时拒绝没有 MMIO 写完成确认的旧协议。 */
+-#define ROUTER_PROTOCOL_VERSION 2
++#include "qemu/timer.h"
++#include "system/cpus.h"
++
++/* 启动版本包含 MMIO 完成确认与关机排空协议，拒绝旧版混用。 */
++#define ROUTER_PROTOCOL_VERSION 3
++#define ROUTER_DRAIN_ACK 0x44524149
++#define ROUTER_DRAIN_TIMEOUT_MS 15000
+ #define MMIO_WRITE_COMPLETE 0x4d4d494f
+ #define ROUTER_BUFFER_SIZE 1024
+ // #define ROUTER_CONNECTION_UNIX_SOCKET
+@@ -50,6 +54,47 @@
+ 
+ QemuMutex ipi_mutex;
+ QemuMutex io_forwarding_mutex;
++
++/* 主线程和各入站处理器共同维护单次关闭屏障，不用 EOF 代替确认。 */
++static QemuMutex drain_mutex;
++static QemuCond drain_cond;
++static bool drain_started;
++static bool drain_finished;
++static uint64_t drain_seen;
++static uint64_t drain_received;
++static uint64_t drain_nonce;
++
++static unsigned int router_index(void)
++{
++    MachineState *ms = MACHINE(qdev_get_machine());
++    return ms->local_cpu_start_index / ms->local_cpus;
++}
++
++static void router_forward_lock(void)
++{
++    qemu_mutex_lock(&io_forwarding_mutex);
++    if (qatomic_read(&drain_started)) {
++        error_report("SSI router generated traffic after local drain");
++        exit(EXIT_FAILURE);
++    }
++}
++
++static void *router_drain_watchdog(void *opaque)
++{
++    int64_t deadline = qemu_clock_get_ms(QEMU_CLOCK_REALTIME) + ROUTER_DRAIN_TIMEOUT_MS;
++
++    qemu_mutex_lock(&drain_mutex);
++    while (!drain_finished) {
++        int64_t left = deadline - qemu_clock_get_ms(QEMU_CLOCK_REALTIME);
++        if (left <= 0) {
++            error_report("SSI router drain deadline expired");
++            exit(EXIT_FAILURE);
++        }
++        qemu_cond_timedwait(&drain_cond, &drain_mutex, left);
++    }
++    qemu_mutex_unlock(&drain_mutex);
++    return NULL;
++}
+ 
+ 
+ int parse_cluster_iplist(const char *cluster_iplist)
+@@ -115,6 +160,7 @@
+     SHUTDOWN,
+     RESET,
+     EXIT,
++    DRAIN,
+ };
+ 
+ enum rdma_role {
+@@ -142,7 +188,8 @@
+ {
+     printf("enter router_loop\n");
+     fflush(stdout);
+-    uint8_t type;
++    uint16_t type;
++    bool drained = false;
+     int cpu_index;
+     Error *err = NULL;
+ 
+@@ -180,8 +227,16 @@
+ 
+     while(1) {
+         type = qemu_get_be16(req_file);
+-        if(!type) {
++        if (!type) {
++            if (!drained || qemu_file_get_error(req_file) != -EIO) {
++                error_report("SSI router EOF before acknowledged drain");
++                exit(EXIT_FAILURE);
++            }
+             break;
++        }
++        if (drained) {
++            error_report("SSI router received traffic after drain marker");
++            exit(EXIT_FAILURE);
+         }
+ 
+         cpu_index = qemu_get_sbe32(req_file);
+@@ -368,9 +423,70 @@
+                 break;
+             }
+ 
+-            case SHUTDOWN:
+-                qemu_system_shutdown_request(SHUTDOWN_CAUSE_GUEST_SHUTDOWN);
+-                break;
++            case SHUTDOWN: {
++                uint32_t version = qemu_get_be32(req_file);
++                uint32_t cause = qemu_get_be32(req_file);
++                int code = qemu_get_sbe32(req_file);
++
++                if (qemu_file_get_error(req_file) || version != ROUTER_PROTOCOL_VERSION ||
++                    cause <= SHUTDOWN_CAUSE_NONE || cause >= SHUTDOWN_CAUSE__MAX ||
++                    code < 0 || code > 255 || router_index() == 0) {
++                    error_report("SSI invalid shutdown notification");
++                    exit(EXIT_FAILURE);
++                }
++                qemu_system_shutdown_request_with_code(cause, code);
++                break;
++            }
++            case DRAIN: {
++                MachineState *ms = MACHINE(qdev_get_machine());
++                uint32_t version = qemu_get_be32(req_file);
++                uint32_t sender = qemu_get_be32(req_file);
++                uint32_t target = qemu_get_be32(req_file);
++                uint64_t nonce = qemu_get_be64(req_file);
++
++                if (qemu_file_get_error(req_file) || version != ROUTER_PROTOCOL_VERSION ||
++                    sender >= ms->qemu_nums || sender == router_index() ||
++                    target != router_index() || cpu_index != CPU_INDEX_ANY || !nonce) {
++                    error_report("SSI invalid drain marker");
++                    exit(EXIT_FAILURE);
++                }
++                qemu_mutex_lock(&drain_mutex);
++                if (drain_seen & (UINT64_C(1) << sender)) {
++                    error_report("SSI duplicate drain marker");
++                    exit(EXIT_FAILURE);
++                }
++                drain_seen |= UINT64_C(1) << sender;
++                int64_t deadline = qemu_clock_get_ms(QEMU_CLOCK_REALTIME) + ROUTER_DRAIN_TIMEOUT_MS;
++                /* 本流的先前设备操作已完成；本地尚未排空时不能提前确认。 */
++                while (!qatomic_read(&drain_started)) {
++                    int64_t left = deadline - qemu_clock_get_ms(QEMU_CLOCK_REALTIME);
++                    if (left <= 0) {
++                        error_report("SSI local quiescence deadline expired");
++                        exit(EXIT_FAILURE);
++                    }
++                    qemu_cond_timedwait(&drain_cond, &drain_mutex, left);
++                }
++                /* 网络写入不能持屏障锁，否则截止时间线程无法报告发送阻塞。 */
++                qemu_mutex_unlock(&drain_mutex);
++                qemu_put_be32(rsp_file, ROUTER_DRAIN_ACK);
++                qemu_put_be32(rsp_file, ROUTER_PROTOCOL_VERSION);
++                qemu_put_be32(rsp_file, target);
++                qemu_put_be32(rsp_file, sender);
++                qemu_put_be64(rsp_file, nonce);
++                qemu_fflush(rsp_file);
++                if (qemu_file_get_error(rsp_file)) {
++                    error_report("SSI drain acknowledgement send failed");
++                    exit(EXIT_FAILURE);
++                }
++                qemu_mutex_lock(&drain_mutex);
++                drain_received |= UINT64_C(1) << sender;
++                drained = true;
++                fprintf(stderr, "SSI_DRAIN_ACK_SENT node=%u peer=%u nonce=%" PRIu64 "\n",
++                        target, sender, nonce);
++                qemu_cond_broadcast(&drain_cond);
++                qemu_mutex_unlock(&drain_mutex);
++                break;
++            }
+             case RESET:
+                 qemu_system_reset_request(SHUTDOWN_CAUSE_GUEST_RESET);
+                 break;
+@@ -383,7 +499,7 @@
+                 exit(1);
+         }
+ 
+-        if (type >= SHUTDOWN) {
++        if (type == RESET || type == EXIT) {
+             break;
+         }
+     }
+@@ -733,6 +849,90 @@
+ 
+ }
+ 
++
++/* 在 vCPU 停止且块层排空之后执行；路由处理器在此期间仍负责完成先前请求。 */
++void drain_io_router(void)
++{
++    MachineState *ms = MACHINE(qdev_get_machine());
++    QemuThread watchdog;
++    CPUState *cpu;
++    unsigned int index = router_index();
++    uint64_t expected;
++    unsigned int stopped = 0;
++
++    if (ms->local_cpus == ms->smp.cpus) {
++        return;
++    }
++    CPU_FOREACH(cpu) {
++        if (!cpu->stopped) {
++            error_report("SSI drain reached before vCPU %d stopped", cpu->cpu_index);
++            exit(EXIT_FAILURE);
++        }
++        stopped++;
++    }
++    expected = (UINT64_MAX >> (64 - ms->qemu_nums)) & ~(UINT64_C(1) << index);
++    /* 序号只关联同一 TCP 会话内的确认，不提供协议认证或跨连接重放保护。 */
++    drain_nonce = qemu_clock_get_ns(QEMU_CLOCK_REALTIME) | UINT64_C(1);
++    qemu_thread_create(&watchdog, "ssi-drain-deadline", router_drain_watchdog,
++                       NULL, QEMU_THREAD_JOINABLE);
++    qemu_mutex_lock(&io_forwarding_mutex);
++    qemu_mutex_lock(&drain_mutex);
++    qatomic_set(&drain_started, true);
++    fprintf(stderr, "SSI_DRAIN_LOCAL node=%u stopped=%u nonce=%" PRIu64 "\n",
++            index, stopped, drain_nonce);
++    qemu_cond_broadcast(&drain_cond);
++    qemu_mutex_unlock(&drain_mutex);
++    /* 先向所有对端发送标记，再读取确认，避免不同遍历顺序导致互等。 */
++    for (unsigned int peer = 0; peer < ms->qemu_nums; peer++) {
++        if (peer == index) {
++            continue;
++        }
++        if (!req_files[peer] || !rsp_files[peer]) {
++            error_report("SSI missing drain connection");
++            exit(EXIT_FAILURE);
++        }
++        qemu_put_be16(req_files[peer], DRAIN);
++        qemu_put_sbe32(req_files[peer], CPU_INDEX_ANY);
++        qemu_put_be32(req_files[peer], ROUTER_PROTOCOL_VERSION);
++        qemu_put_be32(req_files[peer], index);
++        qemu_put_be32(req_files[peer], peer);
++        qemu_put_be64(req_files[peer], drain_nonce);
++        qemu_fflush(req_files[peer]);
++        if (qemu_file_get_error(req_files[peer])) {
++            error_report("SSI drain marker send failed");
++            exit(EXIT_FAILURE);
++        }
++    }
++    for (unsigned int peer = 0; peer < ms->qemu_nums; peer++) {
++        if (peer == index) {
++            continue;
++        }
++        uint32_t magic = qemu_get_be32(rsp_files[peer]);
++        uint32_t version = qemu_get_be32(rsp_files[peer]);
++        uint32_t sender = qemu_get_be32(rsp_files[peer]);
++        uint32_t target = qemu_get_be32(rsp_files[peer]);
++        uint64_t nonce = qemu_get_be64(rsp_files[peer]);
++        if (qemu_file_get_error(rsp_files[peer]) || magic != ROUTER_DRAIN_ACK ||
++            version != ROUTER_PROTOCOL_VERSION || sender != peer ||
++            target != index || nonce != drain_nonce) {
++            error_report("SSI missing or invalid drain acknowledgement");
++            exit(EXIT_FAILURE);
++        }
++        fprintf(stderr, "SSI_DRAIN_ACK_RECEIVED node=%u peer=%u nonce=%" PRIu64 "\n",
++                index, peer, nonce);
++    }
++    qemu_mutex_unlock(&io_forwarding_mutex);
++    qemu_mutex_lock(&drain_mutex);
++    while (drain_received != expected) {
++        qemu_cond_wait(&drain_cond, &drain_mutex);
++    }
++    drain_finished = true;
++    qemu_cond_broadcast(&drain_cond);
++    qemu_mutex_unlock(&drain_mutex);
++    qemu_thread_join(&watchdog);
++    fprintf(stderr, "SSI_DRAIN_COMPLETE node=%u peers=%u\n", index, ms->qemu_nums - 1);
++}
++
+ void disconnect_io_router(void)
+ {
+     MachineState *ms = MACHINE(qdev_get_machine());
+@@ -770,10 +970,16 @@
+     MachineState *ms = MACHINE(qdev_get_machine());
+     qemu_mutex_init(&io_forwarding_mutex);
+     qemu_mutex_init(&ipi_mutex);
++    qemu_mutex_init(&drain_mutex);
++    qemu_cond_init(&drain_cond);
+     if (ms->local_cpus == ms->smp.cpus) {
+         return;
+     }
+ 
++    if (ms->qemu_nums < 2 || ms->qemu_nums > 64) {
++        error_report("SSI drain supports 2 through 64 router nodes");
++        exit(EXIT_FAILURE);
++    }
+     if (router_hosts_num != ms->qemu_nums) {
+         error_report("invalid number of cluster iplist");
+         exit(1);
+@@ -800,7 +1006,7 @@
+ void pio_forwarding(uint16_t port, MemTxAttrs attrs, void *data, int direction,
+                           int size, uint32_t count, bool broadcast)
+ {
+-    qemu_mutex_lock(&io_forwarding_mutex);
++    router_forward_lock();
+ 
+     QEMUFile *io_connect_file;
+     QEMUFile *io_connect_return_file;
+@@ -871,7 +1077,7 @@
+  */
+ void mmio_forwarding(hwaddr addr, MemTxAttrs attrs, uint8_t *data, int len, bool is_write)
+ {
+-    qemu_mutex_lock(&io_forwarding_mutex);
++    router_forward_lock();
+ 
+     QEMUFile *io_connect_file = req_files[0];
+     QEMUFile *io_connect_return_file = rsp_files[0];
+@@ -918,7 +1124,7 @@
+ /* @broadcast */
+ void lapic_forwarding(int cpu_index, hwaddr addr, uint32_t val)
+ {
+-    qemu_mutex_lock(&io_forwarding_mutex);
++    router_forward_lock();
+     QEMUFile *io_connect_file;
+ 
+     MachineState *ms = MACHINE(qdev_get_machine());
+@@ -945,7 +1151,7 @@
+ /* @unicast: current CPU -> dest CPU (CPU No. cpu_index) */
+ void special_interrupt_forwarding(int cpu_index, int mask)
+ {
+-    qemu_mutex_lock(&io_forwarding_mutex);
++    router_forward_lock();
+     MachineState *ms = MACHINE(qdev_get_machine());
+     QEMUFile *io_connect_file = req_files[cpu_index / ms->local_cpus];
+ 
+@@ -961,7 +1167,7 @@
+ /* @unicast: current CPU -> dest CPU (CPU No. cpu_index) */
+ void startup_forwarding(int cpu_index, uint32_t val, uint32_t val2, uint32_t dest_id)
+ {
+-    qemu_mutex_lock(&io_forwarding_mutex);
++    router_forward_lock();
+     MachineState *ms = MACHINE(qdev_get_machine());
+     QEMUFile *io_connect_file;
+ 
+@@ -986,7 +1192,7 @@
+ 
+ void x2apic_forwarding(int cpu_index, __u64 data)
+ {
+-    qemu_mutex_lock(&io_forwarding_mutex);
++    router_forward_lock();
+     MachineState *ms = MACHINE(qdev_get_machine());
+     QEMUFile *io_connect_file;
+ 
+@@ -1009,7 +1215,7 @@
+ 
+ void apic_base_forwarding(int cpu_index, bool host, uint32_t index, __u64 data)
+ {
+-    qemu_mutex_lock(&io_forwarding_mutex);
++    router_forward_lock();
+     MachineState *ms = MACHINE(qdev_get_machine());
+     QEMUFile *io_connect_file;
+ 
+@@ -1035,7 +1241,7 @@
+ /* @unicast: current CPU -> dest CPU (CPU No. cpu_index) */
+ void init_level_deassert_forwarding(int cpu_index)
+ {
+-    qemu_mutex_lock(&io_forwarding_mutex);
++    router_forward_lock();
+     MachineState *ms = MACHINE(qdev_get_machine());
+     QEMUFile *io_connect_file = req_files[cpu_index / ms->local_cpus];
+ 
+@@ -1050,7 +1256,7 @@
+ /* @unicast: current CPU -> dest CPU (CPU No. cpu_index) */
+ void irq_forwarding(int cpu_index, int vector_num, int trigger_mode)
+ {
+-    qemu_mutex_lock(&io_forwarding_mutex);
++    router_forward_lock();
+     MachineState *ms = MACHINE(qdev_get_machine());
+     QEMUFile *io_connect_file = req_files[cpu_index / ms->local_cpus];
+ 
+@@ -1069,7 +1275,7 @@
+ 
+ void ioapic_irq_forwarding(int irq, int level)
+ {
+-    qemu_mutex_lock(&io_forwarding_mutex);
++    router_forward_lock();
+     QEMUFile *io_connect_file = req_files[0];
+     MachineState *ms = MACHINE(qdev_get_machine());
+     for (int i = 1; i < ms->qemu_nums; i++) {
+@@ -1086,7 +1292,7 @@
+ }
+ 
+ void ioapic_router_forwarding(struct kvm_irq_routing *routing) {
+-    qemu_mutex_lock(&io_forwarding_mutex);
++    router_forward_lock();
+     QEMUFile *io_connect_file = req_files[1];
+     
+     qemu_put_be16(io_connect_file, INI_ROUTER);
+@@ -1133,7 +1339,7 @@
+ /* @unicast: AP -> BSP (i.e. QEMU[0]) */
+ void eoi_forwarding(int isrv)
+ {
+-    qemu_mutex_lock(&io_forwarding_mutex);
++    router_forward_lock();
+     QEMUFile *io_connect_file = req_files[0];
+ 
+     qemu_put_be16(io_connect_file, IOAPIC);
+@@ -1145,9 +1351,9 @@
+ }
+ 
+ /* @broadcast */
+-void shutdown_forwarding(void)
+-{
+-    qemu_mutex_lock(&io_forwarding_mutex);
++void shutdown_forwarding(ShutdownCause reason, int exit_code)
++{
++    router_forward_lock();
+     QEMUFile *io_connect_file;
+ 
+     MachineState *ms = MACHINE(qdev_get_machine());
+@@ -1158,7 +1364,14 @@
+         if (io_connect_file) {
+             qemu_put_be16(io_connect_file, SHUTDOWN);
+             qemu_put_sbe32(io_connect_file, CPU_INDEX_ANY);
++            qemu_put_be32(io_connect_file, ROUTER_PROTOCOL_VERSION);
++            qemu_put_be32(io_connect_file, reason);
++            qemu_put_sbe32(io_connect_file, exit_code);
+             qemu_fflush(io_connect_file);
++            if (qemu_file_get_error(io_connect_file)) {
++                error_report("SSI shutdown notification failed");
++                exit(EXIT_FAILURE);
++            }
+         }
+     }
+ 
+@@ -1168,7 +1381,7 @@
+ /* @broadcast */
+ void reset_forwarding(void)
+ {
+-    qemu_mutex_lock(&io_forwarding_mutex);
++    router_forward_lock();
+     QEMUFile *io_connect_file;
+ 
+     MachineState *ms = MACHINE(qdev_get_machine());
+@@ -1189,7 +1402,7 @@
+ /* @broadcast */
+ void exit_forwarding(void)
+ {
+-    qemu_mutex_lock(&io_forwarding_mutex);
++    router_forward_lock();
+     QEMUFile *io_connect_file;
+     MachineState *ms = MACHINE(qdev_get_machine());
+ 
+@@ -1211,7 +1424,7 @@
+     int ret;
+     uint32_t version;
+ 
+-    qemu_mutex_lock(&io_forwarding_mutex);
++    router_forward_lock();
+ 
+     QEMUFile *io_connect_file = req_files[0];
+     QEMUFile *io_connect_return_file = rsp_files[0];
+--- a/interrupt-router.h
++++ b/interrupt-router.h
+@@ -6,6 +6,7 @@
+ #include "io/channel-socket.h"
+ #include "exec/hwaddr.h"
+ #include "linux/kvm.h"
++#include "qapi/qapi-types-run-state.h"
+ #include "hw/i386/kvm/clock.h"
+ 
+ extern QemuMutex ipi_mutex;
+@@ -42,11 +43,12 @@
+ void ioapic_irq_forwarding(int irq, int level);
+ void ioapic_router_forwarding(struct kvm_irq_routing *routing);
+ void eoi_forwarding(int isrv);
+-void shutdown_forwarding(void);
++void shutdown_forwarding(ShutdownCause reason, int exit_code);
+ void reset_forwarding(void);
+ void exit_forwarding(void);
+ int kvmclock_fetching(KVMClockSample *sample);
+ 
++void drain_io_router(void);
+ void disconnect_io_router(void);
+ 
+ #endif /* INTERRUPT_ROUTER_H */
+--- a/system/runstate.c
++++ b/system/runstate.c
+@@ -807,7 +807,7 @@
+ {
+     bool main_qemu = is_main_qemu();
+     if (main_qemu) {
+-        shutdown_forwarding();
++        shutdown_forwarding(reason, shutdown_exit_code);
+     }
+     trace_qemu_system_shutdown_request(reason);
+     replay_shutdown_request(reason);
+@@ -997,8 +997,6 @@
+     vm_shutdown();
+     replay_finish();
+ 
+-    /* stop routers and close connection */ 
+-    disconnect_io_router();
+ 
+     /*
+      * We must cancel all block jobs while the block layer is drained,
+@@ -1011,6 +1009,9 @@
+      */
+     bdrv_drain_all_begin();
+     job_cancel_sync_all();
++    /* 先保留路由完成双向排空，再允许设备与连接销毁。 */
++    drain_io_router();
++    disconnect_io_router();
+     bdrv_close_all();
+ 
+     /* vhost-user must be cleaned up before chardevs.  */
