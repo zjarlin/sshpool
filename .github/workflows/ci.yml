@@ -32,6 +32,11 @@ jobs:
           rtc_status=0
           "$RUNNER_TEMP/guest-rtc" || rtc_status=$?
           test "$rtc_status" -eq 2
+          copyset_status=0
+          python3 scripts/ssi-lab/probe-copyset-retry.py --require-kernel kernel-must-not-match \
+            --output "$RUNNER_TEMP/copyset-must-not-exist.json" || copyset_status=$?
+          test "$copyset_status" -eq 2
+          test ! -e "$RUNNER_TEMP/copyset-must-not-exist.json"
           cc -O2 -Wall -Wextra -Werror -static scripts/ssi-lab/probe-pvclock.c -o "$RUNNER_TEMP/probe-pvclock"
           cc -O2 -Wall -Wextra -Werror -static scripts/ssi-lab/probe-dsm-startup.c -o "$RUNNER_TEMP/probe-dsm-startup"
           cc -O2 -Wall -Wextra -Werror -static scripts/ssi-lab/probe-dsm-request.c -o "$RUNNER_TEMP/probe-dsm-request"

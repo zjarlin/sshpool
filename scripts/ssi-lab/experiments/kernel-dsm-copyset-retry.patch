@@ -1,0 +1,13 @@
+--- a/arch/x86/kvm/ivy.c
++++ b/arch/x86/kvm/ivy.c
+@@ -651,8 +651,8 @@
+ 			goto out_unlock;
+ 		}
+ 
+-		/* Once a request has been completed, this node isn't owner then. */
+-		if (req.req_type != DSM_REQ_INVALIDATE)
++		/* 固定页面触发重试时尚未交出所有权，必须保留现有副本集合。 */
++		if (!retry && req.req_type != DSM_REQ_INVALIDATE)
+ 			dsm_clear_copyset(slot, vfn);
+ 
+ 		if (req.req_type != DSM_REQ_INVALIDATE)
