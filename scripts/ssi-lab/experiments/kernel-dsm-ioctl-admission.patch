@@ -1,0 +1,340 @@
+--- a/arch/x86/kvm/dsm.c
++++ b/arch/x86/kvm/dsm.c
+@@ -486,6 +486,7 @@
+ 		return;
+ 	pr_err("kvm-dsm: node-%d failed with %d; VM cannot continue\n",
+ 	       kvm->arch.dsm_id, error);
++	wake_up_all(&kvm->arch.dsm_ioctl_wait);
+ 	kvm_vm_dead(kvm);
+ 	root = READ_ONCE(kvm->arch.dsm_thread);
+ 	if (root && root != current)
+@@ -674,6 +675,8 @@
+ 
+ int kvm_dsm_alloc(struct kvm *kvm)
+ {
++	spin_lock_init(&kvm->arch.dsm_admission_lock);
++	init_waitqueue_head(&kvm->arch.dsm_ioctl_wait);
+ 	mutex_init(&kvm->arch.dsm_lock);
+ 	kvm->arch.dsm_hvaslots =
+ 		kvzalloc(sizeof(*kvm->arch.dsm_hvaslots), GFP_KERNEL);
+@@ -931,12 +934,109 @@
+ 	return ret;
+ }
+ 
++/* 普通 VM 也计数，避免与同一 VM 上正在执行的 DSM_ENABLE 竞态。 */
++int kvm_dsm_ioctl_enter(struct kvm *kvm, unsigned int ioctl, bool vm_ioctl)
++{
++	unsigned long flags;
++	int ret;
++
++	if (vm_ioctl && (ioctl == KVM_DSM_IOCTL_DRAIN ||
++			 ioctl == KVM_DSM_IOCTL_STATUS))
++		return 0;
++	spin_lock_irqsave(&kvm->arch.dsm_admission_lock, flags);
++	ret = READ_ONCE(kvm->arch.dsm_error);
++	if (!ret && kvm->arch.dsm_ioctl_generation)
++		ret = -ESHUTDOWN;
++	if (!ret) {
++		kvm->arch.dsm_active_ioctls++;
++		ret = 1;
++	}
++	spin_unlock_irqrestore(&kvm->arch.dsm_admission_lock, flags);
++	return ret;
++}
++
++void kvm_dsm_ioctl_leave(struct kvm *kvm, int token)
++{
++	unsigned long flags;
++
++	if (!token)
++		return;
++	spin_lock_irqsave(&kvm->arch.dsm_admission_lock, flags);
++	if (!WARN_ON_ONCE(!kvm->arch.dsm_active_ioctls))
++		kvm->arch.dsm_active_ioctls--;
++	spin_unlock_irqrestore(&kvm->arch.dsm_admission_lock, flags);
++	wake_up_all(&kvm->arch.dsm_ioctl_wait);
++}
++
++/* 超时和信号只结束本次等待，不能重新开放入口或取消先前已准入的事务。 */
++static int kvm_dsm_ioctl_drain(struct kvm *kvm, void __user *argp)
++{
++	struct kvm_dsm_ioctl_drain params;
++	unsigned long flags;
++	long waited;
++	int ret;
++
++	if (copy_from_user(&params, argp, sizeof(params)))
++		return -EFAULT;
++	if (params.version != 1 || params.flags || !params.generation ||
++	    !params.timeout_ms || params.timeout_ms > 30000 || params.reserved)
++		return -EINVAL;
++	/* 不等待管理锁，避免尚未封闭入口就陷入无期限等待；忙时可重试。 */
++	if (!mutex_trylock(&kvm->lock))
++		return -EBUSY;
++	if (!kvm->arch.dsm_enabled) {
++		mutex_unlock(&kvm->lock);
++		return -EINVAL;
++	}
++	spin_lock_irqsave(&kvm->arch.dsm_admission_lock, flags);
++	ret = READ_ONCE(kvm->arch.dsm_error);
++	if (!ret && kvm->arch.dsm_ioctl_generation &&
++	    kvm->arch.dsm_ioctl_generation != params.generation)
++		ret = -ESTALE;
++	if (!ret)
++		kvm->arch.dsm_ioctl_generation = params.generation;
++	spin_unlock_irqrestore(&kvm->arch.dsm_admission_lock, flags);
++	mutex_unlock(&kvm->lock);
++	if (ret)
++		return ret;
++
++	waited = wait_event_killable_timeout(kvm->arch.dsm_ioctl_wait,
++		!READ_ONCE(kvm->arch.dsm_active_ioctls) ||
++		READ_ONCE(kvm->arch.dsm_error), msecs_to_jiffies(params.timeout_ms));
++	spin_lock_irqsave(&kvm->arch.dsm_admission_lock, flags);
++	ret = READ_ONCE(kvm->arch.dsm_error);
++	if (!ret && waited < 0)
++		ret = waited;
++	if (!ret && kvm->arch.dsm_active_ioctls)
++		ret = -ETIMEDOUT;
++	spin_unlock_irqrestore(&kvm->arch.dsm_admission_lock, flags);
++	return ret;
++}
++
++static int kvm_dsm_ioctl_status(struct kvm *kvm, void __user *argp)
++{
++	struct kvm_dsm_ioctl_status status = { .version = 1 };
++	unsigned long flags;
++
++	spin_lock_irqsave(&kvm->arch.dsm_admission_lock, flags);
++	status.generation = kvm->arch.dsm_ioctl_generation;
++	status.state = !!status.generation;
++	status.active = kvm->arch.dsm_active_ioctls;
++	status.error = READ_ONCE(kvm->arch.dsm_error);
++	spin_unlock_irqrestore(&kvm->arch.dsm_admission_lock, flags);
++	return copy_to_user(argp, &status, sizeof(status)) ? -EFAULT : 0;
++}
++
+ long kvm_vm_ioctl_dsm(struct kvm *kvm, unsigned int ioctl, unsigned long arg)
+ {
+ 	void __user *argp = (void __user *)arg;
+ 	int r = -EFAULT;
+ 
+ 	switch (ioctl) {
++	case KVM_DSM_IOCTL_DRAIN:
++		return kvm_dsm_ioctl_drain(kvm, argp);
++	case KVM_DSM_IOCTL_STATUS:
++		return kvm_dsm_ioctl_status(kvm, argp);
+ 	case KVM_DSM_IPI: {
+ 		struct kvm_dipi_params params;
+ 		struct kvm_vcpu *vcpu = NULL;
+--- a/arch/x86/include/asm/kvm_host.h
++++ b/arch/x86/include/asm/kvm_host.h
+@@ -1774,6 +1774,11 @@
+ 	bool dsm_stopped;
+ 	/* 首次失败一旦锁存，本 VM 不再恢复页面服务。 */
+ 	int dsm_error;
++	/* 只统计 VM/vCPU ioctl；设备后台任务和页面服务线程不属于此计数。 */
++	spinlock_t dsm_admission_lock;
++	wait_queue_head_t dsm_ioctl_wait;
++	u64 dsm_ioctl_generation;
++	unsigned int dsm_active_ioctls;
+ 
+ 	u32 cluster_iplist_len;
+ 	char **cluster_iplist;
+--- a/include/linux/kvm_host.h
++++ b/include/linux/kvm_host.h
+@@ -2609,4 +2609,20 @@
+ 				    struct kvm_pre_fault_memory *range);
+ #endif
+ 
+-#endif
++/* 准入令牌覆盖整个 ioctl，包括等待锁、复制和架构专用异步入口。 */
++#ifdef CONFIG_KVM_DSM
++int kvm_dsm_ioctl_enter(struct kvm *kvm, unsigned int ioctl, bool vm_ioctl);
++void kvm_dsm_ioctl_leave(struct kvm *kvm, int token);
++#else
++static inline int kvm_dsm_ioctl_enter(struct kvm *kvm, unsigned int ioctl,
++				    bool vm_ioctl)
++{
++	return 0;
++}
++
++static inline void kvm_dsm_ioctl_leave(struct kvm *kvm, int token)
++{
++}
++#endif
++
++#endif
+--- a/include/uapi/linux/kvm.h
++++ b/include/uapi/linux/kvm.h
+@@ -1400,6 +1400,28 @@
+ 
+ #define KVM_DSM_ENABLE            _IOW(KVMIO,  0xf0, struct kvm_dsm_params)
+ 
++/* 研究 ABI：永久封闭 VM/vCPU ioctl 入口，仅等待已准入 ioctl，不关闭网络。 */
++struct kvm_dsm_ioctl_drain {
++	__u32 version;
++	__u32 flags;
++	__u64 generation;
++	__u32 timeout_ms;
++	__u32 reserved;
++};
++
++/* state 为零表示开放，一表示已封闭；active 只包含普通 VM/vCPU ioctl。 */
++struct kvm_dsm_ioctl_status {
++	__u32 version;
++	__u32 state;
++	__u64 generation;
++	__u32 active;
++	__s32 error;
++	__u32 reserved[2];
++};
++
++#define KVM_DSM_IOCTL_DRAIN _IOW(KVMIO, 0xf6, struct kvm_dsm_ioctl_drain)
++#define KVM_DSM_IOCTL_STATUS _IOR(KVMIO, 0xf7, struct kvm_dsm_ioctl_status)
++
+ /**
+  * struct kvm_dsm_memcpy - Parameters for DSM memory copy between guest and userspace.
+  *
+--- a/virt/kvm/kvm_main.c
++++ b/virt/kvm/kvm_main.c
+@@ -4402,7 +4402,7 @@
+ 	return 0;
+ }
+ 
+-static long kvm_vcpu_ioctl(struct file *filp,
++static long kvm_vcpu_do_ioctl(struct file *filp,
+ 			   unsigned int ioctl, unsigned long arg)
+ {
+ 	struct kvm_vcpu *vcpu = filp->private_data;
+@@ -4652,8 +4652,26 @@
+ 	return r;
+ }
+ 
++static long kvm_vcpu_ioctl(struct file *filp,
++			    unsigned int ioctl, unsigned long arg)
++{
++	struct kvm_vcpu *vcpu = filp->private_data;
++	struct kvm *kvm = vcpu->kvm;
++	long ret;
++	int token;
++
++	if (kvm->mm != current->mm || kvm->vm_dead)
++		return -EIO;
++	token = kvm_dsm_ioctl_enter(kvm, ioctl, false);
++	if (token < 0)
++		return token;
++	ret = kvm_vcpu_do_ioctl(filp, ioctl, arg);
++	kvm_dsm_ioctl_leave(kvm, token);
++	return ret;
++}
++
+ #ifdef CONFIG_KVM_COMPAT
+-static long kvm_vcpu_compat_ioctl(struct file *filp,
++static long kvm_vcpu_do_compat_ioctl(struct file *filp,
+ 				  unsigned int ioctl, unsigned long arg)
+ {
+ 	struct kvm_vcpu *vcpu = filp->private_data;
+@@ -4687,12 +4705,30 @@
+ 		break;
+ 	}
+ 	default:
+-		r = kvm_vcpu_ioctl(filp, ioctl, arg);
++		r = kvm_vcpu_do_ioctl(filp, ioctl, arg);
+ 	}
+ 
+ out:
+ 	return r;
+ }
++static long kvm_vcpu_compat_ioctl(struct file *filp,
++			    unsigned int ioctl, unsigned long arg)
++{
++	struct kvm_vcpu *vcpu = filp->private_data;
++	struct kvm *kvm = vcpu->kvm;
++	long ret;
++	int token;
++
++	if (kvm->mm != current->mm || kvm->vm_dead)
++		return -EIO;
++	token = kvm_dsm_ioctl_enter(kvm, ioctl, false);
++	if (token < 0)
++		return token;
++	ret = kvm_vcpu_do_compat_ioctl(filp, ioctl, arg);
++	kvm_dsm_ioctl_leave(kvm, token);
++	return ret;
++}
++
+ #endif
+ 
+ static int kvm_device_mmap(struct file *filp, struct vm_area_struct *vma)
+@@ -5154,7 +5190,7 @@
+ 		     sizeof_field(struct kvm_userspace_memory_region2, field));	\
+ } while (0)
+ 
+-static long kvm_vm_ioctl(struct file *filp,
++static long kvm_vm_do_ioctl(struct file *filp,
+ 			   unsigned int ioctl, unsigned long arg)
+ {
+ 	struct kvm *kvm = filp->private_data;
+@@ -5393,6 +5429,23 @@
+ 	return r;
+ }
+ 
++static long kvm_vm_ioctl(struct file *filp,
++			    unsigned int ioctl, unsigned long arg)
++{
++	struct kvm *kvm = filp->private_data;
++	long ret;
++	int token;
++
++	if (kvm->mm != current->mm || kvm->vm_dead)
++		return -EIO;
++	token = kvm_dsm_ioctl_enter(kvm, ioctl, true);
++	if (token < 0)
++		return token;
++	ret = kvm_vm_do_ioctl(filp, ioctl, arg);
++	kvm_dsm_ioctl_leave(kvm, token);
++	return ret;
++}
++
+ #ifdef CONFIG_KVM_COMPAT
+ struct compat_kvm_dirty_log {
+ 	__u32 slot;
+@@ -5419,7 +5472,7 @@
+ 	return -ENOTTY;
+ }
+ 
+-static long kvm_vm_compat_ioctl(struct file *filp,
++static long kvm_vm_do_compat_ioctl(struct file *filp,
+ 			   unsigned int ioctl, unsigned long arg)
+ {
+ 	struct kvm *kvm = filp->private_data;
+@@ -5467,10 +5520,27 @@
+ 		break;
+ 	}
+ 	default:
+-		r = kvm_vm_ioctl(filp, ioctl, arg);
++		r = kvm_vm_do_ioctl(filp, ioctl, arg);
+ 	}
+ 	return r;
+ }
++static long kvm_vm_compat_ioctl(struct file *filp,
++			    unsigned int ioctl, unsigned long arg)
++{
++	struct kvm *kvm = filp->private_data;
++	long ret;
++	int token;
++
++	if (kvm->mm != current->mm || kvm->vm_dead)
++		return -EIO;
++	token = kvm_dsm_ioctl_enter(kvm, ioctl, true);
++	if (token < 0)
++		return token;
++	ret = kvm_vm_do_compat_ioctl(filp, ioctl, arg);
++	kvm_dsm_ioctl_leave(kvm, token);
++	return ret;
++}
++
+ #endif
+ 
+ static struct file_operations kvm_vm_fops = {

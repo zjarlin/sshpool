@@ -121,3 +121,7 @@ PF12、PF13 是未实际启用拦截的中间候选，不是补丁依赖。公�
 ## PF19：排空前的流内故障顺序
 
 在 PF18 后应用 `kernel-dsm-drain-fault-order.patch`，构建独立的 `-sshpool-gvm-pf19` 内核。接收函数在释放分发锁前锁存已发现的故障，防止下一处理线程越过坏帧确认后续标记。正常主动停止的 EINTR/EPIPE 保留原取消语义。该竞态来自源码审查；两个节点的坏帧加标记实验验证修复后的拒绝行为，不冒充旧版稳定复现。PF19 补充探针、工作区回归及剩余整机关闭缺口同见 [内核排空实验](../../../docs/ssi-kernel-drain.md)。
+
+## PF20：VM/vCPU ioctl 准入屏障
+
+在 PF19 后应用 `kernel-dsm-ioctl-admission.patch`，单独构建 `-sshpool-gvm-pf20`。它封闭普通 VM/vCPU ioctl 的入口并统计完整调用，控制查询和等待不计入自己等待的操作；已准入调用与页面服务继续完成。十组真实 KVM 探针及客体回归见 [入口准入实验](../../../docs/ssi-ioctl-admission.md)。现有 QEMU 尚不调用新接口；后台设备、跨调用 DMA pin、完整出站事务和最终网络关闭仍未协调，不能把此屏障成功当作整机可以关闭。默认流程不自动应用。

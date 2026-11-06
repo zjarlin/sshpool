@@ -129,6 +129,26 @@ Feature: SSI 传输等待与启动资源生命周期
     And 半帧仍可取消且原始跟踪缺失或测试线程尚未就绪不能通过验收
     And 此项仅证明一条入站流不代表整个 VM 正常关闭或持久化成功
 
+  # evidence: docs/evidence/ssi-ioctl-admission-20261106.json
+  @verified @p0
+  Scenario: 原生 VM 与 vCPU ioctl 封闭入口并等待已准入操作
+    Given PF20 两个专用实验 VM 的真实写入正在等待远端页面或 vCPU 正在 HLT 等待
+    When 控制端原子封闭普通 VM 与 vCPU ioctl 入口
+    Then 新管理运行和内存复制调用均返回 ESHUTDOWN 而旧操作保持计数
+    And 旧写入完成并释放 SRCU 后等待者才能成功且封闭期间页面服务仍返回正确内容
+    And KVM_RUN 真实退出后才释放计数且控制等待者不计入自己等待的操作
+    And 参数错误不封闭入口超时不重开入口相同序号可复核不同序号被拒绝
+    And 故障唤醒全部等待者并保留错误而不能以计数归零冒充成功
+    And 此项不证明后台设备 DMA 固定页面出站缓存响应或整个 VM 已经排空
+
+  @research @p0
+  Scenario: 封闭入口之前验证跨调用资源和后台生产者已经停止
+    Given 设备持有 DMA 固定页面或存在 device fd irqfd 定时器及后台任务
+    When 管理器准备封闭 VM 与 vCPU ioctl 入口
+    Then 所有需要后续 ioctl 的设备清理和 unpin 须先完成并有真实证据
+    And 补齐其余入口和三十二位兼容路径的动态故障及并发验证
+    And ioctl 计数为零不能冒充固定页面归零或所有异步任务已结束
+
   @research @p0
   Scenario: 整机关闭协调外部入口反向请求和所有连接
     Given 入站流屏障已完成而其他连接仍可能产生反向取页
