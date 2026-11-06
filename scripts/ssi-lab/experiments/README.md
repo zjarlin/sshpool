@@ -135,3 +135,7 @@ PF20 后依次应用 `kernel-dsm-exchange-accounting.patch` 和 `kernel-dsm-exch
 ## PF23：固定引用与关闭准入
 
 PF22 后应用 `kernel-dsm-pin-lifecycle.patch`，构建独立 `-sshpool-gvm-pf23`。跟踪跨 ioctl 的读写固定引用和在途固定调用，有引用时拒绝封闭普通入口并保留解除通道；错误解除不减计数，部分固定失败只回滚本次新增引用，固定期间保护内存槽。补丁为 GPL-2.0-only，默认流程不应用。使用方式、对照证据和未完成的设备关闭协议见 [固定页面生命周期](../../../docs/ssi-pin-lifecycle.md)。
+
+## PF24：等待取页时解除旧引用
+
+PF23 后应用 `kernel-dsm-pin-release.patch`，单独构建 `-sshpool-gvm-pf24`。用独立引用锁与暂存计数保护整段提交，解除路径避开持有网络等待的全局 DSM 锁和页面锁；在途固定令牌在引用为零时也保护槽。补丁为 GPL-2.0-only，ABI 不变，默认流程不应用。两节点对照、六类探针和未完成的全程取消与设备关闭见 [解除进展实验](../../../docs/ssi-pin-release.md)。

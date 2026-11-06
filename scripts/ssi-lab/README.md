@@ -172,3 +172,9 @@ timeout --kill-after=5 45 python3 scripts/ssi-lab/probe-dsm-device.py \
 ## 固定页面与关闭入口
 
 `probe-pins.py` 只允许独占 PF22 对照或 PF23 候选内核，分别运行 `--mode service|lifecycle|active|rollback --require-kernel <精确内核名> --output <新文件>`。PF22 仅允许 service 对照，PF23 覆盖全部四种场景。`check-pins.py <记录.json>` 从真实 ioctl 和内核事件核对引用、释放及关闭拒绝。先读 [固定页面实验](../../docs/ssi-pin-lifecycle.md)；有引用时拒绝封闭不等于后台设备已停止或 DSM 可以最终断连。
+
+## 远端取页期间解除固定
+
+`probe-pin-release.py` 只允许独占 PF23 对照或 PF24 候选，使用 `--mode dependency|pending|pending-write|empty|rollback|duplicate --require-kernel <精确内核名> --output <新文件>`。PF23 只允许 dependency，PF24 覆盖全部六种场景。`check-pin-release.py <记录.json>` 核对解除先于远端响应、暂存保护、回滚、重复解除与活动操作的槽保护，使用方式和失败记录见 [解除进展实验](../../docs/ssi-pin-release.md)。
+
+探针使用回环 37710/37711，临时例外必须同时允许回环目标端口和源端口，避免随机客户端端口落入实验防火墙受保护段而拦截返回包。仅允许 `lo` 与 `127.0.0.0/8`，执行前核对所有方向的 TCP 状态为空，执行后恢复精确原规则。它不需要外网或业务网段的新权限，不应在业务宿主运行。

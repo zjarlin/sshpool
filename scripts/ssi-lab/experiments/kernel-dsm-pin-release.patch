@@ -1,0 +1,283 @@
+--- a/arch/x86/kvm/dsm.c
++++ b/arch/x86/kvm/dsm.c
+@@ -679,6 +679,7 @@
+ 	spin_lock_init(&kvm->arch.dsm_admission_lock);
+ 	init_waitqueue_head(&kvm->arch.dsm_ioctl_wait);
+ 	mutex_init(&kvm->arch.dsm_lock);
++	mutex_init(&kvm->arch.dsm_pin_refs_lock);
+ 	kvm->arch.dsm_hvaslots =
+ 		kvzalloc(sizeof(*kvm->arch.dsm_hvaslots), GFP_KERNEL);
+ 	if (!kvm->arch.dsm_hvaslots)
+@@ -855,32 +856,107 @@
+ 	return ret;
+ }
+ 
+-/* 全 VM 计数与页面引用在同一锁下改变，失败不能产生负数或假零。 */
+-static noinline int kvm_dsm_pin_change(struct kvm *kvm,
+-		struct kvm_dsm_memory_slot *slot, hfn_t vfn, bool write, bool unpin)
+-{
+-	atomic_t *refs = write ? &slot->vfn_dsm_state[vfn - slot->base_vfn].pinned_write :
+-		&slot->vfn_dsm_state[vfn - slot->base_vfn].pinned_read;
++enum dsm_pin_transition {
++	DSM_PIN_PREPARE,
++	DSM_PIN_COMMIT,
++	DSM_PIN_ABORT,
++	DSM_PIN_RELEASE,
++};
++
++/* 有效引用包含暂存引用；解除操作只能消费已经提交的部分。 */
++static noinline int kvm_dsm_pin_transition(struct kvm *kvm,
++		struct kvm_dsm_memory_slot *slot, hfn_t vfn, bool write,
++		enum dsm_pin_transition transition)
++{
++	struct kvm_dsm_info *info = &slot->vfn_dsm_state[vfn - slot->base_vfn];
++	atomic_t *refs = write ? &info->pinned_write : &info->pinned_read;
++	u32 *pending = write ? &info->pending_write : &info->pending_read;
+ 	u64 *total = write ? &kvm->arch.dsm_write_pins : &kvm->arch.dsm_read_pins;
+ 	unsigned long flags;
+ 	int count, ret = 0;
+ 
++	lockdep_assert_held(&kvm->arch.dsm_pin_refs_lock);
+ 	spin_lock_irqsave(&kvm->arch.dsm_admission_lock, flags);
+ 	count = atomic_read(refs);
+-	if (unpin) {
+-		if (count <= 0 || !*total) {
+-			ret = -EINVAL;
+-		} else {
+-			atomic_dec_return_release(refs);
+-			(*total)--;
+-		}
+-	} else if (count < 0 || count == INT_MAX || *total == U64_MAX) {
+-		ret = -EOVERFLOW;
+-	} else {
++	if (count < 0 || *pending > count) {
++		ret = -EINVAL;
++		goto out;
++	}
++	switch (transition) {
++	case DSM_PIN_PREPARE:
++		if (count == INT_MAX || *total == U64_MAX) {
++			ret = -EOVERFLOW;
++			break;
++		}
++		(*pending)++;
+ 		atomic_inc(refs);
+ 		(*total)++;
+-	}
++		break;
++	case DSM_PIN_COMMIT:
++		if (!*pending) {
++			ret = -EINVAL;
++			break;
++		}
++		(*pending)--;
++		break;
++	case DSM_PIN_ABORT:
++		if (!*pending || !*total) {
++			ret = -EINVAL;
++			break;
++		}
++		(*pending)--;
++		atomic_dec_return_release(refs);
++		(*total)--;
++		break;
++	case DSM_PIN_RELEASE:
++		if (count == *pending || !*total) {
++			ret = -EINVAL;
++			break;
++		}
++		atomic_dec_return_release(refs);
++		(*total)--;
++		break;
++	}
++out:
+ 	spin_unlock_irqrestore(&kvm->arch.dsm_admission_lock, flags);
++	return ret;
++}
++
++/* 整段解除只使用引用锁；不能等待取页线程持有的槽锁或页面锁。 */
++static int kvm_dsm_unpin_range(struct kvm *kvm, hfn_t first, hfn_t end, bool write)
++{
++	struct kvm_dsm_memory_slot *slot;
++	struct kvm_dsm_info *info;
++	hfn_t vfn;
++	int count, ret = 0;
++	u32 pending;
++
++	mutex_lock(&kvm->arch.dsm_pin_refs_lock);
++	for (vfn = first; vfn < end; vfn++) {
++		slot = vfn_to_hvaslot(kvm, vfn);
++		if (!slot) {
++			continue;
++		}
++		info = &slot->vfn_dsm_state[vfn - slot->base_vfn];
++		count = atomic_read(write ? &info->pinned_write : &info->pinned_read);
++		pending = write ? info->pending_write : info->pending_read;
++		if (count <= 0 || pending >= count) {
++			ret = -EINVAL;
++			goto out;
++		}
++	}
++	for (vfn = first; vfn < end; vfn++) {
++		slot = vfn_to_hvaslot(kvm, vfn);
++		if (!slot) {
++			continue;
++		}
++		ret = kvm_dsm_pin_transition(kvm, slot, vfn, write, DSM_PIN_RELEASE);
++		if (WARN_ON_ONCE(ret)) {
++			break;
++		}
++	}
++out:
++	mutex_unlock(&kvm->arch.dsm_pin_refs_lock);
+ 	return ret;
+ }
+ 
+@@ -892,7 +968,8 @@
+ 
+ 	lockdep_assert_held(&kvm->slots_lock);
+ 	spin_lock_irqsave(&kvm->arch.dsm_admission_lock, flags);
+-	busy = kvm->arch.dsm_read_pins || kvm->arch.dsm_write_pins;
++	busy = kvm->arch.dsm_active_pin_ops || kvm->arch.dsm_read_pins ||
++	       kvm->arch.dsm_write_pins;
+ 	spin_unlock_irqrestore(&kvm->arch.dsm_admission_lock, flags);
+ 	return busy;
+ }
+@@ -916,11 +993,11 @@
+ {
+ 	struct kvm_dsm_memory_slot *slot;
+ 	struct kvm_memory_slot *memslot;
+-	hfn_t first, vfn, end, rollback;
++	hfn_t first, vfn, end, completed;
+ 	gfn_t gfn;
+ 	bool is_smm;
+-	atomic_t *refs;
+-	int idx, count, ret = 0;
++	int idx, ret = 0;
++	enum dsm_pin_transition finish;
+ 
+ 	if (current->mm != kvm->mm) {
+ 		return -EFAULT;
+@@ -934,48 +1011,38 @@
+ 	if (length > ULONG_MAX - host_virt_addr) {
+ 		return -EINVAL;
+ 	}
+-	/* 先取得槽锁再进入 SRCU，避免与等待 SRCU 的槽更新相互等待。 */
++	/* 等先前的槽更新结束；本次准入令牌阻止后续更新，SRCU 保留对象存活。 */
+ 	if (mutex_lock_killable(&kvm->slots_lock)) {
+ 		return -EINTR;
+ 	}
+ 	idx = srcu_read_lock(&kvm->srcu);
+-	mutex_lock(&kvm->arch.dsm_lock);
++	mutex_unlock(&kvm->slots_lock);
+ 	first = host_virt_addr >> PAGE_SHIFT;
+ 	end = ((host_virt_addr + length - 1) >> PAGE_SHIFT) + 1;
+-
+-	/* 先验证整个解除范围，避免后面的无效页使前面的有效引用被提前释放。 */
++	if (unpin) {
++		ret = kvm_dsm_unpin_range(kvm, first, end, write);
++		goto out_srcu;
++	}
++
++	mutex_lock(&kvm->arch.dsm_lock);
+ 	for (vfn = first; vfn < end; vfn++) {
+ 		slot = vfn_to_hvaslot(kvm, vfn);
+ 		if (!slot) {
+ 			continue;
+ 		}
+-		refs = write ? &slot->vfn_dsm_state[vfn - slot->base_vfn].pinned_write :
+-			&slot->vfn_dsm_state[vfn - slot->base_vfn].pinned_read;
+-		count = atomic_read(refs);
+-		if ((unpin && count <= 0) || (!unpin && (count < 0 || count == INT_MAX))) {
+-			ret = unpin ? -EINVAL : -EOVERFLOW;
+-			goto out;
+-		}
+-	}
+-
+-	for (vfn = first; vfn < end; vfn++) {
+-		slot = vfn_to_hvaslot(kvm, vfn);
+-		if (!slot) {
+-			continue;
+-		}
+ 		dsm_lock(kvm, slot, vfn, NULL);
+-		if (!unpin) {
+-			is_smm = false;
+-			gfn = __kvm_dsm_vfn_to_gfn(slot, false, vfn, &is_smm, NULL, NULL);
+-			memslot = __gfn_to_memslot(__kvm_memslots(kvm, is_smm), gfn);
+-			if (gfn == (gfn_t)-1 || !memslot) {
+-				ret = -EFAULT;
+-			} else {
+-				ret = kvm_dsm_page_fault(kvm, memslot, gfn, is_smm, write);
+-			}
++		is_smm = false;
++		gfn = __kvm_dsm_vfn_to_gfn(slot, false, vfn, &is_smm, NULL, NULL);
++		memslot = __gfn_to_memslot(__kvm_memslots(kvm, is_smm), gfn);
++		if (gfn == (gfn_t)-1 || !memslot) {
++			ret = -EFAULT;
++		} else {
++			ret = kvm_dsm_page_fault(kvm, memslot, gfn, is_smm, write);
+ 		}
+ 		if (ret >= 0) {
+-			ret = kvm_dsm_pin_change(kvm, slot, vfn, write, unpin);
++			mutex_lock(&kvm->arch.dsm_pin_refs_lock);
++			ret = kvm_dsm_pin_transition(kvm, slot, vfn, write, DSM_PIN_PREPARE);
++			mutex_unlock(&kvm->arch.dsm_pin_refs_lock);
+ 		}
+ 		dsm_unlock_fast_path(slot, vfn, false);
+ 		dsm_unlock(kvm, slot, vfn, NULL);
+@@ -984,22 +1051,20 @@
+ 		}
+ 	}
+ 
+-	/* 后续取页失败时撤销本次已增加的引用，保留原来已经存在的引用。 */
+-	if (ret < 0 && !unpin) {
+-		for (rollback = first; rollback < vfn; rollback++) {
+-			slot = vfn_to_hvaslot(kvm, rollback);
+-			if (!slot) {
+-				continue;
+-			}
+-			dsm_lock(kvm, slot, rollback, NULL);
+-			WARN_ON_ONCE(kvm_dsm_pin_change(kvm, slot, rollback, write, true));
+-			dsm_unlock(kvm, slot, rollback, NULL);
+-		}
+-	}
+-out:
++	/* 整段成功后才允许外部解除；失败只撤销本操作尚未提交的引用。 */
++	finish = ret < 0 ? DSM_PIN_ABORT : DSM_PIN_COMMIT;
++	mutex_lock(&kvm->arch.dsm_pin_refs_lock);
++	for (completed = first; completed < vfn; completed++) {
++		slot = vfn_to_hvaslot(kvm, completed);
++		if (!slot) {
++			continue;
++		}
++		WARN_ON_ONCE(kvm_dsm_pin_transition(kvm, slot, completed, write, finish));
++	}
++	mutex_unlock(&kvm->arch.dsm_pin_refs_lock);
+ 	mutex_unlock(&kvm->arch.dsm_lock);
++out_srcu:
+ 	srcu_read_unlock(&kvm->srcu, idx);
+-	mutex_unlock(&kvm->slots_lock);
+ 	return ret;
+ }
+ 
+--- a/arch/x86/include/asm/kvm_host.h
++++ b/arch/x86/include/asm/kvm_host.h
+@@ -1187,6 +1187,9 @@
+ 	atomic_t fast_path_locked;
+ 	atomic_t pinned_read;
+ 	atomic_t pinned_write;
++	/* 未完成的固定操作持有保护引用，但调用者还不能解除这些引用。 */
++	u32 pending_read;
++	u32 pending_write;
+ 	struct mutex lock; /* protects DSM state changes */
+ 	version_t version;
+ };
+@@ -1766,6 +1769,8 @@
+ 	int dsm_id;
+ 	struct kvm_dsm_memslots *dsm_hvaslots;
+ 	struct mutex dsm_lock; /* protects DSM slot operations */
++	/* 只保护引用校验和提交，持锁期间不得等待页面锁或网络。 */
++	struct mutex dsm_pin_refs_lock;
+ 	struct mutex conn_init_lock; /* protects connection initialization */
+ 
+ 	struct task_struct *dsm_thread;

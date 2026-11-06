@@ -2,6 +2,8 @@
 
 PF23 修复普通 ioctl 已返回但设备仍持有 DSM 页面引用时，关闭检查错误放行的问题。页面未释放或固定调用尚在执行时，`KVM_DSM_IOCTL_DRAIN` 返回 `EBUSY`，不封闭入口；调用者仍能解除固定，随后再申请封闭。**这只是完整关闭协议的前置条件，不代表整机正常关闭或业务接管已经完成。**
 
+后续 [PF24 解除进展实验](ssi-pin-release.md) 复现并修复了本文版本在取页持锁期间阻塞旧引用解除的问题；本文实现与证据保留为 PF23 历史对照。
+
 先看 [需求场景](../features/150-ssi-device-memory.feature)，再看 [补丁](../scripts/ssi-lab/experiments/kernel-dsm-pin-lifecycle.patch)、[探针](../scripts/ssi-lab/probe-pins.py)、[检查器](../scripts/ssi-lab/check-pins.py) 和 [原始证据](evidence/ssi-pin-lifecycle-20261106.json)。实验仅使用同一物理 ESXi 上的两台专用 x86 VM，不访问公司数据、生产数据库或业务磁盘。
 
 ## 复现与修复
