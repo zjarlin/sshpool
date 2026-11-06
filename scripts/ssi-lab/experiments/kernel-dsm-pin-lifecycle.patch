@@ -1,0 +1,386 @@
+--- a/arch/x86/kvm/dsm.c
++++ b/arch/x86/kvm/dsm.c
+@@ -18,6 +18,7 @@
+  */
+ 
+ #include <linux/kvm_host.h>
++#include <linux/limits.h>
+ #include <linux/kvm.h>
+ #include "dsm.h"
+ #include "mmu.h"
+@@ -854,83 +855,151 @@
+ 	return ret;
+ }
+ 
++/* 全 VM 计数与页面引用在同一锁下改变，失败不能产生负数或假零。 */
++static noinline int kvm_dsm_pin_change(struct kvm *kvm,
++		struct kvm_dsm_memory_slot *slot, hfn_t vfn, bool write, bool unpin)
++{
++	atomic_t *refs = write ? &slot->vfn_dsm_state[vfn - slot->base_vfn].pinned_write :
++		&slot->vfn_dsm_state[vfn - slot->base_vfn].pinned_read;
++	u64 *total = write ? &kvm->arch.dsm_write_pins : &kvm->arch.dsm_read_pins;
++	unsigned long flags;
++	int count, ret = 0;
++
++	spin_lock_irqsave(&kvm->arch.dsm_admission_lock, flags);
++	count = atomic_read(refs);
++	if (unpin) {
++		if (count <= 0 || !*total) {
++			ret = -EINVAL;
++		} else {
++			atomic_dec_return_release(refs);
++			(*total)--;
++		}
++	} else if (count < 0 || count == INT_MAX || *total == U64_MAX) {
++		ret = -EOVERFLOW;
++	} else {
++		atomic_inc(refs);
++		(*total)++;
++	}
++	spin_unlock_irqrestore(&kvm->arch.dsm_admission_lock, flags);
++	return ret;
++}
++
++/* 调用者持有 slots_lock，固定期间不得删除、移动或重建任何内存槽。 */
++bool kvm_dsm_has_pins(struct kvm *kvm)
++{
++	unsigned long flags;
++	bool busy;
++
++	lockdep_assert_held(&kvm->slots_lock);
++	spin_lock_irqsave(&kvm->arch.dsm_admission_lock, flags);
++	busy = kvm->arch.dsm_read_pins || kvm->arch.dsm_write_pins;
++	spin_unlock_irqrestore(&kvm->arch.dsm_admission_lock, flags);
++	return busy;
++}
++
++static int kvm_dsm_pin_status(struct kvm *kvm, void __user *argp)
++{
++	struct kvm_dsm_pin_status status = { .version = 1 };
++	unsigned long flags;
++
++	spin_lock_irqsave(&kvm->arch.dsm_admission_lock, flags);
++	status.active_ops = kvm->arch.dsm_active_pin_ops;
++	status.read_refs = kvm->arch.dsm_read_pins;
++	status.write_refs = kvm->arch.dsm_write_pins;
++	status.error = READ_ONCE(kvm->arch.dsm_error);
++	spin_unlock_irqrestore(&kvm->arch.dsm_admission_lock, flags);
++	return copy_to_user(argp, &status, sizeof(status)) ? -EFAULT : 0;
++}
++
+ static int kvm_dsm_mempin(struct kvm *kvm, unsigned long host_virt_addr,
+ 			  unsigned long length, bool write, bool unpin)
+ {
+ 	struct kvm_dsm_memory_slot *slot;
+ 	struct kvm_memory_slot *memslot;
+-	hfn_t vfn, vfn_end;
++	hfn_t first, vfn, end, rollback;
+ 	gfn_t gfn;
+ 	bool is_smm;
+-	unsigned long npages, gfn_npages, i, j;
+-	int idx, ret = 0;
+-
+-	if (current->mm != kvm->mm)
++	atomic_t *refs;
++	int idx, count, ret = 0;
++
++	if (current->mm != kvm->mm) {
+ 		return -EFAULT;
+-	if (!kvm->arch.dsm_enabled)
++	}
++	if (!kvm->arch.dsm_enabled) {
+ 		return -EINVAL;
+-
+-	if (!length)
++	}
++	if (!length) {
+ 		return 0;
+-	if (length > ULONG_MAX - host_virt_addr)
++	}
++	if (length > ULONG_MAX - host_virt_addr) {
+ 		return -EINVAL;
+-
+-	pr_devel("dsm: hva %lx, length %lu, write %d unpin %d\n",
+-		 host_virt_addr, length, write, unpin);
++	}
++	/* 先取得槽锁再进入 SRCU，避免与等待 SRCU 的槽更新相互等待。 */
++	if (mutex_lock_killable(&kvm->slots_lock)) {
++		return -EINTR;
++	}
+ 	idx = srcu_read_lock(&kvm->srcu);
+-
+-	vfn_end = ((host_virt_addr + length - 1) >> PAGE_SHIFT) + 1;
+-	for (vfn = host_virt_addr >> PAGE_SHIFT; vfn < vfn_end; vfn += npages) {
++	mutex_lock(&kvm->arch.dsm_lock);
++	first = host_virt_addr >> PAGE_SHIFT;
++	end = ((host_virt_addr + length - 1) >> PAGE_SHIFT) + 1;
++
++	/* 先验证整个解除范围，避免后面的无效页使前面的有效引用被提前释放。 */
++	for (vfn = first; vfn < end; vfn++) {
+ 		slot = vfn_to_hvaslot(kvm, vfn);
+-		/* ignore private memslots, they have no corresponding hvaslots */
+ 		if (!slot) {
+-			npages = 1;
+ 			continue;
+ 		}
+-		npages =
+-			min(vfn_end - vfn, slot->base_vfn + slot->npages - vfn);
+-
+-		mutex_lock(&kvm->arch.dsm_lock);
+-		for (i = 0; i < npages; i++)
+-			dsm_lock(kvm, slot, vfn + i, NULL);
+-
+-		if (unpin) {
+-			for (i = 0; i < npages; i++)
+-				dsm_unpin(slot, vfn + i, write);
+-			goto out_unlock;
+-		}
+-
+-		for (i = 0; i < npages; i += gfn_npages) {
+-			gfn = __kvm_dsm_vfn_to_gfn(slot, false, vfn + i,
+-						   &is_smm, NULL, NULL);
+-			memslot = __gfn_to_memslot(__kvm_memslots(kvm, is_smm),
+-						   gfn);
+-			gfn_npages =
+-				min(npages - i,
+-				    (unsigned long)(memslot->base_gfn +
+-						    memslot->npages - gfn));
+-			for (j = 0; j < gfn_npages; j++) {
+-				ret = kvm_dsm_page_fault(kvm, memslot, gfn + j,
+-							 is_smm, write);
+-				if (ret < 0)
+-					goto out_unlock;
++		refs = write ? &slot->vfn_dsm_state[vfn - slot->base_vfn].pinned_write :
++			&slot->vfn_dsm_state[vfn - slot->base_vfn].pinned_read;
++		count = atomic_read(refs);
++		if ((unpin && count <= 0) || (!unpin && (count < 0 || count == INT_MAX))) {
++			ret = unpin ? -EINVAL : -EOVERFLOW;
++			goto out;
++		}
++	}
++
++	for (vfn = first; vfn < end; vfn++) {
++		slot = vfn_to_hvaslot(kvm, vfn);
++		if (!slot) {
++			continue;
++		}
++		dsm_lock(kvm, slot, vfn, NULL);
++		if (!unpin) {
++			is_smm = false;
++			gfn = __kvm_dsm_vfn_to_gfn(slot, false, vfn, &is_smm, NULL, NULL);
++			memslot = __gfn_to_memslot(__kvm_memslots(kvm, is_smm), gfn);
++			if (gfn == (gfn_t)-1 || !memslot) {
++				ret = -EFAULT;
++			} else {
++				ret = kvm_dsm_page_fault(kvm, memslot, gfn, is_smm, write);
+ 			}
+ 		}
+-
+-		for (i = 0; i < npages; i++)
+-			dsm_pin(slot, vfn + i, write);
+-
+-out_unlock:
+-		for (i = 0; i < npages; i++) {
+-			dsm_unlock_fast_path(slot, vfn + i, false);
+-			dsm_unlock(kvm, slot, vfn + i, NULL);
+-		}
+-		mutex_unlock(&kvm->arch.dsm_lock);
+-		if (ret < 0)
+-			goto out;
++		if (ret >= 0) {
++			ret = kvm_dsm_pin_change(kvm, slot, vfn, write, unpin);
++		}
++		dsm_unlock_fast_path(slot, vfn, false);
++		dsm_unlock(kvm, slot, vfn, NULL);
++		if (ret < 0) {
++			break;
++		}
++	}
++
++	/* 后续取页失败时撤销本次已增加的引用，保留原来已经存在的引用。 */
++	if (ret < 0 && !unpin) {
++		for (rollback = first; rollback < vfn; rollback++) {
++			slot = vfn_to_hvaslot(kvm, rollback);
++			if (!slot) {
++				continue;
++			}
++			dsm_lock(kvm, slot, rollback, NULL);
++			WARN_ON_ONCE(kvm_dsm_pin_change(kvm, slot, rollback, write, true));
++			dsm_unlock(kvm, slot, rollback, NULL);
++		}
+ 	}
+ out:
++	mutex_unlock(&kvm->arch.dsm_lock);
+ 	srcu_read_unlock(&kvm->srcu, idx);
++	mutex_unlock(&kvm->slots_lock);
+ 	return ret;
+ }
+ 
+@@ -942,7 +1011,8 @@
+ 
+ 	if (vm_ioctl && (ioctl == KVM_DSM_IOCTL_DRAIN ||
+ 			 ioctl == KVM_DSM_IOCTL_STATUS ||
+-			 ioctl == KVM_DSM_TRANSPORT_STATUS))
++			 ioctl == KVM_DSM_TRANSPORT_STATUS ||
++			 ioctl == KVM_DSM_PIN_STATUS))
+ 		return 0;
+ 	spin_lock_irqsave(&kvm->arch.dsm_admission_lock, flags);
+ 	ret = READ_ONCE(kvm->arch.dsm_error);
+@@ -951,6 +1021,11 @@
+ 	if (!ret) {
+ 		kvm->arch.dsm_active_ioctls++;
+ 		ret = 1;
++		/* 令牌二覆盖参数复制和等待槽锁，防止在固定调用尚未提交时封闭。 */
++		if (vm_ioctl && ioctl == KVM_DSM_MEMPIN) {
++			kvm->arch.dsm_active_pin_ops++;
++			ret = 2;
++		}
+ 	}
+ 	spin_unlock_irqrestore(&kvm->arch.dsm_admission_lock, flags);
+ 	return ret;
+@@ -963,8 +1038,12 @@
+ 	if (!token)
+ 		return;
+ 	spin_lock_irqsave(&kvm->arch.dsm_admission_lock, flags);
+-	if (!WARN_ON_ONCE(!kvm->arch.dsm_active_ioctls))
++	if (!WARN_ON_ONCE(!kvm->arch.dsm_active_ioctls)) {
+ 		kvm->arch.dsm_active_ioctls--;
++	}
++	if (token == 2 && !WARN_ON_ONCE(!kvm->arch.dsm_active_pin_ops)) {
++		kvm->arch.dsm_active_pin_ops--;
++	}
+ 	spin_unlock_irqrestore(&kvm->arch.dsm_admission_lock, flags);
+ 	wake_up_all(&kvm->arch.dsm_ioctl_wait);
+ }
+@@ -994,8 +1073,14 @@
+ 	if (!ret && kvm->arch.dsm_ioctl_generation &&
+ 	    kvm->arch.dsm_ioctl_generation != params.generation)
+ 		ret = -ESTALE;
+-	if (!ret)
++	/* 不封闭仍需 unpin 的 VM，也不让已准入的固定调用在检查后新增引用。 */
++	if (!ret && (kvm->arch.dsm_active_pin_ops || kvm->arch.dsm_read_pins ||
++		     kvm->arch.dsm_write_pins)) {
++		ret = -EBUSY;
++	}
++	if (!ret) {
+ 		kvm->arch.dsm_ioctl_generation = params.generation;
++	}
+ 	spin_unlock_irqrestore(&kvm->arch.dsm_admission_lock, flags);
+ 	mutex_unlock(&kvm->lock);
+ 	if (ret)
+@@ -1091,6 +1176,8 @@
+ 	int r = -EFAULT;
+ 
+ 	switch (ioctl) {
++	case KVM_DSM_PIN_STATUS:
++		return kvm_dsm_pin_status(kvm, argp);
+ 	case KVM_DSM_TRANSPORT_STATUS:
+ 		return kvm_dsm_transport_status(kvm, argp);
+ 	case KVM_DSM_IOCTL_DRAIN:
+--- a/arch/x86/include/asm/kvm_host.h
++++ b/arch/x86/include/asm/kvm_host.h
+@@ -1783,6 +1783,10 @@
+ 	u32 dsm_active_exchanges;
+ 	u32 dsm_cached_responses;
+ 	u32 dsm_active_requests;
++	/* 引用计数跨越 MEMPIN 返回，不能由普通 ioctl 计数代替。 */
++	u32 dsm_active_pin_ops;
++	u64 dsm_read_pins;
++	u64 dsm_write_pins;
+ 
+ 	u32 cluster_iplist_len;
+ 	char **cluster_iplist;
+--- a/include/linux/kvm_host.h
++++ b/include/linux/kvm_host.h
+@@ -2613,6 +2613,7 @@
+ #ifdef CONFIG_KVM_DSM
+ int kvm_dsm_ioctl_enter(struct kvm *kvm, unsigned int ioctl, bool vm_ioctl);
+ void kvm_dsm_ioctl_leave(struct kvm *kvm, int token);
++bool kvm_dsm_has_pins(struct kvm *kvm);
+ #else
+ static inline int kvm_dsm_ioctl_enter(struct kvm *kvm, unsigned int ioctl,
+ 				    bool vm_ioctl)
+@@ -2623,6 +2624,11 @@
+ static inline void kvm_dsm_ioctl_leave(struct kvm *kvm, int token)
+ {
+ }
+-#endif
+-
+-#endif
++
++static inline bool kvm_dsm_has_pins(struct kvm *kvm)
++{
++	return false;
++}
++#endif
++
++#endif
+--- a/include/uapi/linux/kvm.h
++++ b/include/uapi/linux/kvm.h
+@@ -1434,6 +1434,18 @@
+ 
+ #define KVM_DSM_TRANSPORT_STATUS _IOR(KVMIO, 0xf8, struct kvm_dsm_transport_status)
+ 
++/* 引用按页面和读写类型累计，不是物理 FOLL_PIN 引用，也不证明后台设备停止。 */
++struct kvm_dsm_pin_status {
++	__u32 version;
++	__u32 active_ops;
++	__u64 read_refs;
++	__u64 write_refs;
++	__s32 error;
++	__u32 reserved;
++};
++
++#define KVM_DSM_PIN_STATUS _IOR(KVMIO, 0xf9, struct kvm_dsm_pin_status)
++
+ /**
+  * struct kvm_dsm_memcpy - Parameters for DSM memory copy between guest and userspace.
+  *
+--- a/virt/kvm/kvm_main.c
++++ b/virt/kvm/kvm_main.c
+@@ -1890,6 +1890,11 @@
+ {
+ 	struct kvm_memory_slot *invalid_slot;
+ 	int r;
++
++	/* 必须在发布 INVALID 槽之前拒绝，避免丢失仍被设备持有的 DSM 引用。 */
++	if (kvm_dsm_has_pins(kvm)) {
++		return -EBUSY;
++	}
+ 
+ 	/*
+ 	 * Released in kvm_swap_active_memslots().
+--- a/arch/x86/kvm/dsm-util.h
++++ b/arch/x86/kvm/dsm-util.h
+@@ -166,31 +166,6 @@
+ {
+ 	return atomic_read_acquire(&slot->vfn_dsm_state[vfn - slot->base_vfn].pinned_read) &&
+ 	       (atomic_read_acquire(&slot->vfn_dsm_state[vfn - slot->base_vfn].pinned_write) == 0);
+-}
+-
+-static inline void dsm_pin(struct kvm_dsm_memory_slot *slot, hfn_t vfn, bool write)
+-{
+-	unsigned long index;
+-
+-	index = vfn - slot->base_vfn;
+-	if (write) {
+-		atomic_add(1, &slot->vfn_dsm_state[index].pinned_write);
+-		WARN_ON(atomic_read(&slot->vfn_dsm_state[index].pinned_write) == 0);
+-	} else {
+-		atomic_add(1, &slot->vfn_dsm_state[index].pinned_read);
+-		WARN_ON(atomic_read(&slot->vfn_dsm_state[index].pinned_read) == 0);
+-	}
+-}
+-
+-static inline void dsm_unpin(struct kvm_dsm_memory_slot *slot, hfn_t vfn, bool write)
+-{
+-	unsigned long index;
+-
+-	index = vfn - slot->base_vfn;
+-	if (write)
+-		atomic_fetch_sub_release(1, &slot->vfn_dsm_state[index].pinned_write);
+-	else
+-		atomic_fetch_sub_release(1, &slot->vfn_dsm_state[index].pinned_read);
+ }
+ 
+ static inline bool dsm_is_initial(struct kvm_dsm_memory_slot *slot, hfn_t vfn)

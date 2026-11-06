@@ -131,3 +131,7 @@ PF12、PF13 是未实际启用拦截的中间候选，不是补丁依赖。公�
 PF20 后依次应用 `kernel-dsm-exchange-accounting.patch` 和 `kernel-dsm-exchange-id-exhaustion.patch`，构建后缀 `-sshpool-gvm-pf22`。PF21 增加完整出站计数、连接内的活跃事务登记、缓存消费及状态查询；PF22 修复编号耗尽时重复取得保留编号的无限循环。**不要只应用 PF21 作为最终候选。** 这两个补丁和 `idr-exhaustion.c` 为 GPL-2.0-only，默认流程不应用。
 
 先看 [事务与缓存实验](../../../docs/ssi-exchange-accounting.md)，再看 [探针](../probe-exchanges.py) 与 [检查器](../check-exchanges.py)。证据保留 PF21 的边界失败，区分缓存成功消费和故障丢弃。`idr-exhaustion.c` 使用 Linux 原有 IDR 用户态测试环境及从候选源提取的函数，锁为单线程替身；不能当作大规模 KVM 并发或网络验证。QEMU 尚不使用新状态接口，最终 DSM CLOSE/ACK、设备排空和持久化仍未实现。
+
+## PF23：固定引用与关闭准入
+
+PF22 后应用 `kernel-dsm-pin-lifecycle.patch`，构建独立 `-sshpool-gvm-pf23`。跟踪跨 ioctl 的读写固定引用和在途固定调用，有引用时拒绝封闭普通入口并保留解除通道；错误解除不减计数，部分固定失败只回滚本次新增引用，固定期间保护内存槽。补丁为 GPL-2.0-only，默认流程不应用。使用方式、对照证据和未完成的设备关闭协议见 [固定页面生命周期](../../../docs/ssi-pin-lifecycle.md)。

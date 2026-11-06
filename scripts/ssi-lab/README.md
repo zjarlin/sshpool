@@ -168,3 +168,7 @@ timeout --kill-after=5 45 python3 scripts/ssi-lab/probe-dsm-device.py \
 `profile-threads.py` 对指定 QEMU 及独占节点上的 DSM 线程采样，`summarize-profile.py` 核对生命周期和累计 CPU 时间。原始数据、候选接收补丁和验证边界见 [传输实验](../../docs/ssi-transport.md)。默认构建流程不自动应用候选。
 
 可用 `check-clock.py guest.log --max-timer-ms 250` 对本轮四个定时器额外施加延迟门槛；省略参数时仍只验证计时单调性及不提前返回。`check-ssh-boot.py` 现在也拒绝丢失 RTC 中断和因读取间隔太长而跳过 watchdog 的记录。
+
+## 固定页面与关闭入口
+
+`probe-pins.py` 只允许独占 PF22 对照或 PF23 候选内核，分别运行 `--mode service|lifecycle|active|rollback --require-kernel <精确内核名> --output <新文件>`。PF22 仅允许 service 对照，PF23 覆盖全部四种场景。`check-pins.py <记录.json>` 从真实 ioctl 和内核事件核对引用、释放及关闭拒绝。先读 [固定页面实验](../../docs/ssi-pin-lifecycle.md)；有引用时拒绝封闭不等于后台设备已停止或 DSM 可以最终断连。
