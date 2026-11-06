@@ -1,0 +1,40 @@
+--- a/arch/x86/kvm/ivy.c
++++ b/arch/x86/kvm/ivy.c
+@@ -28,6 +28,7 @@
+ #include "mmu.h"
+ 
+ #include <linux/kthread.h>
++#include <linux/sched/signal.h>
+ #include <linux/mmu_context.h>
+ 
+ static u64 dsm_page_fault_counter;
+@@ -557,6 +558,11 @@
+ 			continue;
+ 
+ retry_handle_req:
++		/* 缺失内存槽或页面状态重试也必须响应根线程发出的取消。 */
++		if (kthread_should_stop() || fatal_signal_pending(current)) {
++			ret = -EINTR;
++			goto out;
++		}
+ 		idx = srcu_read_lock(&kvm->srcu);
+ 		memslot = __gfn_to_memslot(__kvm_memslots(kvm, req.is_smm),
+ 					   req.gfn);
+@@ -570,7 +576,7 @@
+ 			pr_warn("%s: kvm %d invalid gfn 0x%llx!\n", __func__,
+ 				kvm->arch.dsm_id, req.gfn);
+ 			srcu_read_unlock(&kvm->srcu, idx);
+-			schedule();
++			schedule_timeout_interruptible(1);
+ 			goto retry_handle_req;
+ 		}
+ 
+@@ -580,7 +586,7 @@
+ 			pr_warn("%s: kvm %d slot of gfn 0x%llx doesn't exist!\n",
+ 				__func__, kvm->arch.dsm_id, req.gfn);
+ 			srcu_read_unlock(&kvm->srcu, idx);
+-			schedule();
++			schedule_timeout_interruptible(1);
+ 			goto retry_handle_req;
+ 		}
+ 

@@ -19,6 +19,8 @@ TCP 版本不能与共享内存分支混配。使用上游源码地址，不使�
 
 `trace-teardown.py` 在独立 trace instance 中记录真实 DSM 线程退出与 KVM 销毁顺序，`check-teardown.py` 同时检查事件顺序、线程身份与丢失计数。PF9 的预销毁停止补丁及对照证据见 [关闭顺序实验](../../docs/ssi-teardown.md)。
 
+`probe-dsm-request.c` 保持空 VM 打开并按命令延迟注册一页内存；`probe-request-cancel.py` 发送完整读页请求，跟踪接收、线程定向信号与退出；`check-request-cancel.py` 检查无需补注册的取消和正常读页对照。PF10 的限定修复见 [请求取消实验](../../docs/ssi-request-cancel.md)，不覆盖页面锁等待与异常报文资源回收。
+
 ```sh
 git init GVM-kernel
 git -C GVM-kernel remote add origin https://github.com/GiantVM/GVM-kernel.git

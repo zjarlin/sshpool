@@ -28,6 +28,24 @@ Feature: SSI 传输等待与启动资源生命周期
     And 故障退出必须传递给客体管理层且不能伪装成干净关机
     And 正在处理的页面请求与缺失内存槽重试都应响应停止信号
 
+  # evidence: docs/evidence/ssi-request-cancel-20261106.json
+  @verified @p0
+  Scenario: 完整读页请求等待缺失内存槽时可取消
+    Given 独占实验 VM 已接收完整 DSM 读页请求但尚未注册目标页
+    When 根线程向处理线程定向发送取消或调用者直接关闭 VM
+    Then 九个 DSM 线程在目标页仍未注册时完成退出
+    And 故障取消保留 EINTR 且不依赖稍后补注册才能回收
+    And 未取消的对照在延迟注册后返回相同事务号和完整正确页面
+    And 两台节点上的事件计数完整且没有跟踪丢失
+
+  @research @p0
+  Scenario: 页面锁和异常请求分支也能安全回收
+    Given 页面锁被其他请求持有或收到长度和类型异常的完整报文
+    When 请求被取消或协议校验失败
+    Then 页面锁等待应能中断且所有 SRCU 和页面锁均被释放
+    And 报文复制不能越过请求缓冲区且临时页面必须被回收
+    And 错误保留给调用者而不伪装为成功
+
   # evidence: docs/evidence/ssi-teardown-20261106.json
   @verified @p0
   Scenario: 本地 VM 销毁前先停止访问其资源的 DSM 线程

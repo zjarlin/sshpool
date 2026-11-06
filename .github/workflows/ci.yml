@@ -29,6 +29,10 @@ jobs:
           cc -O2 -Wall -Wextra -Werror -static scripts/ssi-lab/guest-clock.c -o "$RUNNER_TEMP/guest-clock"
           cc -O2 -Wall -Wextra -Werror -static scripts/ssi-lab/probe-pvclock.c -o "$RUNNER_TEMP/probe-pvclock"
           cc -O2 -Wall -Wextra -Werror -static scripts/ssi-lab/probe-dsm-startup.c -o "$RUNNER_TEMP/probe-dsm-startup"
+          cc -O2 -Wall -Wextra -Werror -static scripts/ssi-lab/probe-dsm-request.c -o "$RUNNER_TEMP/probe-dsm-request"
+          request_status=0
+          "$RUNNER_TEMP/probe-dsm-request" kernel-must-not-match || request_status=$?
+          test "$request_status" -eq 2
           startup_status=0
           "$RUNNER_TEMP/probe-dsm-startup" kernel-must-not-match occupied || startup_status=$?
           test "$startup_status" -eq 2
