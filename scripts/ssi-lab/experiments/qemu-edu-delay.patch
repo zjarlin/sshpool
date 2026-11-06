@@ -1,0 +1,24 @@
+--- a/interrupt-router.c
++++ b/interrupt-router.c
+@@ -2,6 +2,7 @@
+ #include <linux/kvm.h>
+ 
+ #include "system/system.h"
++#include "qemu/main-loop.h"
+ 
+ #include "qapi/error.h"
+ #include "qemu/error-report.h"
+@@ -223,1 +224,13 @@
++                /* 仅实验 EDU 存活寄存器允许注入延迟，必须在设备全局锁外。 */
++                if (is_write && addr == 0xfeb00004 && len == 4 &&
++                    getenv("SSHPOOL_LAB_EDU_DELAY_US")) {
++                    if (strcmp(getenv("SSHPOOL_LAB_EDU_DELAY_US"), "50000") ||
++                        bql_locked()) {
++                        error_report("SSHPOOL_LAB_EDU_DELAY invalid setting or BQL held");
++                        exit(1);
++                    }
++                    error_report("SSHPOOL_LAB_EDU_DELAY addr=0xfeb00004 us=50000");
++                    g_usleep(50000);
++                }
++
+                 address_space_rw(&address_space_memory, addr, attrs, data, len, is_write);

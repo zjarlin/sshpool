@@ -13,6 +13,8 @@
 
 TCP 版本不能与共享内存分支混配。使用上游源码地址，不使用未经核验的预编译二进制。两个节点必须具有相同 QEMU、客体内核和 initramfs 哈希。
 
+`run-node.sh` 需要 `ss`（Linux 的 iproute2），在创建 VM 前检查实验端口的全部 TCP 状态，包括 TIME-WAIT。前次连接尚未回收时拒绝启动；这项检查不能替代内核错误传播或解决并发启动竞态。跨节点设备完成边界的新探针、实验补丁及重启失败记录见 [设备顺序实验](../../docs/ssi-device-order.md)。
+
 ```sh
 git init GVM-kernel
 git -C GVM-kernel remote add origin https://github.com/GiantVM/GVM-kernel.git

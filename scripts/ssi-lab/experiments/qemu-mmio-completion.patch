@@ -1,0 +1,90 @@
+--- a/interrupt-router.c
++++ b/interrupt-router.c
+@@ -21,6 +21,9 @@
+ #include "hw/boards.h"
+ #include "migration/rdma.h"
+ 
++/* 时钟启动握手同时拒绝没有 MMIO 写完成确认的旧协议。 */
++#define ROUTER_PROTOCOL_VERSION 2
++#define MMIO_WRITE_COMPLETE 0x4d4d494f
+ #define ROUTER_BUFFER_SIZE 1024
+ // #define ROUTER_CONNECTION_UNIX_SOCKET
+ #define ROUTER_CONNECTION_TCP
+@@ -217,14 +220,30 @@
+                 qemu_get_buffer(req_file, (uint8_t *)&attrs, sizeof(attrs));
+                 len = qemu_get_sbe32(req_file);
+                 is_write = qemu_get_sbe32(req_file) ? true : false;
++                if (len < 1 || len > 8 || qemu_file_get_error(req_file)) {
++                    error_report("SSI MMIO invalid or incomplete request header");
++                    exit(1);
++                }
+                 data = malloc(len);
+-                qemu_get_buffer(req_file, data, len);
++                if (qemu_get_buffer(req_file, data, len) != len ||
++                    qemu_file_get_error(req_file)) {
++                    error_report("SSI MMIO incomplete request payload");
++                    exit(1);
++                }
+ 
+                 address_space_rw(&address_space_memory, addr, attrs, data, len, is_write);
+ 
+-               if (!is_write) {
++                if (!is_write) {
+                     qemu_put_buffer(rsp_file, data, len);
+-                    qemu_fflush(rsp_file);
++                } else {
++                    /* 完成的是设备模拟操作，不是磁盘持久化或设备内部异步工作。 */
++                    qemu_put_be32(rsp_file, MMIO_WRITE_COMPLETE);
++                }
++                qemu_fflush(rsp_file);
++                if (qemu_file_get_error(rsp_file)) {
++                    error_report("SSI MMIO response failed: %s",
++                                 strerror(-qemu_file_get_error(rsp_file)));
++                    exit(1);
+                 }
+ 
+                 free(data);
+@@ -338,7 +357,7 @@
+                 KVMClockSample sample = {};
+                 int sample_ret = kvmclock_get_sample(&sample);
+ 
+-                qemu_put_be32(rsp_file, 1);
++                qemu_put_be32(rsp_file, ROUTER_PROTOCOL_VERSION);
+                 qemu_put_sbe32(rsp_file, sample_ret);
+                 qemu_put_be64(rsp_file, sample.clock);
+                 qemu_put_be64(rsp_file, sample.host_tsc);
+@@ -875,10 +894,22 @@
+     qemu_put_buffer(io_connect_file, data, len);
+ 
+     qemu_fflush(io_connect_file);
+-
+-
++    if (qemu_file_get_error(io_connect_file)) {
++        error_report("SSI MMIO request failed: %s",
++                     strerror(-qemu_file_get_error(io_connect_file)));
++        exit(1);
++    }
++
++    bool complete;
+     if (!is_write) {
+-        qemu_get_buffer(io_connect_return_file, data, len);
++        complete = qemu_get_buffer(io_connect_return_file, data, len) == len;
++    } else {
++        /* 持有同一连接锁直到收到实际执行后的确认，避免响应被下一请求消费。 */
++        complete = qemu_get_be32(io_connect_return_file) == MMIO_WRITE_COMPLETE;
++    }
++    if (!complete || qemu_file_get_error(io_connect_return_file)) {
++        error_report("SSI MMIO missing or invalid completion");
++        exit(1);
+     }
+ 
+     qemu_mutex_unlock(&io_forwarding_mutex);
+@@ -1200,7 +1231,7 @@
+         ret = qemu_file_get_error(io_connect_file);
+     } else if (qemu_file_get_error(io_connect_return_file)) {
+         ret = qemu_file_get_error(io_connect_return_file);
+-    } else if (version != 1) {
++    } else if (version != ROUTER_PROTOCOL_VERSION) {
+         ret = -EPROTO;
+     }
+     qemu_mutex_unlock(&io_forwarding_mutex);

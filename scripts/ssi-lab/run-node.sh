@@ -8,6 +8,13 @@ case "$node" in
     0|1) ;;
     *) echo 'NODE_INDEX must be 0 or 1' >&2; exit 2 ;;
 esac
+# 监听之外的关闭中连接也可能阻止研究内核重新绑定，不能只检查 LISTEN。
+occupied=$(ss -H -tan '( sport = :37710 or sport = :37711 or sport = :40000 or sport = :40001 )')
+if [[ -n "$occupied" ]]; then
+    echo '实验端口仍有 TCP 状态；等待连接回收后重新检查，不要强行复用。' >&2
+    printf '%s\n' "$occupied" >&2
+    exit 1
+fi
 python3 - "$peer0" "$peer1" <<'PY'
 import fcntl
 import ipaddress

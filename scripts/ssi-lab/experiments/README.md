@@ -69,3 +69,9 @@ ninja -C GVM-qemu/build -j2 qemu-system-x86_64
 ## PF7：接收等待
 
 在 PF6 后应用 `kernel-dsm-receive-wait.patch`，另行构建 `-sshpool-gvm-pf7`。它让任意请求接收者和半帧读者等待 socket；指定事务空读仍让出接收锁并退避，保留多读者分流。协议格式、错误报告与所有权操作保持原样。没有应用 TCP_NODELAY 或关闭 watchdog，尚未实现显式关闭握手和故障恢复。真实探针与客体结果见 [传输实验](../../../docs/ssi-transport.md)。
+
+## MMIO 写完成确认
+
+在时钟候选 QEMU 之后应用 `qemu-mmio-completion.patch`，另存运行时。它等待远端完成设备模拟操作后再恢复发送端 vCPU；时钟启动握手中的路由协议版本同时升为 2。默认构建不自动应用。完成确认不等于磁盘刷盘、DMA 完成或数据库事务提交，PIO 和双向设备回调仍需单独研究。
+
+`qemu-edu-delay.patch` 是独立诊断补丁，可分别应用于原时钟候选和完成确认候选；只有显式设置 `SSHPOOL_LAB_EDU_DELAY_US=50000` 才延迟指定 EDU 寄存器的远端写入。它不伪造返回值，不应部署到普通工作区。串口和 stderr 必须分开保存。精确边界、故障记录与复现见 [设备顺序实验](../../../docs/ssi-device-order.md)。
