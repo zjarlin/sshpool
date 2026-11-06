@@ -17,6 +17,8 @@ TCP 版本不能与共享内存分支混配。使用上游源码地址，不使�
 
 `probe-dsm-startup.c` 验证占用端口时 ioctl 的真实错误、同一空 VM 重试与重复启停后的端口释放；`check-startup.py` 核对完整操作顺序。PF8 候选补丁、真实 QEMU 错误传播及剩余销毁风险见 [启动与回收实验](../../docs/ssi-startup.md)。它不提供全局启动事务或正常关闭协议。
 
+`trace-teardown.py` 在独立 trace instance 中记录真实 DSM 线程退出与 KVM 销毁顺序，`check-teardown.py` 同时检查事件顺序、线程身份与丢失计数。PF9 的预销毁停止补丁及对照证据见 [关闭顺序实验](../../docs/ssi-teardown.md)。
+
 ```sh
 git init GVM-kernel
 git -C GVM-kernel remote add origin https://github.com/GiantVM/GVM-kernel.git

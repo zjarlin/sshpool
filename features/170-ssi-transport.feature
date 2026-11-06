@@ -26,6 +26,18 @@ Feature: SSI 传输等待与启动资源生命周期
     When 客体正常关机或某个节点失联
     Then 正常关闭须完成双方确认和在途请求排空
     And 故障退出必须传递给客体管理层且不能伪装成干净关机
+    And 正在处理的页面请求与缺失内存槽重试都应响应停止信号
+
+  # evidence: docs/evidence/ssi-teardown-20261106.json
+  @verified @p0
+  Scenario: 本地 VM 销毁前先停止访问其资源的 DSM 线程
+    Given 真实 KVM VM 包含两个 vCPU 内存槽和一个 DSM 半帧连接
+    When 对端先关闭连接或本地先关闭 VM
+    Then 内核跟踪确认八个接收线程和根线程先全部退出
+    And 停止函数返回后才进入 vCPU 和 MMU 销毁
+    And 最终释放仍可再次调用停止函数且没有重复的线程退出
+    And 跟踪缓冲区与 kprobe 计数都没有丢失事件
+    And 临时跟踪事件和防火墙规则均完成清理
 
   # evidence: docs/evidence/ssi-startup-20261106.json
   @verified @p0

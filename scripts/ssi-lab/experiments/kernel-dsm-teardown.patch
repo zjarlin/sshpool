@@ -1,0 +1,66 @@
+--- a/arch/x86/kvm/dsm.c
++++ b/arch/x86/kvm/dsm.c
+@@ -647,10 +647,10 @@
+ 	return 0;
+ }
+ 
+-void kvm_dsm_free(struct kvm *kvm)
+-{
+-	int ret, i;
+-	struct kvm_dsm_memslots *slots;
++/* 在 KVM 仍保有 vCPU、MMU 和路由时停止 DSM 使用者；重复调用不重复回收。 */
++void kvm_dsm_stop(struct kvm *kvm)
++{
++	int ret;
+ 
+ 	if (kvm->arch.dsm_enabled && kvm->arch.dsm_thread) {
+ 		pr_devel("kvm-dsm: node-%d stopping dsm server\n",
+@@ -667,6 +667,15 @@
+ 			       __func__, kvm->arch.dsm_id, ret);
+ 		}
+ 	}
++}
++
++void kvm_dsm_free(struct kvm *kvm)
++{
++	int i;
++	struct kvm_dsm_memslots *slots;
++
++	/* 创建失败路径可能跳过预销毁钩子，仍保留幂等的停止步骤。 */
++	kvm_dsm_stop(kvm);
+ 	/* 监听器归 VM 所有，即使线程尚未运行就被停止，也必须释放。 */
+ 	kvm_dsm_free_config(kvm);
+ 
+--- a/arch/x86/kvm/dsm.h
++++ b/arch/x86/kvm/dsm.h
+@@ -28,6 +28,7 @@
+ 			  gpa_t gpa, unsigned long len);
+ 
+ int kvm_dsm_alloc(struct kvm *kvm);
++void kvm_dsm_stop(struct kvm *kvm);
+ void kvm_dsm_free(struct kvm *kvm);
+ long kvm_vm_ioctl_dsm(struct kvm *kvm, unsigned int ioctl, unsigned long arg);
+ 
+@@ -92,6 +93,10 @@
+ 	return 0;
+ }
+ 
++static inline void kvm_dsm_stop(struct kvm *kvm)
++{
++}
++
+ static inline void kvm_dsm_free(struct kvm *kvm)
+ {
+ }
+--- a/arch/x86/kvm/x86.c
++++ b/arch/x86/kvm/x86.c
+@@ -13576,6 +13576,9 @@
+ 
+ void kvm_arch_pre_destroy_vm(struct kvm *kvm)
+ {
++	/* DSM 请求也会访问 vCPU/MMU，必须在通用 KVM 释放它们之前回收线程。 */
++	kvm_dsm_stop(kvm);
++
+ 	/*
+ 	 * Stop all background workers and kthreads before destroying vCPUs, as
+ 	 * iterating over vCPUs in a different task while vCPUs are being freed
