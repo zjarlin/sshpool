@@ -1,0 +1,31 @@
+--- a/system/runstate.c
++++ b/system/runstate.c
+@@ -51,6 +51,8 @@
+ #include "qemu/thread.h"
+ #include "qom/object.h"
+ #include "qom/object_interfaces.h"
++#include "system/block-backend-global-state.h"
++#include "system/block-backend-io.h"
+ #include "system/cpus.h"
+ #include "system/qtest.h"
+ #include "system/replay.h"
+@@ -1000,6 +1002,19 @@
+                 shutdown_ret);
+         exit(EXIT_FAILURE);
+     }
++    /* 最终刷盘成功不能覆盖尚未恢复的历史设备 I/O 错误。 */
++    BlockBackend *blk = NULL;
++    while ((blk = blk_all_next(blk))) {
++        BlockDeviceIoStatus io_status = blk_iostatus(blk);
++
++        if (io_status != BLOCK_DEVICE_IO_STATUS_OK) {
++            fprintf(stderr,
++                    "QEMU block backend '%s' retains I/O status '%s'; "
++                    "terminating this node\n",
++                    blk_name(blk), BlockDeviceIoStatus_str(io_status));
++            exit(EXIT_FAILURE);
++        }
++    }
+     replay_finish();
+ 
+ 

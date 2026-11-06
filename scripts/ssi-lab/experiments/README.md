@@ -149,3 +149,7 @@ PF23 后应用 `kernel-dsm-pin-release.patch`，单独构建 `-sshpool-gvm-pf24`
 ## QEMU 最终刷盘失败
 
 在映射失败候选后应用 `qemu-shutdown-flush-error.patch`，构建独立运行时，内核保持 PF24。`qemu_cleanup()` 不再忽略 `vm_shutdown()` 的设备停止/刷盘返回；非零时直接写 stderr 并失败退出。补丁为 GPL-2.0-or-later，不进入默认构建。两台实验 VM 的真实 blkdebug 错误、双节点失败传播、无故障回归与未覆盖范围见 [关闭刷盘实验](../../../docs/ssi-shutdown-flush.md)。不能以本补丁替代设备全部解除、CLOSE/ACK 或数据库恢复。
+
+## QEMU 未恢复的块设备错误
+
+在最终刷盘候选之后应用 `qemu-shutdown-iostatus.patch`。即使最终 flush 成功，只要仍有 BlockBackend 保留非 ok I/O 状态，就直接报错并失败退出。两台原版内核 VM 共 20 次真实客体写入、重试、复位、管理接口销毁及关闭对照通过；尚未验证本候选的双节点 DSM 页引用或完整工作区。补丁为 GPL-2.0-or-later，不进入默认构建，证据与边界见 [真实 virtio 请求实验](../../../docs/ssi-virtio-pending.md)。

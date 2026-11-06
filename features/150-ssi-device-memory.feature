@@ -122,7 +122,7 @@ Feature: SSI 设备访问的脏页和反向映射
     And 取消与超时释放本次资源但保留既有引用和首次错误
     And 全部设备后台任务停止后才允许最终 DSM 关闭确认
 
-  # evidence: docs/ssi-shutdown-flush.md
+  # evidence: docs/ssi-virtio-pending.md
   @research @p0
   Scenario: I/O 错误暂停后的待完成设备请求在关闭前有明确归宿
     Given 真实 virtio 块设备因错误停止并保留尚未完成的请求
@@ -131,6 +131,17 @@ Feature: SSI 设备访问的脏页和反向映射
     And 保留首次 I/O 错误而不是只检查最后一次刷盘返回
     And 请求被取消或恢复后引用才可清零且不能重复释放
     And 不以直接 HMP BlockBackend 写入代替客体设备请求验收
+
+  # evidence: docs/evidence/ssi-virtio-pending-20261106.json
+  @verified @p0
+  Scenario: 单节点真实客体写入失败不被成功的最终刷盘掩盖
+    Given 两台原版内核实验 VM 各自运行一个真实 Linux 客体并使用新建的独立实验盘
+    When 原生 virtio 写入因 EIO 或 ENOSPC 暂停且最后一次刷盘成功
+    Then 旧版保留一个未完成请求和未写入内容却退出零
+    And 候选在直接关闭复位或管理接口销毁后保留后端错误并退出一
+    And 正常写入和同一请求成功重试均回到零个待完成请求并退出零
+    And 原生请求跟踪 QMP 回复和磁盘内容相互一致且早期失败记录保留
+    And 不把单节点队列计数或设备消失当作 DSM 引用释放与持久化恢复证明
 
   # evidence: docs/ssi-qemu-map-failure.md
   @partial @p0

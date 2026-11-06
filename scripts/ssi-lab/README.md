@@ -1,5 +1,7 @@
 # GiantVM 双节点实验工具
 
+真实 Linux 客体块请求的故障生命周期使用 `guest-block-init.sh` 和 `probe-virtio-pending.py`，按 `check-virtio-pending.py` 核对原始 QMP、设备跟踪、磁盘内容及退出码。本轮只在原版内核上验证单节点，未观察双节点 DSM 页引用；复现和限制见 [virtio 请求实验](../../docs/ssi-virtio-pending.md)。
+
 这些工具只用于独立实验 VM，不是 SSHPool 的生产 SSI 后端。先阅读 [实验记录](../../docs/ssi-lab.md)，再阅读 [严格 SSI 验收](../../docs/ssi-feasibility.md)。两台节点位于同一台 ESXi 的测试不能证明物理故障容错或不同物理机的性能相加。
 
 入口顺序：`build-host-kernel.sh` 构建宿主内核，`guest-proof.c` 构建无磁盘测试客体的 PID 1，`run-node.sh` 在两个节点各运行一个 QEMU，最终共同承载一个 Linux 客体。脚本不访问 SSH 密钥、不创建 ESXi VM、不接触公司数据，也不自动安装或重启宿主。
