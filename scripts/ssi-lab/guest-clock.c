@@ -83,8 +83,13 @@ static int check_timer(int cpu)
     return 0;
 }
 
-int main(void)
+int main(int argc, char **argv)
 {
+    int interactive = argc == 2 && strcmp(argv[1], "--pause-rounds") == 0;
+    if (argc != 1 && !interactive) {
+        fprintf(stderr, "usage: guest-clock [--pause-rounds]\n");
+        return 2;
+    }
     setvbuf(stdout, NULL, _IONBF, 0);
     long online = sysconf(_SC_NPROCESSORS_ONLN);
     printf("CLOCK_START online_cpus=%ld rounds=%d\n", online, ROUNDS);
@@ -97,6 +102,14 @@ int main(void)
     /* 先跨执行节点，再访问另一组核心，避免只覆盖同节点内迁移。 */
     const int order[CPUS] = {0, 2, 1, 3};
     for (int round = 0; round < ROUNDS; round++) {
+        if (interactive && round > 0) {
+            char line[32];
+            printf("CLOCK_WAIT round=%d\n", round);
+            if (!fgets(line, sizeof(line), stdin) || strcmp(line, "continue\n") != 0) {
+                printf("CLOCK_ERROR operation=resume_input round=%d\n", round);
+                return 1;
+            }
+        }
         for (int index = 0; index < CPUS; index++) {
             int cpu = order[index];
             if (select_cpu(cpu) != 0) {

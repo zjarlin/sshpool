@@ -12,6 +12,23 @@ control = (directory.parents[1] / 'docs/evidence/ssi-clock-control-20261105.txt'
 
 
 class CheckClockTest(unittest.TestCase):
+    def test_pause_rounds_keep_prior_samples_and_require_all_waits(self):
+        interactive = control
+        for round_number in range(1, 8):
+            marker = f'CLOCK_SAMPLE round={round_number} cpu=0 '
+            interactive = interactive.replace(marker, f'CLOCK_WAIT round={round_number}\n' + marker)
+        checker.validate(interactive, max_timer_ns=250_000_000, pause_rounds=True)
+        with self.assertRaises(ValueError):
+            checker.validate(interactive)
+        invalid = (
+            interactive.replace('CLOCK_WAIT round=3\n', ''),
+            interactive.replace('CLOCK_WAIT round=3', 'CLOCK_WAIT round=4'),
+            re.sub(r'(CLOCK_SAMPLE round=1 cpu=0 tsc=)\d+', r'\g<1>1', interactive),
+        )
+        for log in invalid:
+            with self.subTest(log=log), self.assertRaises(ValueError):
+                checker.validate(log, pause_rounds=True)
+
     def test_accepts_real_single_node_control(self):
         checker.validate(control)
 

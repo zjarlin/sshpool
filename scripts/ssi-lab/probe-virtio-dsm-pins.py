@@ -98,6 +98,8 @@ def capture(args, process, record):
                 value = None
                 if op == 'wait_ready':
                     wait_text('SSI_BLOCK_READY')
+                elif op == 'wait_ssh':
+                    wait_text('Server listening on 0.0.0.0 port 22.')
                 elif op == 'write':
                     if args.node != 0:
                         raise ValueError('只允许节点零发起客体写入')
@@ -117,8 +119,8 @@ def capture(args, process, record):
                     if name == 'qom-set':
                         arguments = {'path': '/machine/peripheral/ssi-disk', 'property': 'realized', 'value': False}
                     value = monitor.command(name, arguments)
-                elif op in ('quit', 'wait_exit', 'crash'):
-                    if (op in ('quit', 'crash')) != (args.node == 0):
+                elif op in ('quit', 'wait_exit', 'wait_shutdown', 'crash'):
+                    if op != 'wait_shutdown' and (op in ('quit', 'crash')) != (args.node == 0):
                         raise ValueError('只能由节点零关闭双节点实例')
                     if op == 'quit':
                         try:
@@ -132,7 +134,19 @@ def capture(args, process, record):
                         # 只杀死本次新建的 QEMU 子进程，作为显式记录的断连注入。
                         record['injected_fault'] = 'SIGKILL'
                         process.kill()
-                    process.wait(timeout=40)
+                    if op == 'wait_shutdown':
+                        # 客体关机仍会输出串口，持续读取避免观察器阻塞被测进程。
+                        deadline = time.monotonic() + 120
+                        while process.poll() is None and time.monotonic() < deadline:
+                            if not select.select([serial], [], [], 0.2)[0]:
+                                continue
+                            try:
+                                receive()
+                            except EOFError:
+                                break
+                        process.wait(timeout=max(0.1, deadline - time.monotonic()))
+                    else:
+                        process.wait(timeout=40)
                     record['exit_observed_ns'] = time.monotonic_ns()
                     emit({'op': op, 'ok': True, 'exit': process.returncode})
                     return
@@ -151,7 +165,10 @@ def main():
     parser.add_argument('--peers', nargs=2, required=True)
     parser.add_argument('--error', type=int, choices=(0, 5, 28), required=True)
     parser.add_argument('--pin-query', choices=('native', 'none'), default='native')
+    parser.add_argument('--ssh-port', type=int, default=0)
     args = parser.parse_args()
+    if args.ssh_port != 0 and not 1024 <= args.ssh_port <= 65535:
+        parser.error('SSH 端口必须为零或非特权端口')
     if (platform.system() != 'Linux' or platform.machine() != 'x86_64' or
             args.require_kernel != RESEARCH or platform.release() != RESEARCH):
         parser.error('只允许指定 PF24 的独占实验 VM')
@@ -173,6 +190,12 @@ def main():
     command[command.index('-cpu') + 1] = 'qemu64,-x2apic,+tsc-adjust,enforce'
     command[command.index('-smp') + 1] = '4,sockets=2,cores=2,threads=1'
     command += ['-local-cpu', f'cpus=2,start={args.node * 2},iplist=' + ' '.join(args.peers)]
+    if args.ssh_port:
+        backend = 'user,id=sshpool,restrict=on'
+        if args.node == 0:
+            backend += f',hostfwd=tcp:127.0.0.1:{args.ssh_port}-:22'
+        command += ['-netdev', backend, '-device',
+                    'virtio-net-pci,disable-modern=on,vectors=0,netdev=sshpool,mac=52:54:00:53:53:01']
     record = {'schema': 1, 'kernel': platform.release(), 'node': args.node, 'command': command,
               'qemu_sha256': args.require_sha256, 'guest_kernel_sha256': args.guest_kernel_sha256,
               'initramfs_sha256': args.initramfs_sha256, 'capture_sha256': pending.digest(Path(__file__)),
@@ -189,6 +212,12 @@ def main():
         except (OSError, ValueError, EOFError, KeyError, subprocess.TimeoutExpired) as error:
             record['errors'].append(str(error))
         finally:
+            if record['errors'] and process is not None and process.poll() is None:
+                # 管理连接可以先于进程退出关闭，先观察真实退出再考虑清理。
+                try:
+                    process.wait(timeout=3)
+                except subprocess.TimeoutExpired:
+                    record['natural_exit_wait_timeout'] = True
             if process is not None and process.poll() is None:
                 record['forced_cleanup'] = True
                 process.terminate()
@@ -198,6 +227,8 @@ def main():
                     process.kill()
                     process.wait()
             record['qemu_exit'] = None if process is None else process.returncode
+            if process is not None:
+                record.setdefault('exit_observed_ns', time.monotonic_ns())
     record['stderr'] = (args.directory / 'stderr.log').read_text()
     with (args.directory / 'disk.raw').open('rb') as image:
         image.seek(pending.OFFSET)

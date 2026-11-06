@@ -1,0 +1,599 @@
+--- a/hw/i386/kvm/clock.c
++++ b/hw/i386/kvm/clock.c
+@@ -21,6 +21,10 @@
+ #include "system/kvm.h"
+ #include "system/runstate.h"
+ #include "system/hw_accel.h"
++#include "system/cpus.h"
++#include "system/reset.h"
++#include "qemu/timer.h"
++#include "hw/boards.h"
+ #include "kvm/kvm_i386.h"
+ #include "migration/vmstate.h"
+ #include "hw/sysbus.h"
+@@ -52,8 +56,9 @@
+     /* whether the 'clock' value was obtained in a host with
+      * reliable KVM_GET_CLOCK */
+     bool clock_is_reliable;
+-    /* 实验协议只覆盖冷启动，暂停、迁移和重置不能复用旧偏移。 */
++    /* 只支持完整的双端用户暂停；重置和迁移仍需独立协议。 */
+     bool cluster_started;
++    bool cluster_reset;
+ };
+ 
+ struct pvclock_vcpu_time_info {
+@@ -168,6 +173,16 @@
+ extern int local_cpu_start_index;
+ 
+ /* 源节点在启动 vCPU 之前发布，路由线程不获取 BQL 或运行中 vCPU 的锁。 */
++#define CLUSTER_CLOCK_TIMEOUT_MS 15000
++static KVMClockState *cluster_clock_device;
++static QemuMutex cluster_clock_mutex;
++static QemuCond cluster_clock_cond;
++static uint64_t cluster_clock_epoch;
++static uint32_t cluster_clock_phase;
++static uint32_t cluster_clock_seen;
++static uint64_t cluster_clock_floor;
++static uint64_t cluster_tsc_floor;
++static bool cluster_clock_done;
+ static bool cluster_clock_ready;
+ static uint64_t cluster_tsc_offset;
+ static uint32_t cluster_tsc_khz;
+@@ -252,24 +267,29 @@
+     return 0;
+ }
+ 
+-int kvmclock_get_sample(KVMClockSample *sample)
++int kvmclock_get_sample(uint64_t epoch, KVMClockSample *sample)
+ {
+     struct kvm_clock_data data;
+     int ret;
+ 
+-    if (!qatomic_load_acquire(&cluster_clock_ready)) {
+-        return -EAGAIN;
+-    }
+-    ret = cluster_read_clock(&data);
+-    if (ret < 0) {
+-        return ret;
+-    }
+-    sample->clock = data.clock;
+-    sample->host_tsc = data.host_tsc;
+-    sample->offset = cluster_tsc_offset;
+-    sample->flags = data.flags;
+-    sample->khz = cluster_tsc_khz;
+-    return 0;
++    qemu_mutex_lock(&cluster_clock_mutex);
++    if (epoch != cluster_clock_epoch) {
++        ret = -ESTALE;
++    } else if (!cluster_clock_ready) {
++        ret = -EAGAIN;
++    } else {
++        ret = cluster_read_clock(&data);
++        if (!ret) {
++            sample->epoch = epoch;
++            sample->clock = data.clock;
++            sample->host_tsc = data.host_tsc;
++            sample->offset = cluster_tsc_offset;
++            sample->flags = data.flags;
++            sample->khz = cluster_tsc_khz;
++        }
++    }
++    qemu_mutex_unlock(&cluster_clock_mutex);
++    return ret;
+ }
+ 
+ static int cluster_fetch_best(KVMClockSample *best, uint64_t *midpoint,
+@@ -286,7 +306,7 @@
+         if (ret < 0) {
+             return ret;
+         }
+-        ret = kvmclock_fetching(&sample);
++        ret = kvmclock_fetching(cluster_clock_epoch, &sample);
+         if (ret == -EAGAIN) {
+             g_usleep(10000);
+             continue;
+@@ -333,6 +353,15 @@
+     if (ret < 0) {
+         return ret;
+     }
++    if (cluster_clock_device->cluster_started) {
++        ret = cluster_read_clock(&local);
++        if (ret < 0) {
++            return ret;
++        }
++        data->clock = MAX(local.clock, cluster_clock_floor);
++        data->realtime = local.realtime;
++        data->flags = KVM_CLOCK_REALTIME;
++    }
+     ret = cluster_set_offsets(offset);
+     if (ret < 0) {
+         return ret;
+@@ -347,9 +376,11 @@
+         if (ret < 0) {
+             return ret;
+         }
++        qemu_mutex_lock(&cluster_clock_mutex);
+         cluster_tsc_offset = offset;
+         cluster_tsc_khz = khz;
+-        qatomic_store_release(&cluster_clock_ready, true);
++        cluster_clock_ready = true;
++        qemu_mutex_unlock(&cluster_clock_mutex);
+         fprintf(stderr, "SSI_CLOCK_SOURCE khz=%u flags=%u offset=%" PRIu64 "\n",
+                 khz, local.flags, offset);
+         return 0;
+@@ -385,6 +416,216 @@
+     fprintf(stderr, "SSI_CLOCK_TARGET khz=%u offset=%" PRIu64
+             " clock=%" PRIu64 "\n", khz, offset, (uint64_t)data->clock);
+     return 0;
++}
++
++/* 接收线程只持时钟状态锁，不获取 BQL、vCPU 或发送方向互斥锁。 */
++int kvmclock_receive_barrier(uint64_t epoch, uint32_t phase,
++                             uint64_t clock_floor, uint64_t tsc_floor)
++{
++    int ret = 0;
++    int64_t deadline = qemu_clock_get_ms(QEMU_CLOCK_REALTIME) + CLUSTER_CLOCK_TIMEOUT_MS;
++
++    qemu_mutex_lock(&cluster_clock_mutex);
++    if (!epoch || phase < 1 || phase > 2 || epoch < cluster_clock_epoch ||
++        epoch - cluster_clock_epoch > 1) {
++        ret = -EPROTO;
++        goto out;
++    }
++    while (epoch != cluster_clock_epoch || cluster_clock_phase < phase) {
++        int64_t left = deadline - qemu_clock_get_ms(QEMU_CLOCK_REALTIME);
++        if (left <= 0) {
++            ret = -ETIMEDOUT;
++            goto out;
++        }
++        qemu_cond_timedwait(&cluster_clock_cond, &cluster_clock_mutex, left);
++    }
++    if (epoch != cluster_clock_epoch || cluster_clock_phase > 2 ||
++        (cluster_clock_seen & (1U << phase)) ||
++        (phase == 2 && !(cluster_clock_seen & (1U << 1)))) {
++        ret = -EPROTO;
++        goto out;
++    }
++    if (phase == 1) {
++        cluster_clock_floor = MAX(cluster_clock_floor, clock_floor);
++        cluster_tsc_floor = MAX(cluster_tsc_floor, tsc_floor);
++    } else if (clock_floor || tsc_floor) {
++        ret = -EPROTO;
++        goto out;
++    }
++    cluster_clock_seen |= 1U << phase;
++    fprintf(stderr, "SSI_CLOCK_RECEIVE epoch=%" PRIu64 " phase=%u\n", epoch, phase);
++    qemu_cond_broadcast(&cluster_clock_cond);
++out:
++    qemu_mutex_unlock(&cluster_clock_mutex);
++    return ret;
++}
++
++/* 独立于协议锁和 BQL，覆盖锁竞争及静默阻塞的网络读写。 */
++static void *cluster_clock_watchdog(void *opaque)
++{
++    int64_t deadline = qemu_clock_get_ms(QEMU_CLOCK_REALTIME) + CLUSTER_CLOCK_TIMEOUT_MS;
++
++    while (!qatomic_load_acquire(&cluster_clock_done)) {
++        if (qemu_clock_get_ms(QEMU_CLOCK_REALTIME) >= deadline) {
++            error_report("SSI clock preparation deadline expired");
++            /* exit 回调要获取主线程持有的 BQL，静默失联时必须直接失败终止。 */
++            _exit(EXIT_FAILURE);
++        }
++        g_usleep(10000);
++    }
++    return NULL;
++}
++
++static int cluster_clock_phase_barrier(uint32_t phase,
++                                        uint64_t clock_floor, uint64_t tsc_floor)
++{
++    int ret;
++
++    qemu_mutex_lock(&cluster_clock_mutex);
++    cluster_clock_phase = phase;
++    qemu_cond_broadcast(&cluster_clock_cond);
++    qemu_mutex_unlock(&cluster_clock_mutex);
++    ret = kvmclock_barrier(cluster_clock_epoch, phase, clock_floor, tsc_floor);
++    if (ret) {
++        return ret;
++    }
++    qemu_mutex_lock(&cluster_clock_mutex);
++    while (!(cluster_clock_seen & (1U << phase))) {
++        qemu_cond_wait(&cluster_clock_cond, &cluster_clock_mutex);
++    }
++    qemu_mutex_unlock(&cluster_clock_mutex);
++    fprintf(stderr, "SSI_CLOCK_BARRIER epoch=%" PRIu64 " phase=%u\n",
++            cluster_clock_epoch, phase);
++    return 0;
++}
++
++static void cluster_clock_reset(void *opaque)
++{
++    KVMClockState *s = opaque;
++
++    if (local_cpus == smp_cpus || !s->cluster_started) {
++        return;
++    }
++    s->cluster_reset = true;
++    qemu_mutex_lock(&cluster_clock_mutex);
++    cluster_clock_ready = false;
++    qemu_mutex_unlock(&cluster_clock_mutex);
++    if (runstate_is_running()) {
++        error_report("SSI running reset requires a separate clock protocol");
++        exit(EXIT_FAILURE);
++    }
++}
++
++void kvmclock_pre_resume(bool step_pending)
++{
++    KVMClockState *s = cluster_clock_device;
++    MachineState *ms = MACHINE(qdev_get_machine());
++    struct kvm_clock_data data = {}, floor = {}, prepared;
++    QemuThread watchdog;
++    CPUState *cpu;
++    uint64_t offset;
++    uint32_t khz;
++    int ret;
++
++    if (ms->local_cpus == ms->smp.cpus) {
++        return;
++    }
++    if (!s || ms->qemu_nums != 2 || step_pending || s->cluster_reset ||
++        (s->cluster_started ? !runstate_check(RUN_STATE_PAUSED) :
++                              !runstate_check(RUN_STATE_PRELAUNCH))) {
++        error_report("SSI clock supports paired cold start or user-pause resume only");
++        exit(EXIT_FAILURE);
++    }
++    CPU_FOREACH(cpu) {
++        if (!cpu->stopped) {
++            error_report("SSI clock preparation reached before vCPU stopped");
++            exit(EXIT_FAILURE);
++        }
++    }
++    /* 冷启动的监听接收仍依赖主循环，沿用源端先发布的既有路径。 */
++    if (!s->cluster_started) {
++        qemu_mutex_lock(&cluster_clock_mutex);
++        cluster_clock_epoch = 1;
++        qemu_mutex_unlock(&cluster_clock_mutex);
++        return;
++    }
++    qatomic_store_release(&cluster_clock_done, false);
++    qemu_thread_create(&watchdog, "ssi-clock-deadline", cluster_clock_watchdog,
++                       NULL, QEMU_THREAD_JOINABLE);
++    ret = cluster_prepare_tsc(&offset, &khz);
++    if (ret) {
++        goto failed;
++    }
++    if (s->cluster_started) {
++        /* 正常寄存器写回不含 TSC；拒绝客体改写造成的本实例偏移分歧。 */
++        CPU_FOREACH(cpu) {
++            uint64_t observed;
++            ret = cluster_tsc_attr(cpu, KVM_GET_DEVICE_ATTR, &observed);
++            if (ret || observed != offset) {
++                ret = ret ? ret : -ERANGE;
++                goto failed;
++            }
++        }
++        ret = cluster_read_clock(&floor);
++        if (ret) {
++            goto failed;
++        }
++    }
++    qemu_mutex_lock(&cluster_clock_mutex);
++    if (cluster_clock_epoch == UINT64_MAX) {
++        qemu_mutex_unlock(&cluster_clock_mutex);
++        ret = -EOVERFLOW;
++        goto failed;
++    }
++    cluster_clock_epoch++;
++    cluster_clock_phase = 0;
++    cluster_clock_seen = 0;
++    cluster_clock_ready = false;
++    cluster_clock_floor = floor.clock;
++    cluster_tsc_floor = s->cluster_started ? floor.host_tsc + offset : 0;
++    qemu_mutex_unlock(&cluster_clock_mutex);
++    fprintf(stderr, "SSI_CLOCK_PREPARE epoch=%" PRIu64 " state=%s\n",
++            cluster_clock_epoch, RunState_str(runstate_get()));
++    ret = cluster_clock_phase_barrier(1, floor.clock,
++                                      s->cluster_started ? floor.host_tsc + offset : 0);
++    if (ret) {
++        goto failed;
++    }
++    data.clock = s->clock;
++    ret = cluster_start_clock(&data);
++    if (ret) {
++        goto failed;
++    }
++    ret = cluster_tsc_attr(first_cpu, KVM_GET_DEVICE_ATTR, &offset);
++    if (!ret) {
++        ret = cluster_read_clock(&prepared);
++    }
++    if (!ret && (prepared.clock < cluster_clock_floor ||
++                 prepared.host_tsc + offset < cluster_tsc_floor)) {
++        ret = -ERANGE;
++    }
++    if (ret) {
++        goto failed;
++    }
++    fprintf(stderr, "SSI_CLOCK_PREPARED epoch=%" PRIu64 " clock=%" PRIu64
++            " tsc=%" PRIu64 " clock_floor=%" PRIu64 " tsc_floor=%" PRIu64 "\n",
++            cluster_clock_epoch, (uint64_t)prepared.clock,
++            (uint64_t)prepared.host_tsc + offset, cluster_clock_floor, cluster_tsc_floor);
++    ret = cluster_clock_phase_barrier(2, 0, 0);
++    if (ret) {
++        goto failed;
++    }
++    qemu_mutex_lock(&cluster_clock_mutex);
++    cluster_clock_phase = 3;
++    qemu_mutex_unlock(&cluster_clock_mutex);
++    s->cluster_started = true;
++    qatomic_store_release(&cluster_clock_done, true);
++    qemu_thread_join(&watchdog);
++    fprintf(stderr, "SSI_CLOCK_RELEASE epoch=%" PRIu64 "\n", cluster_clock_epoch);
++    return;
++failed:
++    error_report("SSI clock preparation failed: %s", strerror(-ret));
++    exit(EXIT_FAILURE);
+ }
+ 
+ static void kvmclock_vm_state_change(void *opaque, bool running,
+@@ -418,12 +659,29 @@
+         printf("QEMU %d set kvmclock: %llu\n", local_cpu_start_index, data.clock);
+ 
+         if (local_cpus != smp_cpus) {
+-            if (s->cluster_started) {
+-                error_report("SSI clock candidate supports cold start only");
++            if (!s->cluster_started && cluster_clock_epoch == 1) {
++                QemuThread watchdog;
++                qatomic_store_release(&cluster_clock_done, false);
++                qemu_thread_create(&watchdog, "ssi-clock-deadline", cluster_clock_watchdog,
++                                   NULL, QEMU_THREAD_JOINABLE);
++                ret = cluster_start_clock(&data);
++                if (ret < 0) {
++                    error_report("SSI clock cold start failed: %s", strerror(-ret));
++                    exit(EXIT_FAILURE);
++                }
++                s->cluster_started = true;
++                qemu_mutex_lock(&cluster_clock_mutex);
++                cluster_clock_phase = 3;
++                qemu_mutex_unlock(&cluster_clock_mutex);
++                qatomic_store_release(&cluster_clock_done, true);
++                qemu_thread_join(&watchdog);
++                fprintf(stderr, "SSI_CLOCK_COLD_START epoch=1\n");
++            } else if (cluster_clock_phase == 3 && s->cluster_started) {
++                ret = 0;
++            } else {
++                error_report("SSI clock resume bypassed preparation");
+                 exit(1);
+             }
+-            ret = cluster_start_clock(&data);
+-            s->cluster_started = true;
+         } else {
+             ret = kvm_vm_ioctl(kvm_state, KVM_SET_CLOCK, &data);
+         }
+@@ -439,7 +697,9 @@
+             run_on_cpu(cpu, do_kvmclock_ctrl, RUN_ON_CPU_NULL);
+         }
+     } else {
+-        qatomic_store_release(&cluster_clock_ready, false);
++        qemu_mutex_lock(&cluster_clock_mutex);
++        cluster_clock_ready = false;
++        qemu_mutex_unlock(&cluster_clock_mutex);
+ 
+         if (s->clock_valid) {
+             return;
+@@ -468,6 +728,8 @@
+         return;
+     }
+ 
++    cluster_clock_device = s;
++    qemu_register_reset(cluster_clock_reset, s);
+     kvm_update_clock(s);
+ 
+     qemu_add_vm_change_state_handler(kvmclock_vm_state_change, s);
+@@ -581,6 +843,8 @@
+ 
+ static void kvmclock_register_types(void)
+ {
++    qemu_mutex_init(&cluster_clock_mutex);
++    qemu_cond_init(&cluster_clock_cond);
+     type_register_static(&kvmclock_info);
+ }
+ 
+--- a/hw/i386/kvm/clock.h
++++ b/hw/i386/kvm/clock.h
+@@ -17,6 +17,7 @@
+ 
+ /* 仅供配对的实验运行时使用，线上协议通过显式版本拒绝误配。 */
+ typedef struct KVMClockSample {
++    uint64_t epoch;
+     uint64_t clock;
+     uint64_t host_tsc;
+     uint64_t offset;
+@@ -24,6 +25,9 @@
+     uint32_t khz;
+ } KVMClockSample;
+ 
+-int kvmclock_get_sample(KVMClockSample *sample);
++int kvmclock_get_sample(uint64_t epoch, KVMClockSample *sample);
++void kvmclock_pre_resume(bool step_pending);
++int kvmclock_receive_barrier(uint64_t epoch, uint32_t phase,
++                             uint64_t clock_floor, uint64_t tsc_floor);
+ 
+ #endif
+--- a/interrupt-router.c
++++ b/interrupt-router.c
+@@ -24,7 +24,7 @@
+ #include "system/cpus.h"
+ 
+ /* 启动版本包含 MMIO 完成确认与关机排空协议，拒绝旧版混用。 */
+-#define ROUTER_PROTOCOL_VERSION 3
++#define ROUTER_PROTOCOL_VERSION 4
+ #define ROUTER_DRAIN_ACK 0x44524149
+ #define ROUTER_DRAIN_TIMEOUT_MS 15000
+ #define MMIO_WRITE_COMPLETE 0x4d4d494f
+@@ -161,6 +161,7 @@
+     RESET,
+     EXIT,
+     DRAIN,
++    CLOCK_BARRIER,
+ };
+ 
+ enum rdma_role {
+@@ -409,17 +410,53 @@
+                 break;
+ 
+             case KVMCLOCK: {
++                uint64_t epoch = qemu_get_be64(req_file);
+                 KVMClockSample sample = {};
+-                int sample_ret = kvmclock_get_sample(&sample);
++                int sample_ret = qemu_file_get_error(req_file);
++
++                if (!sample_ret) {
++                    sample_ret = kvmclock_get_sample(epoch, &sample);
++                }
+ 
+                 qemu_put_be32(rsp_file, ROUTER_PROTOCOL_VERSION);
+                 qemu_put_sbe32(rsp_file, sample_ret);
++                qemu_put_be64(rsp_file, sample.epoch);
+                 qemu_put_be64(rsp_file, sample.clock);
+                 qemu_put_be64(rsp_file, sample.host_tsc);
+                 qemu_put_be64(rsp_file, sample.offset);
+                 qemu_put_be32(rsp_file, sample.flags);
+                 qemu_put_be32(rsp_file, sample.khz);
+                 qemu_fflush(rsp_file);
++                break;
++            }
++
++            case CLOCK_BARRIER: {
++                uint32_t version = qemu_get_be32(req_file);
++                uint32_t sender = qemu_get_be32(req_file);
++                uint32_t target = qemu_get_be32(req_file);
++                uint64_t epoch = qemu_get_be64(req_file);
++                uint32_t phase = qemu_get_be32(req_file);
++                uint64_t clock_floor = qemu_get_be64(req_file);
++                uint64_t tsc_floor = qemu_get_be64(req_file);
++
++                if (qemu_file_get_error(req_file) ||
++                    version != ROUTER_PROTOCOL_VERSION ||
++                    sender != (router_index() ^ 1) || target != router_index() ||
++                    cpu_index != CPU_INDEX_ANY ||
++                    kvmclock_receive_barrier(epoch, phase, clock_floor, tsc_floor)) {
++                    error_report("SSI invalid clock barrier");
++                    exit(EXIT_FAILURE);
++                }
++                qemu_put_be32(rsp_file, ROUTER_PROTOCOL_VERSION);
++                qemu_put_be32(rsp_file, target);
++                qemu_put_be32(rsp_file, sender);
++                qemu_put_be64(rsp_file, epoch);
++                qemu_put_be32(rsp_file, phase);
++                qemu_fflush(rsp_file);
++                if (qemu_file_get_error(rsp_file)) {
++                    error_report("SSI clock barrier acknowledgement failed");
++                    exit(EXIT_FAILURE);
++                }
+                 break;
+             }
+ 
+@@ -1416,7 +1453,7 @@
+     qemu_mutex_unlock(&io_forwarding_mutex);
+ }
+ 
+-int kvmclock_fetching(KVMClockSample *sample)
++int kvmclock_fetching(uint64_t epoch, KVMClockSample *sample)
+ {
+     int ret;
+     uint32_t version;
+@@ -1428,10 +1465,12 @@
+ 
+     qemu_put_be16(io_connect_file, KVMCLOCK);
+     qemu_put_sbe32(io_connect_file, CPU_INDEX_ANY);
++    qemu_put_be64(io_connect_file, epoch);
+     qemu_fflush(io_connect_file);
+ 
+     version = qemu_get_be32(io_connect_return_file);
+     ret = qemu_get_sbe32(io_connect_return_file);
++    sample->epoch = qemu_get_be64(io_connect_return_file);
+     sample->clock = qemu_get_be64(io_connect_return_file);
+     sample->host_tsc = qemu_get_be64(io_connect_return_file);
+     sample->offset = qemu_get_be64(io_connect_return_file);
+@@ -1441,10 +1480,46 @@
+         ret = qemu_file_get_error(io_connect_file);
+     } else if (qemu_file_get_error(io_connect_return_file)) {
+         ret = qemu_file_get_error(io_connect_return_file);
+-    } else if (version != ROUTER_PROTOCOL_VERSION) {
++    } else if (version != ROUTER_PROTOCOL_VERSION || (!ret && sample->epoch != epoch)) {
+         ret = -EPROTO;
+     }
+     qemu_mutex_unlock(&io_forwarding_mutex);
+     return ret;
+ }
+ 
++/* 调用方的独立截止时间线程覆盖互斥锁等待、发送和读取。 */
++int kvmclock_barrier(uint64_t epoch, uint32_t phase,
++                     uint64_t clock_floor, uint64_t tsc_floor)
++{
++    unsigned int index = router_index();
++    unsigned int peer = index ^ 1;
++    QEMUFile *request = req_files[peer];
++    QEMUFile *response = rsp_files[peer];
++    int ret = 0;
++
++    router_forward_lock();
++    qemu_put_be16(request, CLOCK_BARRIER);
++    qemu_put_sbe32(request, CPU_INDEX_ANY);
++    qemu_put_be32(request, ROUTER_PROTOCOL_VERSION);
++    qemu_put_be32(request, index);
++    qemu_put_be32(request, peer);
++    qemu_put_be64(request, epoch);
++    qemu_put_be32(request, phase);
++    qemu_put_be64(request, clock_floor);
++    qemu_put_be64(request, tsc_floor);
++    qemu_fflush(request);
++    uint32_t version = qemu_get_be32(response);
++    uint32_t sender = qemu_get_be32(response);
++    uint32_t target = qemu_get_be32(response);
++    uint64_t observed_epoch = qemu_get_be64(response);
++    uint32_t observed_phase = qemu_get_be32(response);
++    if (qemu_file_get_error(request) || qemu_file_get_error(response)) {
++        ret = -EIO;
++    } else if (version != ROUTER_PROTOCOL_VERSION || sender != peer ||
++               target != index || observed_epoch != epoch || observed_phase != phase) {
++        ret = -EPROTO;
++    }
++    qemu_mutex_unlock(&io_forwarding_mutex);
++    return ret;
++}
++
+--- a/interrupt-router.h
++++ b/interrupt-router.h
+@@ -46,7 +46,9 @@
+ void shutdown_forwarding(ShutdownCause reason, int exit_code);
+ void reset_forwarding(void);
+ void exit_forwarding(void);
+-int kvmclock_fetching(KVMClockSample *sample);
++int kvmclock_fetching(uint64_t epoch, KVMClockSample *sample);
++int kvmclock_barrier(uint64_t epoch, uint32_t phase,
++                     uint64_t clock_floor, uint64_t tsc_floor);
+ 
+ void drain_io_router(void);
+ void disconnect_io_router(void);
+--- a/target/i386/kvm/kvm.c
++++ b/target/i386/kvm/kvm.c
+@@ -6635,8 +6635,15 @@
+     s->xen_evtchn_max_pirq = value;
+ }
+ 
++/* 在 RUNNING 通知和 vCPU 放行之前建立两端时钟边界。 */
++static void kvm_x86_pre_resume(AccelState *accel, bool step_pending)
++{
++    kvmclock_pre_resume(step_pending);
++}
++
+ void kvm_arch_accel_class_init(ObjectClass *oc)
+ {
++    ACCEL_CLASS(oc)->pre_resume_vm = kvm_x86_pre_resume;
+     object_class_property_add_enum(oc, "notify-vmexit", "NotifyVMexitOption",
+                                    &NotifyVmexitOption_lookup,
+                                    kvm_arch_get_notify_vmexit,

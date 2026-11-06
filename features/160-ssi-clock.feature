@@ -62,8 +62,8 @@ Feature: SSI 客体计时信息保持跨节点一致
     And 正常写入后暂停再关闭两端退出零且没有强制清理
     And 不声称一次 stop 已停止真实远端或已支持恢复
 
-  # evidence: docs/ssi-virtio-dsm-pins.md
-  @research @p0
+  # evidence: docs/ssi-clock-resume.md
+  @partial @p0
   Scenario: 全局暂停恢复建立新的时钟同步边界
     Given 两端已分别暂停且实际 vCPU 和设备生产者均已停止
     When 请求恢复同一客体
@@ -71,6 +71,30 @@ Feature: SSI 客体计时信息保持跨节点一致
     And 跨 CPU 计时在多轮暂停恢复后仍不倒退或提前到期
     And 现有冷启动限制触发的真实失败保持可见直到协议完成
     And 不以删除 cold start only 检查替代实现
+
+  # evidence: docs/evidence/ssi-clock-resume-20261107.json
+  @verified @p0
+  Scenario: 两端分别暂停后的有限恢复实验保留时钟连续性
+    Given 同一物理 ESXi 的两个隔离 PF24 VM 已分别完成 QMP stop
+    When 交错向两端发送 cont 并在七轮中重新校时
+    Then 准备屏障和时钟就绪屏障均核对连续代际再放行
+    And 同一客体进程跨七轮保留读数并完成三十二次跨 CPU 采样
+    And 四个二十毫秒定时器不提前到期且低于原二百五十毫秒门槛
+    And 客体正常关机后两端自行退出零
+    And 反向复验的 watchdog 失败保持未通过
+    And 不声称单条全局 stop 设备全部静止或跨物理机稳定性已完成
+
+  # evidence: docs/evidence/ssi-clock-resume-20261107.json
+  @verified @p0
+  Scenario: 不完整恢复和错误代际拒绝放行
+    Given 两端分别暂停且管理连接已经建立
+    When 只恢复一端对端进程不响应复位后恢复或注入错误代际
+    Then 对应错误路径不发送 RESUME 事件
+    And 单端和无响应准备在独立期限内失败停止
+    And 超时线程不进入需要主线程锁的退出回调
+    And 旧候选超时后仍阻塞的真实线程栈和强制清理记录保留
+    And 对端进程被暂停的实验仅在解除暂停后验证其自行失败退出
+    And 不把失败停止当作数据库接管或持久化确认
 
   # evidence: docs/evidence/ssi-rtc-20261106.json
   @verified @p0
