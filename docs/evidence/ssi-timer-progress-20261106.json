@@ -1,0 +1,649 @@
+{
+  "date": "2026-11-06",
+  "scope": "Offline reanalysis of existing PF14 traces; no new runtime, deployment or SSI acceptance.",
+  "basis": "docs/evidence/ssi-vcpu-residency-20261106.json",
+  "source_sha256": "37560c3cb043e45474966709c1f952f09ec8d3e6ed51039374ba154ac3392fe8",
+  "runs": [
+    {
+      "events": 1911464,
+      "cpus": [
+        0,
+        1
+      ],
+      "interpretation": "Recorded events only; timer silence does not prove CPU descheduling or continuously disabled interrupts. KVM exits do not prove DSM or guest progress.",
+      "timer_windows": [
+        {
+          "cpu": 0,
+          "duration_ns": 54600000,
+          "timer_start": {
+            "pid": 3001,
+            "cpu": 0,
+            "comm": "CPU 0/KVM",
+            "name": "local_timer_entry",
+            "ns": 409689276000,
+            "detail": "vector=236",
+            "flags": "d.h1."
+          },
+          "timer_end": {
+            "pid": 3001,
+            "cpu": 0,
+            "comm": "CPU 0/KVM",
+            "name": "local_timer_entry",
+            "ns": 409743876000,
+            "detail": "vector=236",
+            "flags": "d.h1."
+          },
+          "interior_events": 12603,
+          "event_counts": {
+            "local_timer_exit": 1,
+            "kvm_entry": 6301,
+            "kvm_exit": 6301
+          },
+          "exit_reasons": {
+            "PAUSE_INSTRUCTION": 6300,
+            "EXTERNAL_INTERRUPT": 1
+          },
+          "kvm_tracepoint_flags": {
+            "d..1.": 12602
+          },
+          "first_interior_event": {
+            "pid": 3001,
+            "cpu": 0,
+            "comm": "CPU 0/KVM",
+            "name": "local_timer_exit",
+            "ns": 409689280000,
+            "detail": "vector=236",
+            "flags": "d.h1."
+          },
+          "last_interior_event": {
+            "pid": 3001,
+            "cpu": 0,
+            "comm": "CPU 0/KVM",
+            "name": "kvm_exit",
+            "ns": 409743873000,
+            "detail": "vcpu 0 reason EXTERNAL_INTERRUPT rip 0xffffffff81211e77 info1 0x0000000000000000 info2 0x0000000000000000 intr_info 0x800000ec error_code 0x00000000 requests 0x0000000000000000",
+            "flags": "d..1."
+          },
+          "max_observed_event_gap_ns": 20000,
+          "max_gap_start": {
+            "pid": 3001,
+            "cpu": 0,
+            "comm": "CPU 0/KVM",
+            "name": "kvm_exit",
+            "ns": 409743846000,
+            "detail": "vcpu 0 reason PAUSE_INSTRUCTION rip 0xffffffff81211e75 info1 0x0000000000000000 info2 0x0000000000000000 intr_info 0x00000000 error_code 0x00000000 requests 0x0000000000000000",
+            "flags": "d..1."
+          },
+          "max_gap_end": {
+            "pid": 3001,
+            "cpu": 0,
+            "comm": "CPU 0/KVM",
+            "name": "kvm_entry",
+            "ns": 409743866000,
+            "detail": "vcpu 0, rip 0xffffffff81211e77 intr_info 0x00000000 error_code 0x00000000",
+            "flags": "d..1."
+          }
+        },
+        {
+          "cpu": 1,
+          "duration_ns": 63120000,
+          "timer_start": {
+            "pid": 3002,
+            "cpu": 1,
+            "comm": "CPU 1/KVM",
+            "name": "local_timer_entry",
+            "ns": 409680678000,
+            "detail": "vector=236",
+            "flags": "d.h1."
+          },
+          "timer_end": {
+            "pid": 3002,
+            "cpu": 1,
+            "comm": "CPU 1/KVM",
+            "name": "local_timer_entry",
+            "ns": 409743798000,
+            "detail": "vector=236",
+            "flags": "d.H1."
+          },
+          "interior_events": 17590,
+          "event_counts": {
+            "sched_wakeup": 1,
+            "local_timer_exit": 1,
+            "kvm_entry": 8793,
+            "kvm_exit": 8793,
+            "irq_handler_entry": 1,
+            "irq_handler_exit": 1
+          },
+          "exit_reasons": {
+            "PAUSE_INSTRUCTION": 8793
+          },
+          "kvm_tracepoint_flags": {
+            "d..1.": 17586
+          },
+          "first_interior_event": {
+            "pid": 3002,
+            "cpu": 1,
+            "comm": "CPU 1/KVM",
+            "name": "sched_wakeup",
+            "ns": 409680680000,
+            "detail": "comm=qemu-system-x86 pid=2999 prio=120 target_cpu=001",
+            "flags": "d.h4."
+          },
+          "last_interior_event": {
+            "pid": 3002,
+            "cpu": 1,
+            "comm": "CPU 1/KVM",
+            "name": "irq_handler_exit",
+            "ns": 409743795000,
+            "detail": "irq=59 ret=handled",
+            "flags": "d.h1."
+          },
+          "max_observed_event_gap_ns": 10000,
+          "max_gap_start": {
+            "pid": 3002,
+            "cpu": 1,
+            "comm": "CPU 1/KVM",
+            "name": "kvm_exit",
+            "ns": 409743784000,
+            "detail": "vcpu 1 reason PAUSE_INSTRUCTION rip 0xffffffff81211e75 info1 0x0000000000000000 info2 0x0000000000000000 intr_info 0x00000000 error_code 0x00000000 requests 0x0000000000000000",
+            "flags": "d..1."
+          },
+          "max_gap_end": {
+            "pid": 3002,
+            "cpu": 1,
+            "comm": "CPU 1/KVM",
+            "name": "irq_handler_entry",
+            "ns": 409743794000,
+            "detail": "irq=59 name=ens192-rxtx-0",
+            "flags": "d.h1."
+          }
+        }
+      ],
+      "label": "pf14-pause-short-pair-1",
+      "node": 0,
+      "raw_sha256": "308dfb0adf25371d0337c5fcdc49f0565fa91fd9542b0e2a38f9dae1c4283c05",
+      "kernel": "7.1.0-rc3-sshpool-gvm-pf14"
+    },
+    {
+      "events": 1838763,
+      "cpus": [
+        0,
+        1
+      ],
+      "interpretation": "Recorded events only; timer silence does not prove CPU descheduling or continuously disabled interrupts. KVM exits do not prove DSM or guest progress.",
+      "timer_windows": [
+        {
+          "cpu": 0,
+          "duration_ns": 211926000,
+          "timer_start": {
+            "pid": 2603,
+            "cpu": 0,
+            "comm": "CPU 2/KVM",
+            "name": "local_timer_entry",
+            "ns": 365377704000,
+            "detail": "vector=236",
+            "flags": "d.h1."
+          },
+          "timer_end": {
+            "pid": 2667,
+            "cpu": 0,
+            "comm": "dsm-conn/1:1",
+            "name": "local_timer_entry",
+            "ns": 365589630000,
+            "detail": "vector=236",
+            "flags": "d.h.."
+          },
+          "interior_events": 57924,
+          "event_counts": {
+            "local_timer_exit": 1,
+            "kvm_entry": 28961,
+            "kvm_exit": 28961,
+            "sched_switch": 1
+          },
+          "exit_reasons": {
+            "PAUSE_INSTRUCTION": 28961
+          },
+          "kvm_tracepoint_flags": {
+            "d..1.": 57922
+          },
+          "first_interior_event": {
+            "pid": 2603,
+            "cpu": 0,
+            "comm": "CPU 2/KVM",
+            "name": "local_timer_exit",
+            "ns": 365377710000,
+            "detail": "vector=236",
+            "flags": "d.h1."
+          },
+          "last_interior_event": {
+            "pid": 2603,
+            "cpu": 0,
+            "comm": "CPU 2/KVM",
+            "name": "sched_switch",
+            "ns": 365589613000,
+            "detail": "prev_comm=CPU 2/KVM prev_pid=2603 prev_prio=120 prev_state=R ==> next_comm=dsm-conn/1:1 next_pid=2667 next_prio=120",
+            "flags": "d..2."
+          },
+          "max_observed_event_gap_ns": 295000,
+          "max_gap_start": {
+            "pid": 2603,
+            "cpu": 0,
+            "comm": "CPU 2/KVM",
+            "name": "kvm_entry",
+            "ns": 365517980000,
+            "detail": "vcpu 2, rip 0xffffffff81211e77 intr_info 0x00000000 error_code 0x00000000",
+            "flags": "d..1."
+          },
+          "max_gap_end": {
+            "pid": 2603,
+            "cpu": 0,
+            "comm": "CPU 2/KVM",
+            "name": "kvm_exit",
+            "ns": 365518275000,
+            "detail": "vcpu 2 reason PAUSE_INSTRUCTION rip 0xffffffff81211e75 info1 0x0000000000000000 info2 0x0000000000000000 intr_info 0x00000000 error_code 0x00000000 requests 0x0000000000000000",
+            "flags": "d..1."
+          }
+        },
+        {
+          "cpu": 1,
+          "duration_ns": 206802000,
+          "timer_start": {
+            "pid": 2604,
+            "cpu": 1,
+            "comm": "CPU 3/KVM",
+            "name": "local_timer_entry",
+            "ns": 365382699000,
+            "detail": "vector=236",
+            "flags": "d.h1."
+          },
+          "timer_end": {
+            "pid": 2604,
+            "cpu": 1,
+            "comm": "CPU 3/KVM",
+            "name": "local_timer_entry",
+            "ns": 365589501000,
+            "detail": "vector=236",
+            "flags": "d.H1."
+          },
+          "interior_events": 56399,
+          "event_counts": {
+            "local_timer_exit": 1,
+            "kvm_entry": 28198,
+            "kvm_exit": 28198,
+            "irq_handler_entry": 1,
+            "irq_handler_exit": 1
+          },
+          "exit_reasons": {
+            "PAUSE_INSTRUCTION": 28197,
+            "EXTERNAL_INTERRUPT": 1
+          },
+          "kvm_tracepoint_flags": {
+            "d..1.": 56396
+          },
+          "first_interior_event": {
+            "pid": 2604,
+            "cpu": 1,
+            "comm": "CPU 3/KVM",
+            "name": "local_timer_exit",
+            "ns": 365382701000,
+            "detail": "vector=236",
+            "flags": "d.h1."
+          },
+          "last_interior_event": {
+            "pid": 2604,
+            "cpu": 1,
+            "comm": "CPU 3/KVM",
+            "name": "irq_handler_exit",
+            "ns": 365589496000,
+            "detail": "irq=59 ret=handled",
+            "flags": "d.h1."
+          },
+          "max_observed_event_gap_ns": 25000,
+          "max_gap_start": {
+            "pid": 2604,
+            "cpu": 1,
+            "comm": "CPU 3/KVM",
+            "name": "kvm_exit",
+            "ns": 365490485000,
+            "detail": "vcpu 3 reason PAUSE_INSTRUCTION rip 0xffffffff81211e75 info1 0x0000000000000000 info2 0x0000000000000000 intr_info 0x00000000 error_code 0x00000000 requests 0x0000000000000000",
+            "flags": "d..1."
+          },
+          "max_gap_end": {
+            "pid": 2604,
+            "cpu": 1,
+            "comm": "CPU 3/KVM",
+            "name": "kvm_entry",
+            "ns": 365490510000,
+            "detail": "vcpu 3, rip 0xffffffff81211e77 intr_info 0x00000000 error_code 0x00000000",
+            "flags": "d..1."
+          }
+        }
+      ],
+      "label": "pf14-pause-short-pair-1",
+      "node": 1,
+      "raw_sha256": "dfe42efd455ebfa55798f7ef8c17583303c0c55ff9e1eb678bbf73bc48aa8f4d",
+      "kernel": "7.1.0-rc3-sshpool-gvm-pf14"
+    },
+    {
+      "events": 1598404,
+      "cpus": [
+        0,
+        1
+      ],
+      "interpretation": "Recorded events only; timer silence does not prove CPU descheduling or continuously disabled interrupts. KVM exits do not prove DSM or guest progress.",
+      "timer_windows": [
+        {
+          "cpu": 0,
+          "duration_ns": 242900000,
+          "timer_start": {
+            "pid": 1685,
+            "cpu": 0,
+            "comm": "CPU 0/KVM",
+            "name": "local_timer_entry",
+            "ns": 188543886000,
+            "detail": "vector=236",
+            "flags": "d.h1."
+          },
+          "timer_end": {
+            "pid": 1685,
+            "cpu": 0,
+            "comm": "CPU 0/KVM",
+            "name": "local_timer_entry",
+            "ns": 188786786000,
+            "detail": "vector=236",
+            "flags": "d.h1."
+          },
+          "interior_events": 5,
+          "event_counts": {
+            "local_timer_exit": 1,
+            "kvm_entry": 1,
+            "kvm_exit": 1,
+            "call_function_single_entry": 1,
+            "call_function_single_exit": 1
+          },
+          "exit_reasons": {
+            "EXTERNAL_INTERRUPT": 1
+          },
+          "kvm_tracepoint_flags": {
+            "d..1.": 2
+          },
+          "first_interior_event": {
+            "pid": 1685,
+            "cpu": 0,
+            "comm": "CPU 0/KVM",
+            "name": "local_timer_exit",
+            "ns": 188543888000,
+            "detail": "vector=236",
+            "flags": "d.h1."
+          },
+          "last_interior_event": {
+            "pid": 1685,
+            "cpu": 0,
+            "comm": "CPU 0/KVM",
+            "name": "call_function_single_exit",
+            "ns": 188786783000,
+            "detail": "vector=251",
+            "flags": "d.h1."
+          },
+          "max_observed_event_gap_ns": 242879000,
+          "max_gap_start": {
+            "pid": 1685,
+            "cpu": 0,
+            "comm": "CPU 0/KVM",
+            "name": "kvm_entry",
+            "ns": 188543892000,
+            "detail": "vcpu 0, rip 0xffffffff81211e7d intr_info 0x00000000 error_code 0x00000000",
+            "flags": "d..1."
+          },
+          "max_gap_end": {
+            "pid": 1685,
+            "cpu": 0,
+            "comm": "CPU 0/KVM",
+            "name": "kvm_exit",
+            "ns": 188786771000,
+            "detail": "vcpu 0 reason EXTERNAL_INTERRUPT rip 0xffffffff81211e7d info1 0x0000000000000000 info2 0x0000000000000000 intr_info 0x800000fb error_code 0x00000000 requests 0x0000000000000001",
+            "flags": "d..1."
+          }
+        },
+        {
+          "cpu": 1,
+          "duration_ns": 249802000,
+          "timer_start": {
+            "pid": 1686,
+            "cpu": 1,
+            "comm": "CPU 1/KVM",
+            "name": "local_timer_entry",
+            "ns": 188536884000,
+            "detail": "vector=236",
+            "flags": "d.h1."
+          },
+          "timer_end": {
+            "pid": 1686,
+            "cpu": 1,
+            "comm": "CPU 1/KVM",
+            "name": "local_timer_entry",
+            "ns": 188786686000,
+            "detail": "vector=236",
+            "flags": "d.H1."
+          },
+          "interior_events": 5,
+          "event_counts": {
+            "local_timer_exit": 1,
+            "kvm_entry": 1,
+            "kvm_exit": 1,
+            "irq_handler_entry": 1,
+            "irq_handler_exit": 1
+          },
+          "exit_reasons": {
+            "EXTERNAL_INTERRUPT": 1
+          },
+          "kvm_tracepoint_flags": {
+            "d..1.": 2
+          },
+          "first_interior_event": {
+            "pid": 1686,
+            "cpu": 1,
+            "comm": "CPU 1/KVM",
+            "name": "local_timer_exit",
+            "ns": 188536887000,
+            "detail": "vector=236",
+            "flags": "d.h1."
+          },
+          "last_interior_event": {
+            "pid": 1686,
+            "cpu": 1,
+            "comm": "CPU 1/KVM",
+            "name": "irq_handler_exit",
+            "ns": 188786681000,
+            "detail": "irq=59 ret=handled",
+            "flags": "d.h1."
+          },
+          "max_observed_event_gap_ns": 249771000,
+          "max_gap_start": {
+            "pid": 1686,
+            "cpu": 1,
+            "comm": "CPU 1/KVM",
+            "name": "kvm_entry",
+            "ns": 188536891000,
+            "detail": "vcpu 1, rip 0xffffffff81211e77 intr_info 0x00000000 error_code 0x00000000",
+            "flags": "d..1."
+          },
+          "max_gap_end": {
+            "pid": 1686,
+            "cpu": 1,
+            "comm": "CPU 1/KVM",
+            "name": "kvm_exit",
+            "ns": 188786662000,
+            "detail": "vcpu 1 reason EXTERNAL_INTERRUPT rip 0xffffffff81211e77 info1 0x0000000000000000 info2 0x0000000000000000 intr_info 0x80000036 error_code 0x00000000 requests 0x0000000000000000",
+            "flags": "d..1."
+          }
+        }
+      ],
+      "label": "pf14-off-short-pair-2",
+      "node": 0,
+      "raw_sha256": "e1981bc30a65549b599c2d097a95103d5d0e1e170a8172681b6f14191e955f2f",
+      "kernel": "7.1.0-rc3-sshpool-gvm-pf14"
+    },
+    {
+      "events": 1531063,
+      "cpus": [
+        0,
+        1
+      ],
+      "interpretation": "Recorded events only; timer silence does not prove CPU descheduling or continuously disabled interrupts. KVM exits do not prove DSM or guest progress.",
+      "timer_windows": [
+        {
+          "cpu": 0,
+          "duration_ns": 219506000,
+          "timer_start": {
+            "pid": 1532,
+            "cpu": 0,
+            "comm": "CPU 2/KVM",
+            "name": "local_timer_entry",
+            "ns": 157066293000,
+            "detail": "vector=236",
+            "flags": "d.h1."
+          },
+          "timer_end": {
+            "pid": 1532,
+            "cpu": 0,
+            "comm": "CPU 2/KVM",
+            "name": "local_timer_entry",
+            "ns": 157285799000,
+            "detail": "vector=236",
+            "flags": "dlH1."
+          },
+          "interior_events": 5,
+          "event_counts": {
+            "local_timer_exit": 1,
+            "kvm_entry": 1,
+            "kvm_exit": 1,
+            "irq_handler_entry": 1,
+            "irq_handler_exit": 1
+          },
+          "exit_reasons": {
+            "EXTERNAL_INTERRUPT": 1
+          },
+          "kvm_tracepoint_flags": {
+            "d..1.": 1,
+            "dl.1.": 1
+          },
+          "first_interior_event": {
+            "pid": 1532,
+            "cpu": 0,
+            "comm": "CPU 2/KVM",
+            "name": "local_timer_exit",
+            "ns": 157066294000,
+            "detail": "vector=236",
+            "flags": "d.h1."
+          },
+          "last_interior_event": {
+            "pid": 1532,
+            "cpu": 0,
+            "comm": "CPU 2/KVM",
+            "name": "irq_handler_exit",
+            "ns": 157285794000,
+            "detail": "irq=60 ret=handled",
+            "flags": "dlh1."
+          },
+          "max_observed_event_gap_ns": 219482000,
+          "max_gap_start": {
+            "pid": 1532,
+            "cpu": 0,
+            "comm": "CPU 2/KVM",
+            "name": "kvm_entry",
+            "ns": 157066297000,
+            "detail": "vcpu 2, rip 0xffffffff81211e77 intr_info 0x00000000 error_code 0x00000000",
+            "flags": "d..1."
+          },
+          "max_gap_end": {
+            "pid": 1532,
+            "cpu": 0,
+            "comm": "CPU 2/KVM",
+            "name": "kvm_exit",
+            "ns": 157285779000,
+            "detail": "vcpu 2 reason EXTERNAL_INTERRUPT rip 0xffffffff81211e77 info1 0x0000000000000000 info2 0x0000000000000000 intr_info 0x80000037 error_code 0x00000000 requests 0x0000000000000000",
+            "flags": "dl.1."
+          }
+        },
+        {
+          "cpu": 1,
+          "duration_ns": 243514000,
+          "timer_start": {
+            "pid": 1533,
+            "cpu": 1,
+            "comm": "CPU 3/KVM",
+            "name": "local_timer_entry",
+            "ns": 155276555000,
+            "detail": "vector=236",
+            "flags": "d.h1."
+          },
+          "timer_end": {
+            "pid": 1533,
+            "cpu": 1,
+            "comm": "CPU 3/KVM",
+            "name": "local_timer_entry",
+            "ns": 155520069000,
+            "detail": "vector=236",
+            "flags": "d.H1."
+          },
+          "interior_events": 5,
+          "event_counts": {
+            "local_timer_exit": 1,
+            "kvm_entry": 1,
+            "kvm_exit": 1,
+            "irq_handler_entry": 1,
+            "irq_handler_exit": 1
+          },
+          "exit_reasons": {
+            "EXTERNAL_INTERRUPT": 1
+          },
+          "kvm_tracepoint_flags": {
+            "d..1.": 2
+          },
+          "first_interior_event": {
+            "pid": 1533,
+            "cpu": 1,
+            "comm": "CPU 3/KVM",
+            "name": "local_timer_exit",
+            "ns": 155276558000,
+            "detail": "vector=236",
+            "flags": "d.h1."
+          },
+          "last_interior_event": {
+            "pid": 1533,
+            "cpu": 1,
+            "comm": "CPU 3/KVM",
+            "name": "irq_handler_exit",
+            "ns": 155520065000,
+            "detail": "irq=59 ret=handled",
+            "flags": "d.h1."
+          },
+          "max_observed_event_gap_ns": 243494000,
+          "max_gap_start": {
+            "pid": 1533,
+            "cpu": 1,
+            "comm": "CPU 3/KVM",
+            "name": "kvm_entry",
+            "ns": 155276561000,
+            "detail": "vcpu 3, rip 0xffffffff81211e77 intr_info 0x00000000 error_code 0x00000000",
+            "flags": "d..1."
+          },
+          "max_gap_end": {
+            "pid": 1533,
+            "cpu": 1,
+            "comm": "CPU 3/KVM",
+            "name": "kvm_exit",
+            "ns": 155520055000,
+            "detail": "vcpu 3 reason EXTERNAL_INTERRUPT rip 0xffffffff81211e77 info1 0x0000000000000000 info2 0x0000000000000000 intr_info 0x80000036 error_code 0x00000000 requests 0x0000000000000000",
+            "flags": "d..1."
+          }
+        }
+      ],
+      "label": "pf14-off-short-pair-2",
+      "node": 1,
+      "raw_sha256": "72a6777d75bd0f0783388e3847af18966a6a18ae824ca5fd722266a49797b0cd",
+      "kernel": "7.1.0-rc3-sshpool-gvm-pf14"
+    }
+  ]
+}

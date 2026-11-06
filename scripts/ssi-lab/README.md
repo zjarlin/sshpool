@@ -27,6 +27,8 @@ TCP 版本不能与共享内存分支混配。使用上游源码地址，不使�
 
 性能实验先用 `check-esxi-resources.py` 只读检查指定 VM、父资源池与限速计数，避免将管理层 CPU 限速误判为内核缺陷。再用 `trace-dsm-scheduling.py` / `check-dsm-scheduling.py` 分解 DSM 等待，必须拒绝跟踪丢失且保留窗口边界未知时间。具体用法及证据边界见 [调度与资源预检](../../docs/ssi-scheduling.md)。
 
+`trace-vcpu-residency.py` 记录 KVM、宿主中断和调度，`check-vcpu-residency.py` 检查完整性与 KVM 区间；`check-timer-progress.py` 复用同一记录，逐 CPU 分析定时器空档内是否仍有大量 VM 退出及调度切换。频繁退出不代表 DSM 或客体有进度，跟踪点的中断标志也不能外推到整个窗口。用法与实测见 [KVM 停顿实验](../../docs/ssi-vcpu-residency.md)。
+
 ```sh
 git init GVM-kernel
 git -C GVM-kernel remote add origin https://github.com/GiantVM/GVM-kernel.git

@@ -11,6 +11,16 @@ Feature: SSI 传输等待与启动资源生命周期
     And 开关产生更多事件导致缓冲溢出时必须拒绝该次时间分析
     And 缩短诊断窗口不改变三轮无跟踪运行的原时钟验收门槛
 
+  # evidence: docs/evidence/ssi-timer-progress-20261106.json
+  @verified @p0
+  Scenario: 定时器空档内的频繁退出不能冒充宿主调度进度
+    Given 同一 PF14 开关对照的四份完整跟踪已核对原始哈希
+    When 逐宿主 CPU 分析相邻真实定时器入口之间的事件
+    Then 分别报告 PAUSE 退出调度切换和相邻事件最大间隔
+    And 其他 CPU 的活动不能填补本 CPU 的空档且采样边界不得外推
+    And 跟踪点中断标志不能证明整个窗口持续关闭中断
+    And 诊断结果不替代客体时钟内存与关闭验收
+
   # evidence: docs/evidence/ssi-vcpu-residency-20261106.json
   @partial @p0
   Scenario: 无 PLE 实验宿主可显式强制 DSM 客体从 PAUSE 返回
