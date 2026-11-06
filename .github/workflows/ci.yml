@@ -28,5 +28,9 @@ jobs:
           test "$probe_status" -eq 2
           cc -O2 -Wall -Wextra -Werror -static scripts/ssi-lab/guest-clock.c -o "$RUNNER_TEMP/guest-clock"
           cc -O2 -Wall -Wextra -Werror -static scripts/ssi-lab/probe-pvclock.c -o "$RUNNER_TEMP/probe-pvclock"
+          cc -O2 -Wall -Wextra -Werror -static scripts/ssi-lab/probe-dsm-startup.c -o "$RUNNER_TEMP/probe-dsm-startup"
+          startup_status=0
+          "$RUNNER_TEMP/probe-dsm-startup" kernel-must-not-match occupied || startup_status=$?
+          test "$startup_status" -eq 2
           bash -n scripts/ssi-lab/run-node.sh scripts/ssi-lab/build-host-kernel.sh
           sh -n scripts/ssi-lab/guest-ssh-init.sh

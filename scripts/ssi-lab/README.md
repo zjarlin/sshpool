@@ -15,6 +15,8 @@ TCP 版本不能与共享内存分支混配。使用上游源码地址，不使�
 
 `run-node.sh` 需要 `ss`（Linux 的 iproute2），在创建 VM 前检查实验端口的全部 TCP 状态，包括 TIME-WAIT。前次连接尚未回收时拒绝启动；这项检查不能替代内核错误传播或解决并发启动竞态。跨节点设备完成边界的新探针、实验补丁及重启失败记录见 [设备顺序实验](../../docs/ssi-device-order.md)。
 
+`probe-dsm-startup.c` 验证占用端口时 ioctl 的真实错误、同一空 VM 重试与重复启停后的端口释放；`check-startup.py` 核对完整操作顺序。PF8 候选补丁、真实 QEMU 错误传播及剩余销毁风险见 [启动与回收实验](../../docs/ssi-startup.md)。它不提供全局启动事务或正常关闭协议。
+
 ```sh
 git init GVM-kernel
 git -C GVM-kernel remote add origin https://github.com/GiantVM/GVM-kernel.git

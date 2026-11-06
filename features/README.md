@@ -29,6 +29,6 @@
 | [140-ssi-workspace.feature](140-ssi-workspace.feature) | 2 | 2 | 0 | 1 |
 | [150-ssi-device-memory.feature](150-ssi-device-memory.feature) | 3 | 1 | 1 | 0 |
 | [160-ssi-clock.feature](160-ssi-clock.feature) | 2 | 3 | 0 | 1 |
-| [170-ssi-transport.feature](170-ssi-transport.feature) | 1 | 1 | 0 | 3 |
+| [170-ssi-transport.feature](170-ssi-transport.feature) | 3 | 2 | 0 | 2 |
 | [180-ssi-device-order.feature](180-ssi-device-order.feature) | 1 | 1 | 0 | 3 |
-| 合计 | 37 | 15 | 18 | 23 |
+| 合计 | 39 | 16 | 18 | 22 |

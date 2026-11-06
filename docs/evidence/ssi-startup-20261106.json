@@ -1,0 +1,2044 @@
+{
+  "scope": "Two dedicated x86 laboratory VMs on one physical ESXi. No physical capacity or failure-tolerance claim. No Ceph, disks, Docker or database workloads.",
+  "kernel": "7.1.0-rc3-sshpool-gvm-pf8",
+  "kernel_sha256": "8967674a2b770b350927d387002046cc1c2899995c9f1dd68f19c61a985cf4ee",
+  "archive_sha256": "baec8d746bd5bfc12240aa88774e991325a17530c4a5a8e984f4aadc014184eb",
+  "probe_sha256": "ad1d02aa67fee38cd32295d6e529f9e263a54e8291fe3f404d24538537ca94dd",
+  "baseline": {
+    "label": "pf7-startup-occupied-node0-1",
+    "result": {
+      "node": 0,
+      "kernel": "7.1.0-rc3-sshpool-gvm-pf7",
+      "mode": "occupied",
+      "exit": 1,
+      "remaining": ""
+    },
+    "stdout": "STARTUP_BEGIN mode=occupied kernel=7.1.0-rc3-sshpool-gvm-pf7\nSTARTUP_ENABLE case=occupied result=0 errno=0 expected_errno=98\nSTARTUP_CLOSE_BEGIN\nSTARTUP_CLOSE_DONE\nSTARTUP_RESULT passed=0\n",
+    "stderr": "",
+    "host_log": "-- No entries --\n",
+    "runtime_hashes": "ad1d02aa67fee38cd32295d6e529f9e263a54e8291fe3f404d24538537ca94dd  /LAB/ssi/probe-dsm-startup\nd6c588f65de38561acbe3bd8fdcfd2e6dac409c4544e0d17d5034a82257e03c3  /boot/vmlinuz-7.1.0-rc3-sshpool-gvm-pf7\n"
+  },
+  "startup": [
+    {
+      "label": "pf8-startup-occupied-node0-1",
+      "result": {
+        "node": 0,
+        "kernel": "7.1.0-rc3-sshpool-gvm-pf8",
+        "mode": "occupied",
+        "exit": 0,
+        "remaining": ""
+      },
+      "stdout": "STARTUP_BEGIN mode=occupied kernel=7.1.0-rc3-sshpool-gvm-pf8\nSTARTUP_ENABLE case=occupied result=-1 errno=98 expected_errno=98\nSTARTUP_ENABLE case=retry result=0 errno=0 expected_errno=0\nSTARTUP_CLOSE_BEGIN\nSTARTUP_CLOSE_DONE\nSTARTUP_RESULT passed=1\n",
+      "stderr": "",
+      "host_log": "Nov 06 00:18:26 lab-node-0 kernel: ktcp_listen: bind failed, return -98\n",
+      "runtime_hashes": "ad1d02aa67fee38cd32295d6e529f9e263a54e8291fe3f404d24538537ca94dd  /LAB/ssi/probe-dsm-startup\n8967674a2b770b350927d387002046cc1c2899995c9f1dd68f19c61a985cf4ee  /boot/vmlinuz-7.1.0-rc3-sshpool-gvm-pf8\n"
+    },
+    {
+      "label": "pf8-startup-cycles-node0-1",
+      "result": {
+        "node": 0,
+        "kernel": "7.1.0-rc3-sshpool-gvm-pf8",
+        "mode": "cycles",
+        "exit": 0,
+        "remaining": ""
+      },
+      "stdout": "STARTUP_BEGIN mode=cycles kernel=7.1.0-rc3-sshpool-gvm-pf8\nSTARTUP_ENABLE case=cycle result=0 errno=0 expected_errno=0\nSTARTUP_CLOSE_BEGIN\nSTARTUP_CLOSE_DONE\nSTARTUP_CYCLE index=0 released=1\nSTARTUP_ENABLE case=cycle result=0 errno=0 expected_errno=0\nSTARTUP_CLOSE_BEGIN\nSTARTUP_CLOSE_DONE\nSTARTUP_CYCLE index=1 released=1\nSTARTUP_ENABLE case=cycle result=0 errno=0 expected_errno=0\nSTARTUP_CLOSE_BEGIN\nSTARTUP_CLOSE_DONE\nSTARTUP_CYCLE index=2 released=1\nSTARTUP_ENABLE case=cycle result=0 errno=0 expected_errno=0\nSTARTUP_CLOSE_BEGIN\nSTARTUP_CLOSE_DONE\nSTARTUP_CYCLE index=3 released=1\nSTARTUP_ENABLE case=cycle result=0 errno=0 expected_errno=0\nSTARTUP_CLOSE_BEGIN\nSTARTUP_CLOSE_DONE\nSTARTUP_CYCLE index=4 released=1\nSTARTUP_ENABLE case=cycle result=0 errno=0 expected_errno=0\nSTARTUP_CLOSE_BEGIN\nSTARTUP_CLOSE_DONE\nSTARTUP_CYCLE index=5 released=1\nSTARTUP_ENABLE case=cycle result=0 errno=0 expected_errno=0\nSTARTUP_CLOSE_BEGIN\nSTARTUP_CLOSE_DONE\nSTARTUP_CYCLE index=6 released=1\nSTARTUP_ENABLE case=cycle result=0 errno=0 expected_errno=0\nSTARTUP_CLOSE_BEGIN\nSTARTUP_CLOSE_DONE\nSTARTUP_CYCLE index=7 released=1\nSTARTUP_ENABLE case=cycle result=0 errno=0 expected_errno=0\nSTARTUP_CLOSE_BEGIN\nSTARTUP_CLOSE_DONE\nSTARTUP_CYCLE index=8 released=1\nSTARTUP_ENABLE case=cycle result=0 errno=0 expected_errno=0\nSTARTUP_CLOSE_BEGIN\nSTARTUP_CLOSE_DONE\nSTARTUP_CYCLE index=9 released=1\nSTARTUP_ENABLE case=cycle result=0 errno=0 expected_errno=0\nSTARTUP_CLOSE_BEGIN\nSTARTUP_CLOSE_DONE\nSTARTUP_CYCLE index=10 released=1\nSTARTUP_ENABLE case=cycle result=0 errno=0 expected_errno=0\nSTARTUP_CLOSE_BEGIN\nSTARTUP_CLOSE_DONE\nSTARTUP_CYCLE index=11 released=1\nSTARTUP_ENABLE case=cycle result=0 errno=0 expected_errno=0\nSTARTUP_CLOSE_BEGIN\nSTARTUP_CLOSE_DONE\nSTARTUP_CYCLE index=12 released=1\nSTARTUP_ENABLE case=cycle result=0 errno=0 expected_errno=0\nSTARTUP_CLOSE_BEGIN\nSTARTUP_CLOSE_DONE\nSTARTUP_CYCLE index=13 released=1\nSTARTUP_ENABLE case=cycle result=0 errno=0 expected_errno=0\nSTARTUP_CLOSE_BEGIN\nSTARTUP_CLOSE_DONE\nSTARTUP_CYCLE index=14 released=1\nSTARTUP_ENABLE case=cycle result=0 errno=0 expected_errno=0\nSTARTUP_CLOSE_BEGIN\nSTARTUP_CLOSE_DONE\nSTARTUP_CYCLE index=15 released=1\nSTARTUP_ENABLE case=cycle result=0 errno=0 expected_errno=0\nSTARTUP_CLOSE_BEGIN\nSTARTUP_CLOSE_DONE\nSTARTUP_CYCLE index=16 released=1\nSTARTUP_ENABLE case=cycle result=0 errno=0 expected_errno=0\nSTARTUP_CLOSE_BEGIN\nSTARTUP_CLOSE_DONE\nSTARTUP_CYCLE index=17 released=1\nSTARTUP_ENABLE case=cycle result=0 errno=0 expected_errno=0\nSTARTUP_CLOSE_BEGIN\nSTARTUP_CLOSE_DONE\nSTARTUP_CYCLE index=18 released=1\nSTARTUP_ENABLE case=cycle result=0 errno=0 expected_errno=0\nSTARTUP_CLOSE_BEGIN\nSTARTUP_CLOSE_DONE\nSTARTUP_CYCLE index=19 released=1\nSTARTUP_ENABLE case=cycle result=0 errno=0 expected_errno=0\nSTARTUP_CLOSE_BEGIN\nSTARTUP_CLOSE_DONE\nSTARTUP_CYCLE index=20 released=1\nSTARTUP_ENABLE case=cycle result=0 errno=0 expected_errno=0\nSTARTUP_CLOSE_BEGIN\nSTARTUP_CLOSE_DONE\nSTARTUP_CYCLE index=21 released=1\nSTARTUP_ENABLE case=cycle result=0 errno=0 expected_errno=0\nSTARTUP_CLOSE_BEGIN\nSTARTUP_CLOSE_DONE\nSTARTUP_CYCLE index=22 released=1\nSTARTUP_ENABLE case=cycle result=0 errno=0 expected_errno=0\nSTARTUP_CLOSE_BEGIN\nSTARTUP_CLOSE_DONE\nSTARTUP_CYCLE index=23 released=1\nSTARTUP_ENABLE case=cycle result=0 errno=0 expected_errno=0\nSTARTUP_CLOSE_BEGIN\nSTARTUP_CLOSE_DONE\nSTARTUP_CYCLE index=24 released=1\nSTARTUP_ENABLE case=cycle result=0 errno=0 expected_errno=0\nSTARTUP_CLOSE_BEGIN\nSTARTUP_CLOSE_DONE\nSTARTUP_CYCLE index=25 released=1\nSTARTUP_ENABLE case=cycle result=0 errno=0 expected_errno=0\nSTARTUP_CLOSE_BEGIN\nSTARTUP_CLOSE_DONE\nSTARTUP_CYCLE index=26 released=1\nSTARTUP_ENABLE case=cycle result=0 errno=0 expected_errno=0\nSTARTUP_CLOSE_BEGIN\nSTARTUP_CLOSE_DONE\nSTARTUP_CYCLE index=27 released=1\nSTARTUP_ENABLE case=cycle result=0 errno=0 expected_errno=0\nSTARTUP_CLOSE_BEGIN\nSTARTUP_CLOSE_DONE\nSTARTUP_CYCLE index=28 released=1\nSTARTUP_ENABLE case=cycle result=0 errno=0 expected_errno=0\nSTARTUP_CLOSE_BEGIN\nSTARTUP_CLOSE_DONE\nSTARTUP_CYCLE index=29 released=1\nSTARTUP_ENABLE case=cycle result=0 errno=0 expected_errno=0\nSTARTUP_CLOSE_BEGIN\nSTARTUP_CLOSE_DONE\nSTARTUP_CYCLE index=30 released=1\nSTARTUP_ENABLE case=cycle result=0 errno=0 expected_errno=0\nSTARTUP_CLOSE_BEGIN\nSTARTUP_CLOSE_DONE\nSTARTUP_CYCLE index=31 released=1\nSTARTUP_ENABLE case=cycle result=0 errno=0 expected_errno=0\nSTARTUP_CLOSE_BEGIN\nSTARTUP_CLOSE_DONE\nSTARTUP_CYCLE index=32 released=1\nSTARTUP_ENABLE case=cycle result=0 errno=0 expected_errno=0\nSTARTUP_CLOSE_BEGIN\nSTARTUP_CLOSE_DONE\nSTARTUP_CYCLE index=33 released=1\nSTARTUP_ENABLE case=cycle result=0 errno=0 expected_errno=0\nSTARTUP_CLOSE_BEGIN\nSTARTUP_CLOSE_DONE\nSTARTUP_CYCLE index=34 released=1\nSTARTUP_ENABLE case=cycle result=0 errno=0 expected_errno=0\nSTARTUP_CLOSE_BEGIN\nSTARTUP_CLOSE_DONE\nSTARTUP_CYCLE index=35 released=1\nSTARTUP_ENABLE case=cycle result=0 errno=0 expected_errno=0\nSTARTUP_CLOSE_BEGIN\nSTARTUP_CLOSE_DONE\nSTARTUP_CYCLE index=36 released=1\nSTARTUP_ENABLE case=cycle result=0 errno=0 expected_errno=0\nSTARTUP_CLOSE_BEGIN\nSTARTUP_CLOSE_DONE\nSTARTUP_CYCLE index=37 released=1\nSTARTUP_ENABLE case=cycle result=0 errno=0 expected_errno=0\nSTARTUP_CLOSE_BEGIN\nSTARTUP_CLOSE_DONE\nSTARTUP_CYCLE index=38 released=1\nSTARTUP_ENABLE case=cycle result=0 errno=0 expected_errno=0\nSTARTUP_CLOSE_BEGIN\nSTARTUP_CLOSE_DONE\nSTARTUP_CYCLE index=39 released=1\nSTARTUP_ENABLE case=cycle result=0 errno=0 expected_errno=0\nSTARTUP_CLOSE_BEGIN\nSTARTUP_CLOSE_DONE\nSTARTUP_CYCLE index=40 released=1\nSTARTUP_ENABLE case=cycle result=0 errno=0 expected_errno=0\nSTARTUP_CLOSE_BEGIN\nSTARTUP_CLOSE_DONE\nSTARTUP_CYCLE index=41 released=1\nSTARTUP_ENABLE case=cycle result=0 errno=0 expected_errno=0\nSTARTUP_CLOSE_BEGIN\nSTARTUP_CLOSE_DONE\nSTARTUP_CYCLE index=42 released=1\nSTARTUP_ENABLE case=cycle result=0 errno=0 expected_errno=0\nSTARTUP_CLOSE_BEGIN\nSTARTUP_CLOSE_DONE\nSTARTUP_CYCLE index=43 released=1\nSTARTUP_ENABLE case=cycle result=0 errno=0 expected_errno=0\nSTARTUP_CLOSE_BEGIN\nSTARTUP_CLOSE_DONE\nSTARTUP_CYCLE index=44 released=1\nSTARTUP_ENABLE case=cycle result=0 errno=0 expected_errno=0\nSTARTUP_CLOSE_BEGIN\nSTARTUP_CLOSE_DONE\nSTARTUP_CYCLE index=45 released=1\nSTARTUP_ENABLE case=cycle result=0 errno=0 expected_errno=0\nSTARTUP_CLOSE_BEGIN\nSTARTUP_CLOSE_DONE\nSTARTUP_CYCLE index=46 released=1\nSTARTUP_ENABLE case=cycle result=0 errno=0 expected_errno=0\nSTARTUP_CLOSE_BEGIN\nSTARTUP_CLOSE_DONE\nSTARTUP_CYCLE index=47 released=1\nSTARTUP_ENABLE case=cycle result=0 errno=0 expected_errno=0\nSTARTUP_CLOSE_BEGIN\nSTARTUP_CLOSE_DONE\nSTARTUP_CYCLE index=48 released=1\nSTARTUP_ENABLE case=cycle result=0 errno=0 expected_errno=0\nSTARTUP_CLOSE_BEGIN\nSTARTUP_CLOSE_DONE\nSTARTUP_CYCLE index=49 released=1\nSTARTUP_ENABLE case=cycle result=0 errno=0 expected_errno=0\nSTARTUP_CLOSE_BEGIN\nSTARTUP_CLOSE_DONE\nSTARTUP_CYCLE index=50 released=1\nSTARTUP_ENABLE case=cycle result=0 errno=0 expected_errno=0\nSTARTUP_CLOSE_BEGIN\nSTARTUP_CLOSE_DONE\nSTARTUP_CYCLE index=51 released=1\nSTARTUP_ENABLE case=cycle result=0 errno=0 expected_errno=0\nSTARTUP_CLOSE_BEGIN\nSTARTUP_CLOSE_DONE\nSTARTUP_CYCLE index=52 released=1\nSTARTUP_ENABLE case=cycle result=0 errno=0 expected_errno=0\nSTARTUP_CLOSE_BEGIN\nSTARTUP_CLOSE_DONE\nSTARTUP_CYCLE index=53 released=1\nSTARTUP_ENABLE case=cycle result=0 errno=0 expected_errno=0\nSTARTUP_CLOSE_BEGIN\nSTARTUP_CLOSE_DONE\nSTARTUP_CYCLE index=54 released=1\nSTARTUP_ENABLE case=cycle result=0 errno=0 expected_errno=0\nSTARTUP_CLOSE_BEGIN\nSTARTUP_CLOSE_DONE\nSTARTUP_CYCLE index=55 released=1\nSTARTUP_ENABLE case=cycle result=0 errno=0 expected_errno=0\nSTARTUP_CLOSE_BEGIN\nSTARTUP_CLOSE_DONE\nSTARTUP_CYCLE index=56 released=1\nSTARTUP_ENABLE case=cycle result=0 errno=0 expected_errno=0\nSTARTUP_CLOSE_BEGIN\nSTARTUP_CLOSE_DONE\nSTARTUP_CYCLE index=57 released=1\nSTARTUP_ENABLE case=cycle result=0 errno=0 expected_errno=0\nSTARTUP_CLOSE_BEGIN\nSTARTUP_CLOSE_DONE\nSTARTUP_CYCLE index=58 released=1\nSTARTUP_ENABLE case=cycle result=0 errno=0 expected_errno=0\nSTARTUP_CLOSE_BEGIN\nSTARTUP_CLOSE_DONE\nSTARTUP_CYCLE index=59 released=1\nSTARTUP_ENABLE case=cycle result=0 errno=0 expected_errno=0\nSTARTUP_CLOSE_BEGIN\nSTARTUP_CLOSE_DONE\nSTARTUP_CYCLE index=60 released=1\nSTARTUP_ENABLE case=cycle result=0 errno=0 expected_errno=0\nSTARTUP_CLOSE_BEGIN\nSTARTUP_CLOSE_DONE\nSTARTUP_CYCLE index=61 released=1\nSTARTUP_ENABLE case=cycle result=0 errno=0 expected_errno=0\nSTARTUP_CLOSE_BEGIN\nSTARTUP_CLOSE_DONE\nSTARTUP_CYCLE index=62 released=1\nSTARTUP_ENABLE case=cycle result=0 errno=0 expected_errno=0\nSTARTUP_CLOSE_BEGIN\nSTARTUP_CLOSE_DONE\nSTARTUP_CYCLE index=63 released=1\nSTARTUP_RESULT passed=1\n",
+      "stderr": "",
+      "host_log": "-- No entries --\n",
+      "runtime_hashes": "ad1d02aa67fee38cd32295d6e529f9e263a54e8291fe3f404d24538537ca94dd  /LAB/ssi/probe-dsm-startup\n8967674a2b770b350927d387002046cc1c2899995c9f1dd68f19c61a985cf4ee  /boot/vmlinuz-7.1.0-rc3-sshpool-gvm-pf8\n"
+    },
+    {
+      "label": "pf8-startup-invalid-node0-1",
+      "result": {
+        "node": 0,
+        "kernel": "7.1.0-rc3-sshpool-gvm-pf8",
+        "mode": "invalid",
+        "exit": 0,
+        "remaining": ""
+      },
+      "stdout": "STARTUP_BEGIN mode=invalid kernel=7.1.0-rc3-sshpool-gvm-pf8\nSTARTUP_ENABLE case=empty result=-1 errno=22 expected_errno=22\nSTARTUP_ENABLE case=node_outside_list result=-1 errno=22 expected_errno=22\nSTARTUP_ENABLE case=too_many result=-1 errno=22 expected_errno=22\nSTARTUP_ENABLE case=bad_pointer result=-1 errno=14 expected_errno=14\nSTARTUP_ENABLE case=retry result=0 errno=0 expected_errno=0\nSTARTUP_CLOSE_BEGIN\nSTARTUP_CLOSE_DONE\nSTARTUP_RESULT passed=1\n",
+      "stderr": "",
+      "host_log": "-- No entries --\n",
+      "runtime_hashes": "ad1d02aa67fee38cd32295d6e529f9e263a54e8291fe3f404d24538537ca94dd  /LAB/ssi/probe-dsm-startup\n8967674a2b770b350927d387002046cc1c2899995c9f1dd68f19c61a985cf4ee  /boot/vmlinuz-7.1.0-rc3-sshpool-gvm-pf8\n"
+    },
+    {
+      "label": "pf8-startup-occupied-node1-1",
+      "result": {
+        "node": 1,
+        "kernel": "7.1.0-rc3-sshpool-gvm-pf8",
+        "mode": "occupied",
+        "exit": 0,
+        "remaining": ""
+      },
+      "stdout": "STARTUP_BEGIN mode=occupied kernel=7.1.0-rc3-sshpool-gvm-pf8\nSTARTUP_ENABLE case=occupied result=-1 errno=98 expected_errno=98\nSTARTUP_ENABLE case=retry result=0 errno=0 expected_errno=0\nSTARTUP_CLOSE_BEGIN\nSTARTUP_CLOSE_DONE\nSTARTUP_RESULT passed=1\n",
+      "stderr": "",
+      "host_log": "Nov 06 00:20:51 lab-node-1 kernel: ktcp_listen: bind failed, return -98\n",
+      "runtime_hashes": "ad1d02aa67fee38cd32295d6e529f9e263a54e8291fe3f404d24538537ca94dd  /LAB/ssi/probe-dsm-startup\n8967674a2b770b350927d387002046cc1c2899995c9f1dd68f19c61a985cf4ee  /boot/vmlinuz-7.1.0-rc3-sshpool-gvm-pf8\n"
+    },
+    {
+      "label": "pf8-startup-cycles-node1-1",
+      "result": {
+        "node": 1,
+        "kernel": "7.1.0-rc3-sshpool-gvm-pf8",
+        "mode": "cycles",
+        "exit": 0,
+        "remaining": ""
+      },
+      "stdout": "STARTUP_BEGIN mode=cycles kernel=7.1.0-rc3-sshpool-gvm-pf8\nSTARTUP_ENABLE case=cycle result=0 errno=0 expected_errno=0\nSTARTUP_CLOSE_BEGIN\nSTARTUP_CLOSE_DONE\nSTARTUP_CYCLE index=0 released=1\nSTARTUP_ENABLE case=cycle result=0 errno=0 expected_errno=0\nSTARTUP_CLOSE_BEGIN\nSTARTUP_CLOSE_DONE\nSTARTUP_CYCLE index=1 released=1\nSTARTUP_ENABLE case=cycle result=0 errno=0 expected_errno=0\nSTARTUP_CLOSE_BEGIN\nSTARTUP_CLOSE_DONE\nSTARTUP_CYCLE index=2 released=1\nSTARTUP_ENABLE case=cycle result=0 errno=0 expected_errno=0\nSTARTUP_CLOSE_BEGIN\nSTARTUP_CLOSE_DONE\nSTARTUP_CYCLE index=3 released=1\nSTARTUP_ENABLE case=cycle result=0 errno=0 expected_errno=0\nSTARTUP_CLOSE_BEGIN\nSTARTUP_CLOSE_DONE\nSTARTUP_CYCLE index=4 released=1\nSTARTUP_ENABLE case=cycle result=0 errno=0 expected_errno=0\nSTARTUP_CLOSE_BEGIN\nSTARTUP_CLOSE_DONE\nSTARTUP_CYCLE index=5 released=1\nSTARTUP_ENABLE case=cycle result=0 errno=0 expected_errno=0\nSTARTUP_CLOSE_BEGIN\nSTARTUP_CLOSE_DONE\nSTARTUP_CYCLE index=6 released=1\nSTARTUP_ENABLE case=cycle result=0 errno=0 expected_errno=0\nSTARTUP_CLOSE_BEGIN\nSTARTUP_CLOSE_DONE\nSTARTUP_CYCLE index=7 released=1\nSTARTUP_ENABLE case=cycle result=0 errno=0 expected_errno=0\nSTARTUP_CLOSE_BEGIN\nSTARTUP_CLOSE_DONE\nSTARTUP_CYCLE index=8 released=1\nSTARTUP_ENABLE case=cycle result=0 errno=0 expected_errno=0\nSTARTUP_CLOSE_BEGIN\nSTARTUP_CLOSE_DONE\nSTARTUP_CYCLE index=9 released=1\nSTARTUP_ENABLE case=cycle result=0 errno=0 expected_errno=0\nSTARTUP_CLOSE_BEGIN\nSTARTUP_CLOSE_DONE\nSTARTUP_CYCLE index=10 released=1\nSTARTUP_ENABLE case=cycle result=0 errno=0 expected_errno=0\nSTARTUP_CLOSE_BEGIN\nSTARTUP_CLOSE_DONE\nSTARTUP_CYCLE index=11 released=1\nSTARTUP_ENABLE case=cycle result=0 errno=0 expected_errno=0\nSTARTUP_CLOSE_BEGIN\nSTARTUP_CLOSE_DONE\nSTARTUP_CYCLE index=12 released=1\nSTARTUP_ENABLE case=cycle result=0 errno=0 expected_errno=0\nSTARTUP_CLOSE_BEGIN\nSTARTUP_CLOSE_DONE\nSTARTUP_CYCLE index=13 released=1\nSTARTUP_ENABLE case=cycle result=0 errno=0 expected_errno=0\nSTARTUP_CLOSE_BEGIN\nSTARTUP_CLOSE_DONE\nSTARTUP_CYCLE index=14 released=1\nSTARTUP_ENABLE case=cycle result=0 errno=0 expected_errno=0\nSTARTUP_CLOSE_BEGIN\nSTARTUP_CLOSE_DONE\nSTARTUP_CYCLE index=15 released=1\nSTARTUP_ENABLE case=cycle result=0 errno=0 expected_errno=0\nSTARTUP_CLOSE_BEGIN\nSTARTUP_CLOSE_DONE\nSTARTUP_CYCLE index=16 released=1\nSTARTUP_ENABLE case=cycle result=0 errno=0 expected_errno=0\nSTARTUP_CLOSE_BEGIN\nSTARTUP_CLOSE_DONE\nSTARTUP_CYCLE index=17 released=1\nSTARTUP_ENABLE case=cycle result=0 errno=0 expected_errno=0\nSTARTUP_CLOSE_BEGIN\nSTARTUP_CLOSE_DONE\nSTARTUP_CYCLE index=18 released=1\nSTARTUP_ENABLE case=cycle result=0 errno=0 expected_errno=0\nSTARTUP_CLOSE_BEGIN\nSTARTUP_CLOSE_DONE\nSTARTUP_CYCLE index=19 released=1\nSTARTUP_ENABLE case=cycle result=0 errno=0 expected_errno=0\nSTARTUP_CLOSE_BEGIN\nSTARTUP_CLOSE_DONE\nSTARTUP_CYCLE index=20 released=1\nSTARTUP_ENABLE case=cycle result=0 errno=0 expected_errno=0\nSTARTUP_CLOSE_BEGIN\nSTARTUP_CLOSE_DONE\nSTARTUP_CYCLE index=21 released=1\nSTARTUP_ENABLE case=cycle result=0 errno=0 expected_errno=0\nSTARTUP_CLOSE_BEGIN\nSTARTUP_CLOSE_DONE\nSTARTUP_CYCLE index=22 released=1\nSTARTUP_ENABLE case=cycle result=0 errno=0 expected_errno=0\nSTARTUP_CLOSE_BEGIN\nSTARTUP_CLOSE_DONE\nSTARTUP_CYCLE index=23 released=1\nSTARTUP_ENABLE case=cycle result=0 errno=0 expected_errno=0\nSTARTUP_CLOSE_BEGIN\nSTARTUP_CLOSE_DONE\nSTARTUP_CYCLE index=24 released=1\nSTARTUP_ENABLE case=cycle result=0 errno=0 expected_errno=0\nSTARTUP_CLOSE_BEGIN\nSTARTUP_CLOSE_DONE\nSTARTUP_CYCLE index=25 released=1\nSTARTUP_ENABLE case=cycle result=0 errno=0 expected_errno=0\nSTARTUP_CLOSE_BEGIN\nSTARTUP_CLOSE_DONE\nSTARTUP_CYCLE index=26 released=1\nSTARTUP_ENABLE case=cycle result=0 errno=0 expected_errno=0\nSTARTUP_CLOSE_BEGIN\nSTARTUP_CLOSE_DONE\nSTARTUP_CYCLE index=27 released=1\nSTARTUP_ENABLE case=cycle result=0 errno=0 expected_errno=0\nSTARTUP_CLOSE_BEGIN\nSTARTUP_CLOSE_DONE\nSTARTUP_CYCLE index=28 released=1\nSTARTUP_ENABLE case=cycle result=0 errno=0 expected_errno=0\nSTARTUP_CLOSE_BEGIN\nSTARTUP_CLOSE_DONE\nSTARTUP_CYCLE index=29 released=1\nSTARTUP_ENABLE case=cycle result=0 errno=0 expected_errno=0\nSTARTUP_CLOSE_BEGIN\nSTARTUP_CLOSE_DONE\nSTARTUP_CYCLE index=30 released=1\nSTARTUP_ENABLE case=cycle result=0 errno=0 expected_errno=0\nSTARTUP_CLOSE_BEGIN\nSTARTUP_CLOSE_DONE\nSTARTUP_CYCLE index=31 released=1\nSTARTUP_ENABLE case=cycle result=0 errno=0 expected_errno=0\nSTARTUP_CLOSE_BEGIN\nSTARTUP_CLOSE_DONE\nSTARTUP_CYCLE index=32 released=1\nSTARTUP_ENABLE case=cycle result=0 errno=0 expected_errno=0\nSTARTUP_CLOSE_BEGIN\nSTARTUP_CLOSE_DONE\nSTARTUP_CYCLE index=33 released=1\nSTARTUP_ENABLE case=cycle result=0 errno=0 expected_errno=0\nSTARTUP_CLOSE_BEGIN\nSTARTUP_CLOSE_DONE\nSTARTUP_CYCLE index=34 released=1\nSTARTUP_ENABLE case=cycle result=0 errno=0 expected_errno=0\nSTARTUP_CLOSE_BEGIN\nSTARTUP_CLOSE_DONE\nSTARTUP_CYCLE index=35 released=1\nSTARTUP_ENABLE case=cycle result=0 errno=0 expected_errno=0\nSTARTUP_CLOSE_BEGIN\nSTARTUP_CLOSE_DONE\nSTARTUP_CYCLE index=36 released=1\nSTARTUP_ENABLE case=cycle result=0 errno=0 expected_errno=0\nSTARTUP_CLOSE_BEGIN\nSTARTUP_CLOSE_DONE\nSTARTUP_CYCLE index=37 released=1\nSTARTUP_ENABLE case=cycle result=0 errno=0 expected_errno=0\nSTARTUP_CLOSE_BEGIN\nSTARTUP_CLOSE_DONE\nSTARTUP_CYCLE index=38 released=1\nSTARTUP_ENABLE case=cycle result=0 errno=0 expected_errno=0\nSTARTUP_CLOSE_BEGIN\nSTARTUP_CLOSE_DONE\nSTARTUP_CYCLE index=39 released=1\nSTARTUP_ENABLE case=cycle result=0 errno=0 expected_errno=0\nSTARTUP_CLOSE_BEGIN\nSTARTUP_CLOSE_DONE\nSTARTUP_CYCLE index=40 released=1\nSTARTUP_ENABLE case=cycle result=0 errno=0 expected_errno=0\nSTARTUP_CLOSE_BEGIN\nSTARTUP_CLOSE_DONE\nSTARTUP_CYCLE index=41 released=1\nSTARTUP_ENABLE case=cycle result=0 errno=0 expected_errno=0\nSTARTUP_CLOSE_BEGIN\nSTARTUP_CLOSE_DONE\nSTARTUP_CYCLE index=42 released=1\nSTARTUP_ENABLE case=cycle result=0 errno=0 expected_errno=0\nSTARTUP_CLOSE_BEGIN\nSTARTUP_CLOSE_DONE\nSTARTUP_CYCLE index=43 released=1\nSTARTUP_ENABLE case=cycle result=0 errno=0 expected_errno=0\nSTARTUP_CLOSE_BEGIN\nSTARTUP_CLOSE_DONE\nSTARTUP_CYCLE index=44 released=1\nSTARTUP_ENABLE case=cycle result=0 errno=0 expected_errno=0\nSTARTUP_CLOSE_BEGIN\nSTARTUP_CLOSE_DONE\nSTARTUP_CYCLE index=45 released=1\nSTARTUP_ENABLE case=cycle result=0 errno=0 expected_errno=0\nSTARTUP_CLOSE_BEGIN\nSTARTUP_CLOSE_DONE\nSTARTUP_CYCLE index=46 released=1\nSTARTUP_ENABLE case=cycle result=0 errno=0 expected_errno=0\nSTARTUP_CLOSE_BEGIN\nSTARTUP_CLOSE_DONE\nSTARTUP_CYCLE index=47 released=1\nSTARTUP_ENABLE case=cycle result=0 errno=0 expected_errno=0\nSTARTUP_CLOSE_BEGIN\nSTARTUP_CLOSE_DONE\nSTARTUP_CYCLE index=48 released=1\nSTARTUP_ENABLE case=cycle result=0 errno=0 expected_errno=0\nSTARTUP_CLOSE_BEGIN\nSTARTUP_CLOSE_DONE\nSTARTUP_CYCLE index=49 released=1\nSTARTUP_ENABLE case=cycle result=0 errno=0 expected_errno=0\nSTARTUP_CLOSE_BEGIN\nSTARTUP_CLOSE_DONE\nSTARTUP_CYCLE index=50 released=1\nSTARTUP_ENABLE case=cycle result=0 errno=0 expected_errno=0\nSTARTUP_CLOSE_BEGIN\nSTARTUP_CLOSE_DONE\nSTARTUP_CYCLE index=51 released=1\nSTARTUP_ENABLE case=cycle result=0 errno=0 expected_errno=0\nSTARTUP_CLOSE_BEGIN\nSTARTUP_CLOSE_DONE\nSTARTUP_CYCLE index=52 released=1\nSTARTUP_ENABLE case=cycle result=0 errno=0 expected_errno=0\nSTARTUP_CLOSE_BEGIN\nSTARTUP_CLOSE_DONE\nSTARTUP_CYCLE index=53 released=1\nSTARTUP_ENABLE case=cycle result=0 errno=0 expected_errno=0\nSTARTUP_CLOSE_BEGIN\nSTARTUP_CLOSE_DONE\nSTARTUP_CYCLE index=54 released=1\nSTARTUP_ENABLE case=cycle result=0 errno=0 expected_errno=0\nSTARTUP_CLOSE_BEGIN\nSTARTUP_CLOSE_DONE\nSTARTUP_CYCLE index=55 released=1\nSTARTUP_ENABLE case=cycle result=0 errno=0 expected_errno=0\nSTARTUP_CLOSE_BEGIN\nSTARTUP_CLOSE_DONE\nSTARTUP_CYCLE index=56 released=1\nSTARTUP_ENABLE case=cycle result=0 errno=0 expected_errno=0\nSTARTUP_CLOSE_BEGIN\nSTARTUP_CLOSE_DONE\nSTARTUP_CYCLE index=57 released=1\nSTARTUP_ENABLE case=cycle result=0 errno=0 expected_errno=0\nSTARTUP_CLOSE_BEGIN\nSTARTUP_CLOSE_DONE\nSTARTUP_CYCLE index=58 released=1\nSTARTUP_ENABLE case=cycle result=0 errno=0 expected_errno=0\nSTARTUP_CLOSE_BEGIN\nSTARTUP_CLOSE_DONE\nSTARTUP_CYCLE index=59 released=1\nSTARTUP_ENABLE case=cycle result=0 errno=0 expected_errno=0\nSTARTUP_CLOSE_BEGIN\nSTARTUP_CLOSE_DONE\nSTARTUP_CYCLE index=60 released=1\nSTARTUP_ENABLE case=cycle result=0 errno=0 expected_errno=0\nSTARTUP_CLOSE_BEGIN\nSTARTUP_CLOSE_DONE\nSTARTUP_CYCLE index=61 released=1\nSTARTUP_ENABLE case=cycle result=0 errno=0 expected_errno=0\nSTARTUP_CLOSE_BEGIN\nSTARTUP_CLOSE_DONE\nSTARTUP_CYCLE index=62 released=1\nSTARTUP_ENABLE case=cycle result=0 errno=0 expected_errno=0\nSTARTUP_CLOSE_BEGIN\nSTARTUP_CLOSE_DONE\nSTARTUP_CYCLE index=63 released=1\nSTARTUP_RESULT passed=1\n",
+      "stderr": "",
+      "host_log": "-- No entries --\n",
+      "runtime_hashes": "ad1d02aa67fee38cd32295d6e529f9e263a54e8291fe3f404d24538537ca94dd  /LAB/ssi/probe-dsm-startup\n8967674a2b770b350927d387002046cc1c2899995c9f1dd68f19c61a985cf4ee  /boot/vmlinuz-7.1.0-rc3-sshpool-gvm-pf8\n"
+    },
+    {
+      "label": "pf8-startup-invalid-node1-1",
+      "result": {
+        "node": 1,
+        "kernel": "7.1.0-rc3-sshpool-gvm-pf8",
+        "mode": "invalid",
+        "exit": 0,
+        "remaining": ""
+      },
+      "stdout": "STARTUP_BEGIN mode=invalid kernel=7.1.0-rc3-sshpool-gvm-pf8\nSTARTUP_ENABLE case=empty result=-1 errno=22 expected_errno=22\nSTARTUP_ENABLE case=node_outside_list result=-1 errno=22 expected_errno=22\nSTARTUP_ENABLE case=too_many result=-1 errno=22 expected_errno=22\nSTARTUP_ENABLE case=bad_pointer result=-1 errno=14 expected_errno=14\nSTARTUP_ENABLE case=retry result=0 errno=0 expected_errno=0\nSTARTUP_CLOSE_BEGIN\nSTARTUP_CLOSE_DONE\nSTARTUP_RESULT passed=1\n",
+      "stderr": "",
+      "host_log": "-- No entries --\n",
+      "runtime_hashes": "ad1d02aa67fee38cd32295d6e529f9e263a54e8291fe3f404d24538537ca94dd  /LAB/ssi/probe-dsm-startup\n8967674a2b770b350927d387002046cc1c2899995c9f1dd68f19c61a985cf4ee  /boot/vmlinuz-7.1.0-rc3-sshpool-gvm-pf8\n"
+    }
+  ],
+  "qemu_conflict": [
+    {
+      "label": "pf8-qemu-conflict-node0-2",
+      "result": {
+        "exit": 1,
+        "seconds": 0.06086604100005388,
+        "stdout": "configure_accelerators\nkvm_irqchip_create\nkvm_arch_init_irq_routing\nCPU 2 is remote CPU, pause\nCPU 3 is remote CPU, pause\n",
+        "stderr": "qemu-system-x86_64-mmio-completion-1: warning: Number of SMP cpus requested (4) exceeds the recommended cpus supported by KVM (2)\nqemu-system-x86_64-mmio-completion-1: warning: Number of hotpluggable cpus requested (4) exceeds the recommended cpus supported by KVM (2)\nqemu-system-x86_64-mmio-completion-1: Enable kernel DSM failed: Address already in use\n",
+        "port_released": true,
+        "remaining": ""
+      },
+      "host_log": "Nov 06 00:27:00 lab-node-0 kernel: ktcp_listen: bind failed, return -98\n",
+      "runtime_hashes": "8967674a2b770b350927d387002046cc1c2899995c9f1dd68f19c61a985cf4ee  /boot/vmlinuz-7.1.0-rc3-sshpool-gvm-pf8\n45eeeabe124051c2d40d763313d6c1941fd23b4ce1c57aaf6e6f2466e6fd4156  /LAB/ssi/qemu-system-x86_64-mmio-completion-1\n"
+    },
+    {
+      "label": "pf8-qemu-conflict-node1-2",
+      "result": {
+        "exit": 1,
+        "seconds": 0.0839056539999774,
+        "stdout": "configure_accelerators\nkvm_irqchip_create\nkvm_arch_init_irq_routing\nCPU 0 is remote CPU, pause\nCPU 1 is remote CPU, pause\n",
+        "stderr": "qemu-system-x86_64-mmio-completion-1: warning: Number of SMP cpus requested (4) exceeds the recommended cpus supported by KVM (2)\nqemu-system-x86_64-mmio-completion-1: warning: Number of hotpluggable cpus requested (4) exceeds the recommended cpus supported by KVM (2)\nqemu-system-x86_64-mmio-completion-1: Enable kernel DSM failed: Address already in use\n",
+        "port_released": true,
+        "remaining": ""
+      },
+      "host_log": "Nov 06 00:27:02 lab-node-1 kernel: ktcp_listen: bind failed, return -98\n",
+      "runtime_hashes": "8967674a2b770b350927d387002046cc1c2899995c9f1dd68f19c61a985cf4ee  /boot/vmlinuz-7.1.0-rc3-sshpool-gvm-pf8\n45eeeabe124051c2d40d763313d6c1941fd23b4ce1c57aaf6e6f2466e6fd4156  /LAB/ssi/qemu-system-x86_64-mmio-completion-1\n"
+    }
+  ],
+  "receive": [
+    {
+      "label": "pf8-receive-node0-1",
+      "result": {
+        "kernel": "7.1.0-rc3-sshpool-gvm-pf8",
+        "phases": [
+          {
+            "phase": "idle",
+            "elapsed_ns": 3000159250,
+            "cpu_ns": 0,
+            "cpu_equivalents": 0.0,
+            "bounded_cpu": true,
+            "before": {
+              "3261": {
+                "name": "dsm-conn/0:0",
+                "stat": "3261 (dsm-conn/0:0) S 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 42638 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 18640,
+                "stack": [
+                  "[<0>] wait_woken+0x80/0x90",
+                  "[<0>] sk_wait_data+0x12b/0x140",
+                  "[<0>] tcp_recvmsg_locked+0x4e4/0x9f0",
+                  "[<0>] tcp_recvmsg+0x88/0x1e0",
+                  "[<0>] kernel_recvmsg+0xaa/0xc0",
+                  "[<0>] __ktcp_receive.constprop.0+0x9f/0x120",
+                  "[<0>] ktcp_receive+0x168/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "3262": {
+                "name": "dsm-conn/0:1",
+                "stat": "3262 (dsm-conn/0:1) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 42638 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 23150,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "3263": {
+                "name": "dsm-conn/0:2",
+                "stat": "3263 (dsm-conn/0:2) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 42638 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 18311,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "3264": {
+                "name": "dsm-conn/0:3",
+                "stat": "3264 (dsm-conn/0:3) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 42638 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 18573,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "3265": {
+                "name": "dsm-conn/0:4",
+                "stat": "3265 (dsm-conn/0:4) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 42638 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 19650,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "3266": {
+                "name": "dsm-conn/0:5",
+                "stat": "3266 (dsm-conn/0:5) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 42638 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 18832,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "3267": {
+                "name": "dsm-conn/0:6",
+                "stat": "3267 (dsm-conn/0:6) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 42638 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 17930,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "3268": {
+                "name": "dsm-conn/0:7",
+                "stat": "3268 (dsm-conn/0:7) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 42638 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 18400,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              }
+            },
+            "after": {
+              "3261": {
+                "name": "dsm-conn/0:0",
+                "stat": "3261 (dsm-conn/0:0) S 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 42638 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 18640,
+                "stack": [
+                  "[<0>] wait_woken+0x80/0x90",
+                  "[<0>] sk_wait_data+0x12b/0x140",
+                  "[<0>] tcp_recvmsg_locked+0x4e4/0x9f0",
+                  "[<0>] tcp_recvmsg+0x88/0x1e0",
+                  "[<0>] kernel_recvmsg+0xaa/0xc0",
+                  "[<0>] __ktcp_receive.constprop.0+0x9f/0x120",
+                  "[<0>] ktcp_receive+0x168/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "3262": {
+                "name": "dsm-conn/0:1",
+                "stat": "3262 (dsm-conn/0:1) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 42638 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 23150,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "3263": {
+                "name": "dsm-conn/0:2",
+                "stat": "3263 (dsm-conn/0:2) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 42638 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 18311,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "3264": {
+                "name": "dsm-conn/0:3",
+                "stat": "3264 (dsm-conn/0:3) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 42638 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 18573,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "3265": {
+                "name": "dsm-conn/0:4",
+                "stat": "3265 (dsm-conn/0:4) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 42638 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 19650,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "3266": {
+                "name": "dsm-conn/0:5",
+                "stat": "3266 (dsm-conn/0:5) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 42638 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 18832,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "3267": {
+                "name": "dsm-conn/0:6",
+                "stat": "3267 (dsm-conn/0:6) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 42638 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 17930,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "3268": {
+                "name": "dsm-conn/0:7",
+                "stat": "3268 (dsm-conn/0:7) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 42638 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 18400,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              }
+            }
+          },
+          {
+            "phase": "partial_frame",
+            "elapsed_ns": 3000118485,
+            "cpu_ns": 0,
+            "cpu_equivalents": 0.0,
+            "bounded_cpu": true,
+            "before": {
+              "3261": {
+                "name": "dsm-conn/0:0",
+                "stat": "3261 (dsm-conn/0:0) S 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 42638 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 36528,
+                "stack": [
+                  "[<0>] wait_woken+0x80/0x90",
+                  "[<0>] sk_wait_data+0x12b/0x140",
+                  "[<0>] tcp_recvmsg_locked+0x4e4/0x9f0",
+                  "[<0>] tcp_recvmsg+0x88/0x1e0",
+                  "[<0>] kernel_recvmsg+0xaa/0xc0",
+                  "[<0>] __ktcp_receive.constprop.0+0x9f/0x120",
+                  "[<0>] ktcp_receive+0x168/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "3262": {
+                "name": "dsm-conn/0:1",
+                "stat": "3262 (dsm-conn/0:1) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 42638 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 23150,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "3263": {
+                "name": "dsm-conn/0:2",
+                "stat": "3263 (dsm-conn/0:2) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 42638 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 18311,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "3264": {
+                "name": "dsm-conn/0:3",
+                "stat": "3264 (dsm-conn/0:3) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 42638 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 18573,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "3265": {
+                "name": "dsm-conn/0:4",
+                "stat": "3265 (dsm-conn/0:4) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 42638 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 19650,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "3266": {
+                "name": "dsm-conn/0:5",
+                "stat": "3266 (dsm-conn/0:5) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 42638 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 18832,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "3267": {
+                "name": "dsm-conn/0:6",
+                "stat": "3267 (dsm-conn/0:6) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 42638 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 17930,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "3268": {
+                "name": "dsm-conn/0:7",
+                "stat": "3268 (dsm-conn/0:7) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 42638 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 18400,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              }
+            },
+            "after": {
+              "3261": {
+                "name": "dsm-conn/0:0",
+                "stat": "3261 (dsm-conn/0:0) S 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 42638 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 36528,
+                "stack": [
+                  "[<0>] wait_woken+0x80/0x90",
+                  "[<0>] sk_wait_data+0x12b/0x140",
+                  "[<0>] tcp_recvmsg_locked+0x4e4/0x9f0",
+                  "[<0>] tcp_recvmsg+0x88/0x1e0",
+                  "[<0>] kernel_recvmsg+0xaa/0xc0",
+                  "[<0>] __ktcp_receive.constprop.0+0x9f/0x120",
+                  "[<0>] ktcp_receive+0x168/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "3262": {
+                "name": "dsm-conn/0:1",
+                "stat": "3262 (dsm-conn/0:1) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 42638 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 23150,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "3263": {
+                "name": "dsm-conn/0:2",
+                "stat": "3263 (dsm-conn/0:2) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 42638 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 18311,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "3264": {
+                "name": "dsm-conn/0:3",
+                "stat": "3264 (dsm-conn/0:3) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 42638 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 18573,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "3265": {
+                "name": "dsm-conn/0:4",
+                "stat": "3265 (dsm-conn/0:4) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 42638 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 19650,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "3266": {
+                "name": "dsm-conn/0:5",
+                "stat": "3266 (dsm-conn/0:5) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 42638 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 18832,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "3267": {
+                "name": "dsm-conn/0:6",
+                "stat": "3267 (dsm-conn/0:6) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 42638 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 17930,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "3268": {
+                "name": "dsm-conn/0:7",
+                "stat": "3268 (dsm-conn/0:7) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 42638 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 18400,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              }
+            }
+          }
+        ],
+        "errors": [],
+        "closed": true,
+        "exit": 0,
+        "remaining_threads": []
+      },
+      "host_log": "Nov 06 00:24:10 lab-node-0 kernel: ktcp_receive: __ktcp_receive error, ret -104\nNov 06 00:24:10 lab-node-0 kernel: ktcp_receive: __ktcp_receive error, ret -104\nNov 06 00:24:10 lab-node-0 kernel: ktcp_receive: __ktcp_receive error, ret -104\nNov 06 00:24:10 lab-node-0 kernel: ktcp_receive: __ktcp_receive error, ret -104\nNov 06 00:24:10 lab-node-0 kernel: ktcp_receive: __ktcp_receive error, ret -104\nNov 06 00:24:10 lab-node-0 kernel: kvm_dsm_free: node-0 dsm root server exited with -104\n",
+      "firewall_restored_exactly": true
+    },
+    {
+      "label": "pf8-receive-cancel-node0-1",
+      "result": {
+        "kernel": "7.1.0-rc3-sshpool-gvm-pf8",
+        "close_order": "vm-first",
+        "phases": [
+          {
+            "phase": "idle",
+            "elapsed_ns": 3000134625,
+            "cpu_ns": 0,
+            "cpu_equivalents": 0.0,
+            "bounded_cpu": true,
+            "before": {
+              "4241": {
+                "name": "dsm-conn/0:0",
+                "stat": "4241 (dsm-conn/0:0) S 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 50010 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 13750,
+                "stack": [
+                  "[<0>] wait_woken+0x80/0x90",
+                  "[<0>] sk_wait_data+0x12b/0x140",
+                  "[<0>] tcp_recvmsg_locked+0x4e4/0x9f0",
+                  "[<0>] tcp_recvmsg+0x88/0x1e0",
+                  "[<0>] kernel_recvmsg+0xaa/0xc0",
+                  "[<0>] __ktcp_receive.constprop.0+0x9f/0x120",
+                  "[<0>] ktcp_receive+0x168/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "4242": {
+                "name": "dsm-conn/0:1",
+                "stat": "4242 (dsm-conn/0:1) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 50010 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 3763,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "4243": {
+                "name": "dsm-conn/0:2",
+                "stat": "4243 (dsm-conn/0:2) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 50010 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 2959,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "4244": {
+                "name": "dsm-conn/0:3",
+                "stat": "4244 (dsm-conn/0:3) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 50010 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 2214,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "4245": {
+                "name": "dsm-conn/0:4",
+                "stat": "4245 (dsm-conn/0:4) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 50010 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 2061,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "4246": {
+                "name": "dsm-conn/0:5",
+                "stat": "4246 (dsm-conn/0:5) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 50010 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 2689,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "4247": {
+                "name": "dsm-conn/0:6",
+                "stat": "4247 (dsm-conn/0:6) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 50010 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 2007,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "4248": {
+                "name": "dsm-conn/0:7",
+                "stat": "4248 (dsm-conn/0:7) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 50010 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 2447,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              }
+            },
+            "after": {
+              "4241": {
+                "name": "dsm-conn/0:0",
+                "stat": "4241 (dsm-conn/0:0) S 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 50010 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 13750,
+                "stack": [
+                  "[<0>] wait_woken+0x80/0x90",
+                  "[<0>] sk_wait_data+0x12b/0x140",
+                  "[<0>] tcp_recvmsg_locked+0x4e4/0x9f0",
+                  "[<0>] tcp_recvmsg+0x88/0x1e0",
+                  "[<0>] kernel_recvmsg+0xaa/0xc0",
+                  "[<0>] __ktcp_receive.constprop.0+0x9f/0x120",
+                  "[<0>] ktcp_receive+0x168/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "4242": {
+                "name": "dsm-conn/0:1",
+                "stat": "4242 (dsm-conn/0:1) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 50010 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 3763,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "4243": {
+                "name": "dsm-conn/0:2",
+                "stat": "4243 (dsm-conn/0:2) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 50010 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 2959,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "4244": {
+                "name": "dsm-conn/0:3",
+                "stat": "4244 (dsm-conn/0:3) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 50010 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 2214,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "4245": {
+                "name": "dsm-conn/0:4",
+                "stat": "4245 (dsm-conn/0:4) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 50010 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 2061,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "4246": {
+                "name": "dsm-conn/0:5",
+                "stat": "4246 (dsm-conn/0:5) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 50010 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 2689,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "4247": {
+                "name": "dsm-conn/0:6",
+                "stat": "4247 (dsm-conn/0:6) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 50010 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 2007,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "4248": {
+                "name": "dsm-conn/0:7",
+                "stat": "4248 (dsm-conn/0:7) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 50010 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 2447,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              }
+            }
+          },
+          {
+            "phase": "partial_frame",
+            "elapsed_ns": 3000150139,
+            "cpu_ns": 0,
+            "cpu_equivalents": 0.0,
+            "bounded_cpu": true,
+            "before": {
+              "4241": {
+                "name": "dsm-conn/0:0",
+                "stat": "4241 (dsm-conn/0:0) S 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 50010 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 63256,
+                "stack": [
+                  "[<0>] wait_woken+0x80/0x90",
+                  "[<0>] sk_wait_data+0x12b/0x140",
+                  "[<0>] tcp_recvmsg_locked+0x4e4/0x9f0",
+                  "[<0>] tcp_recvmsg+0x88/0x1e0",
+                  "[<0>] kernel_recvmsg+0xaa/0xc0",
+                  "[<0>] __ktcp_receive.constprop.0+0x9f/0x120",
+                  "[<0>] ktcp_receive+0x168/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "4242": {
+                "name": "dsm-conn/0:1",
+                "stat": "4242 (dsm-conn/0:1) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 50010 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 3763,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "4243": {
+                "name": "dsm-conn/0:2",
+                "stat": "4243 (dsm-conn/0:2) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 50010 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 2959,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "4244": {
+                "name": "dsm-conn/0:3",
+                "stat": "4244 (dsm-conn/0:3) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 50010 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 2214,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "4245": {
+                "name": "dsm-conn/0:4",
+                "stat": "4245 (dsm-conn/0:4) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 50010 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 2061,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "4246": {
+                "name": "dsm-conn/0:5",
+                "stat": "4246 (dsm-conn/0:5) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 50010 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 2689,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "4247": {
+                "name": "dsm-conn/0:6",
+                "stat": "4247 (dsm-conn/0:6) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 50010 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 2007,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "4248": {
+                "name": "dsm-conn/0:7",
+                "stat": "4248 (dsm-conn/0:7) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 50010 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 2447,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              }
+            },
+            "after": {
+              "4241": {
+                "name": "dsm-conn/0:0",
+                "stat": "4241 (dsm-conn/0:0) S 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 50010 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 63256,
+                "stack": [
+                  "[<0>] wait_woken+0x80/0x90",
+                  "[<0>] sk_wait_data+0x12b/0x140",
+                  "[<0>] tcp_recvmsg_locked+0x4e4/0x9f0",
+                  "[<0>] tcp_recvmsg+0x88/0x1e0",
+                  "[<0>] kernel_recvmsg+0xaa/0xc0",
+                  "[<0>] __ktcp_receive.constprop.0+0x9f/0x120",
+                  "[<0>] ktcp_receive+0x168/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "4242": {
+                "name": "dsm-conn/0:1",
+                "stat": "4242 (dsm-conn/0:1) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 50010 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 3763,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "4243": {
+                "name": "dsm-conn/0:2",
+                "stat": "4243 (dsm-conn/0:2) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 50010 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 2959,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "4244": {
+                "name": "dsm-conn/0:3",
+                "stat": "4244 (dsm-conn/0:3) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 50010 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 2214,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "4245": {
+                "name": "dsm-conn/0:4",
+                "stat": "4245 (dsm-conn/0:4) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 50010 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 2061,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "4246": {
+                "name": "dsm-conn/0:5",
+                "stat": "4246 (dsm-conn/0:5) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 50010 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 2689,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "4247": {
+                "name": "dsm-conn/0:6",
+                "stat": "4247 (dsm-conn/0:6) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 50010 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 2007,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "4248": {
+                "name": "dsm-conn/0:7",
+                "stat": "4248 (dsm-conn/0:7) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 50010 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 1 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 2447,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              }
+            }
+          }
+        ],
+        "errors": [],
+        "closed": true,
+        "exit": 0,
+        "remaining_threads": []
+      },
+      "host_log": "Nov 06 00:25:24 lab-node-0 kernel: ktcp_receive: __ktcp_receive error, ret -4\n",
+      "firewall_restored_exactly": true
+    },
+    {
+      "label": "pf8-receive-node1-1",
+      "result": {
+        "kernel": "7.1.0-rc3-sshpool-gvm-pf8",
+        "phases": [
+          {
+            "phase": "idle",
+            "elapsed_ns": 3000257788,
+            "cpu_ns": 0,
+            "cpu_equivalents": 0.0,
+            "bounded_cpu": true,
+            "before": {
+              "3045": {
+                "name": "dsm-conn/0:0",
+                "stat": "3045 (dsm-conn/0:0) S 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 36971 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 12929,
+                "stack": [
+                  "[<0>] wait_woken+0x80/0x90",
+                  "[<0>] sk_wait_data+0x12b/0x140",
+                  "[<0>] tcp_recvmsg_locked+0x4e4/0x9f0",
+                  "[<0>] tcp_recvmsg+0x88/0x1e0",
+                  "[<0>] kernel_recvmsg+0xaa/0xc0",
+                  "[<0>] __ktcp_receive.constprop.0+0x9f/0x120",
+                  "[<0>] ktcp_receive+0x168/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "3046": {
+                "name": "dsm-conn/0:1",
+                "stat": "3046 (dsm-conn/0:1) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 36971 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 6985,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "3047": {
+                "name": "dsm-conn/0:2",
+                "stat": "3047 (dsm-conn/0:2) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 36971 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 21263,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "3048": {
+                "name": "dsm-conn/0:3",
+                "stat": "3048 (dsm-conn/0:3) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 36971 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 15161,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "3049": {
+                "name": "dsm-conn/0:4",
+                "stat": "3049 (dsm-conn/0:4) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 36971 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 5006,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "3050": {
+                "name": "dsm-conn/0:5",
+                "stat": "3050 (dsm-conn/0:5) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 36971 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 2380,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "3051": {
+                "name": "dsm-conn/0:6",
+                "stat": "3051 (dsm-conn/0:6) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 36971 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 2436,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "3052": {
+                "name": "dsm-conn/0:7",
+                "stat": "3052 (dsm-conn/0:7) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 36971 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 2185,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              }
+            },
+            "after": {
+              "3045": {
+                "name": "dsm-conn/0:0",
+                "stat": "3045 (dsm-conn/0:0) S 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 36971 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 12929,
+                "stack": [
+                  "[<0>] wait_woken+0x80/0x90",
+                  "[<0>] sk_wait_data+0x12b/0x140",
+                  "[<0>] tcp_recvmsg_locked+0x4e4/0x9f0",
+                  "[<0>] tcp_recvmsg+0x88/0x1e0",
+                  "[<0>] kernel_recvmsg+0xaa/0xc0",
+                  "[<0>] __ktcp_receive.constprop.0+0x9f/0x120",
+                  "[<0>] ktcp_receive+0x168/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "3046": {
+                "name": "dsm-conn/0:1",
+                "stat": "3046 (dsm-conn/0:1) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 36971 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 6985,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "3047": {
+                "name": "dsm-conn/0:2",
+                "stat": "3047 (dsm-conn/0:2) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 36971 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 21263,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "3048": {
+                "name": "dsm-conn/0:3",
+                "stat": "3048 (dsm-conn/0:3) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 36971 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 15161,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "3049": {
+                "name": "dsm-conn/0:4",
+                "stat": "3049 (dsm-conn/0:4) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 36971 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 5006,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "3050": {
+                "name": "dsm-conn/0:5",
+                "stat": "3050 (dsm-conn/0:5) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 36971 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 2380,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "3051": {
+                "name": "dsm-conn/0:6",
+                "stat": "3051 (dsm-conn/0:6) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 36971 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 2436,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "3052": {
+                "name": "dsm-conn/0:7",
+                "stat": "3052 (dsm-conn/0:7) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 36971 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 2185,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              }
+            }
+          },
+          {
+            "phase": "partial_frame",
+            "elapsed_ns": 3000121594,
+            "cpu_ns": 0,
+            "cpu_equivalents": 0.0,
+            "bounded_cpu": true,
+            "before": {
+              "3045": {
+                "name": "dsm-conn/0:0",
+                "stat": "3045 (dsm-conn/0:0) S 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 36971 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 30643,
+                "stack": [
+                  "[<0>] wait_woken+0x80/0x90",
+                  "[<0>] sk_wait_data+0x12b/0x140",
+                  "[<0>] tcp_recvmsg_locked+0x4e4/0x9f0",
+                  "[<0>] tcp_recvmsg+0x88/0x1e0",
+                  "[<0>] kernel_recvmsg+0xaa/0xc0",
+                  "[<0>] __ktcp_receive.constprop.0+0x9f/0x120",
+                  "[<0>] ktcp_receive+0x168/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "3046": {
+                "name": "dsm-conn/0:1",
+                "stat": "3046 (dsm-conn/0:1) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 36971 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 6985,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "3047": {
+                "name": "dsm-conn/0:2",
+                "stat": "3047 (dsm-conn/0:2) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 36971 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 21263,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "3048": {
+                "name": "dsm-conn/0:3",
+                "stat": "3048 (dsm-conn/0:3) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 36971 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 15161,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "3049": {
+                "name": "dsm-conn/0:4",
+                "stat": "3049 (dsm-conn/0:4) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 36971 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 5006,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "3050": {
+                "name": "dsm-conn/0:5",
+                "stat": "3050 (dsm-conn/0:5) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 36971 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 2380,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "3051": {
+                "name": "dsm-conn/0:6",
+                "stat": "3051 (dsm-conn/0:6) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 36971 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 2436,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "3052": {
+                "name": "dsm-conn/0:7",
+                "stat": "3052 (dsm-conn/0:7) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 36971 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 2185,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              }
+            },
+            "after": {
+              "3045": {
+                "name": "dsm-conn/0:0",
+                "stat": "3045 (dsm-conn/0:0) S 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 36971 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 30643,
+                "stack": [
+                  "[<0>] wait_woken+0x80/0x90",
+                  "[<0>] sk_wait_data+0x12b/0x140",
+                  "[<0>] tcp_recvmsg_locked+0x4e4/0x9f0",
+                  "[<0>] tcp_recvmsg+0x88/0x1e0",
+                  "[<0>] kernel_recvmsg+0xaa/0xc0",
+                  "[<0>] __ktcp_receive.constprop.0+0x9f/0x120",
+                  "[<0>] ktcp_receive+0x168/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "3046": {
+                "name": "dsm-conn/0:1",
+                "stat": "3046 (dsm-conn/0:1) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 36971 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 6985,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "3047": {
+                "name": "dsm-conn/0:2",
+                "stat": "3047 (dsm-conn/0:2) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 36971 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 21263,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "3048": {
+                "name": "dsm-conn/0:3",
+                "stat": "3048 (dsm-conn/0:3) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 36971 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 15161,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "3049": {
+                "name": "dsm-conn/0:4",
+                "stat": "3049 (dsm-conn/0:4) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 36971 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 5006,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "3050": {
+                "name": "dsm-conn/0:5",
+                "stat": "3050 (dsm-conn/0:5) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 36971 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 2380,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "3051": {
+                "name": "dsm-conn/0:6",
+                "stat": "3051 (dsm-conn/0:6) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 36971 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 2436,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "3052": {
+                "name": "dsm-conn/0:7",
+                "stat": "3052 (dsm-conn/0:7) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 36971 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 2185,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              }
+            }
+          }
+        ],
+        "errors": [],
+        "closed": true,
+        "exit": 0,
+        "remaining_threads": []
+      },
+      "host_log": "Nov 06 00:24:48 lab-node-1 kernel: ktcp_receive: __ktcp_receive error, ret -104\nNov 06 00:24:48 lab-node-1 kernel: ktcp_receive: __ktcp_receive error, ret -104\nNov 06 00:24:48 lab-node-1 kernel: ktcp_receive: __ktcp_receive error, ret -104\nNov 06 00:24:48 lab-node-1 kernel: ktcp_receive: __ktcp_receive error, ret -104\nNov 06 00:24:48 lab-node-1 kernel: ktcp_receive: __ktcp_receive error, ret -104\nNov 06 00:24:48 lab-node-1 kernel: kvm_dsm_free: node-0 dsm root server exited with -104\n",
+      "firewall_restored_exactly": true
+    },
+    {
+      "label": "pf8-receive-cancel-node1-1",
+      "result": {
+        "kernel": "7.1.0-rc3-sshpool-gvm-pf8",
+        "close_order": "vm-first",
+        "phases": [
+          {
+            "phase": "idle",
+            "elapsed_ns": 3000128581,
+            "cpu_ns": 0,
+            "cpu_equivalents": 0.0,
+            "bounded_cpu": true,
+            "before": {
+              "3840": {
+                "name": "dsm-conn/0:0",
+                "stat": "3840 (dsm-conn/0:0) S 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 42854 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 8886,
+                "stack": [
+                  "[<0>] wait_woken+0x80/0x90",
+                  "[<0>] sk_wait_data+0x12b/0x140",
+                  "[<0>] tcp_recvmsg_locked+0x4e4/0x9f0",
+                  "[<0>] tcp_recvmsg+0x88/0x1e0",
+                  "[<0>] kernel_recvmsg+0xaa/0xc0",
+                  "[<0>] __ktcp_receive.constprop.0+0x9f/0x120",
+                  "[<0>] ktcp_receive+0x168/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "3841": {
+                "name": "dsm-conn/0:1",
+                "stat": "3841 (dsm-conn/0:1) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 42854 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 4017,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "3842": {
+                "name": "dsm-conn/0:2",
+                "stat": "3842 (dsm-conn/0:2) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 42854 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 2927,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "3843": {
+                "name": "dsm-conn/0:3",
+                "stat": "3843 (dsm-conn/0:3) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 42854 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 3582,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "3844": {
+                "name": "dsm-conn/0:4",
+                "stat": "3844 (dsm-conn/0:4) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 42854 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 2869,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "3845": {
+                "name": "dsm-conn/0:5",
+                "stat": "3845 (dsm-conn/0:5) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 42854 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 2565,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "3846": {
+                "name": "dsm-conn/0:6",
+                "stat": "3846 (dsm-conn/0:6) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 42854 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 2290,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "3847": {
+                "name": "dsm-conn/0:7",
+                "stat": "3847 (dsm-conn/0:7) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 42854 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 2370,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              }
+            },
+            "after": {
+              "3840": {
+                "name": "dsm-conn/0:0",
+                "stat": "3840 (dsm-conn/0:0) S 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 42854 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 8886,
+                "stack": [
+                  "[<0>] wait_woken+0x80/0x90",
+                  "[<0>] sk_wait_data+0x12b/0x140",
+                  "[<0>] tcp_recvmsg_locked+0x4e4/0x9f0",
+                  "[<0>] tcp_recvmsg+0x88/0x1e0",
+                  "[<0>] kernel_recvmsg+0xaa/0xc0",
+                  "[<0>] __ktcp_receive.constprop.0+0x9f/0x120",
+                  "[<0>] ktcp_receive+0x168/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "3841": {
+                "name": "dsm-conn/0:1",
+                "stat": "3841 (dsm-conn/0:1) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 42854 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 4017,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "3842": {
+                "name": "dsm-conn/0:2",
+                "stat": "3842 (dsm-conn/0:2) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 42854 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 2927,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "3843": {
+                "name": "dsm-conn/0:3",
+                "stat": "3843 (dsm-conn/0:3) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 42854 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 3582,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "3844": {
+                "name": "dsm-conn/0:4",
+                "stat": "3844 (dsm-conn/0:4) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 42854 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 2869,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "3845": {
+                "name": "dsm-conn/0:5",
+                "stat": "3845 (dsm-conn/0:5) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 42854 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 2565,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "3846": {
+                "name": "dsm-conn/0:6",
+                "stat": "3846 (dsm-conn/0:6) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 42854 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 2290,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "3847": {
+                "name": "dsm-conn/0:7",
+                "stat": "3847 (dsm-conn/0:7) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 42854 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 2370,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              }
+            }
+          },
+          {
+            "phase": "partial_frame",
+            "elapsed_ns": 3000183335,
+            "cpu_ns": 0,
+            "cpu_equivalents": 0.0,
+            "bounded_cpu": true,
+            "before": {
+              "3840": {
+                "name": "dsm-conn/0:0",
+                "stat": "3840 (dsm-conn/0:0) S 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 42854 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 22108,
+                "stack": [
+                  "[<0>] wait_woken+0x80/0x90",
+                  "[<0>] sk_wait_data+0x12b/0x140",
+                  "[<0>] tcp_recvmsg_locked+0x4e4/0x9f0",
+                  "[<0>] tcp_recvmsg+0x88/0x1e0",
+                  "[<0>] kernel_recvmsg+0xaa/0xc0",
+                  "[<0>] __ktcp_receive.constprop.0+0x9f/0x120",
+                  "[<0>] ktcp_receive+0x168/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "3841": {
+                "name": "dsm-conn/0:1",
+                "stat": "3841 (dsm-conn/0:1) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 42854 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 4017,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "3842": {
+                "name": "dsm-conn/0:2",
+                "stat": "3842 (dsm-conn/0:2) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 42854 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 2927,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "3843": {
+                "name": "dsm-conn/0:3",
+                "stat": "3843 (dsm-conn/0:3) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 42854 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 3582,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "3844": {
+                "name": "dsm-conn/0:4",
+                "stat": "3844 (dsm-conn/0:4) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 42854 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 2869,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "3845": {
+                "name": "dsm-conn/0:5",
+                "stat": "3845 (dsm-conn/0:5) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 42854 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 2565,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "3846": {
+                "name": "dsm-conn/0:6",
+                "stat": "3846 (dsm-conn/0:6) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 42854 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 2290,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "3847": {
+                "name": "dsm-conn/0:7",
+                "stat": "3847 (dsm-conn/0:7) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 42854 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 2370,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              }
+            },
+            "after": {
+              "3840": {
+                "name": "dsm-conn/0:0",
+                "stat": "3840 (dsm-conn/0:0) S 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 42854 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 22108,
+                "stack": [
+                  "[<0>] wait_woken+0x80/0x90",
+                  "[<0>] sk_wait_data+0x12b/0x140",
+                  "[<0>] tcp_recvmsg_locked+0x4e4/0x9f0",
+                  "[<0>] tcp_recvmsg+0x88/0x1e0",
+                  "[<0>] kernel_recvmsg+0xaa/0xc0",
+                  "[<0>] __ktcp_receive.constprop.0+0x9f/0x120",
+                  "[<0>] ktcp_receive+0x168/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "3841": {
+                "name": "dsm-conn/0:1",
+                "stat": "3841 (dsm-conn/0:1) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 42854 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 4017,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "3842": {
+                "name": "dsm-conn/0:2",
+                "stat": "3842 (dsm-conn/0:2) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 42854 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 2927,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "3843": {
+                "name": "dsm-conn/0:3",
+                "stat": "3843 (dsm-conn/0:3) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 42854 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 3582,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "3844": {
+                "name": "dsm-conn/0:4",
+                "stat": "3844 (dsm-conn/0:4) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 42854 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 2869,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "3845": {
+                "name": "dsm-conn/0:5",
+                "stat": "3845 (dsm-conn/0:5) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 42854 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 2565,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "3846": {
+                "name": "dsm-conn/0:6",
+                "stat": "3846 (dsm-conn/0:6) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 42854 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 2290,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              },
+              "3847": {
+                "name": "dsm-conn/0:7",
+                "stat": "3847 (dsm-conn/0:7) D 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 42854 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483391 256 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+                "runtime_ns": 2370,
+                "stack": [
+                  "[<0>] ktcp_receive+0x4b/0x350",
+                  "[<0>] ivy_kvm_dsm_handle_req+0xc8/0xc90",
+                  "[<0>] kthread+0xdd/0x110",
+                  "[<0>] ret_from_fork+0x192/0x290",
+                  "[<0>] ret_from_fork_asm+0x1a/0x30"
+                ]
+              }
+            }
+          }
+        ],
+        "errors": [],
+        "closed": true,
+        "exit": 0,
+        "remaining_threads": []
+      },
+      "host_log": "Nov 06 00:25:47 lab-node-1 kernel: ktcp_receive: __ktcp_receive error, ret -4\n",
+      "firewall_restored_exactly": true
+    }
+  ],
+  "pvclock": {
+    "log": "{\"node\": 0, \"op\": \"ready\", \"nodes\": 2}\n{\"node\": 1, \"op\": \"ready\", \"nodes\": 2}\n{\"node\": 0, \"op\": \"claim\"}\n{\"node\": 0, \"op\": \"tick\", \"marker\": 1, \"records\": [{\"version\": 2, \"tsc\": 83794528, \"time\": 38227935, \"multiplier\": 3587549226, \"shift\": -1, \"flags\": 1}, {\"version\": 0, \"tsc\": 0, \"time\": 0, \"multiplier\": 0, \"shift\": 0, \"flags\": 0}]}\n{\"node\": 1, \"op\": \"claim\"}\n{\"node\": 1, \"op\": \"tick\", \"marker\": 2, \"records\": [{\"version\": 2, \"tsc\": 83794528, \"time\": 38227935, \"multiplier\": 3587549226, \"shift\": -1, \"flags\": 1}, {\"version\": 2, \"tsc\": 48389716, \"time\": 21349097, \"multiplier\": 3587549226, \"shift\": -1, \"flags\": 1}]}\n{\"node\": 0, \"op\": \"claim\"}\n{\"node\": 0, \"op\": \"tick\", \"marker\": 1, \"records\": [{\"version\": 4, \"tsc\": 138647624, \"time\": 61137262, \"multiplier\": 3587549226, \"shift\": -1, \"flags\": 1}, {\"version\": 2, \"tsc\": 48389716, \"time\": 21349097, \"multiplier\": 3587549226, \"shift\": -1, \"flags\": 1}]}\n{\"node\": 1, \"op\": \"claim\"}\n{\"node\": 1, \"op\": \"read\", \"marker\": 2, \"records\": [{\"version\": 4, \"tsc\": 138647624, \"time\": 61137262, \"multiplier\": 3587549226, \"shift\": -1, \"flags\": 1}, {\"version\": 2, \"tsc\": 48389716, \"time\": 21349097, \"multiplier\": 3587549226, \"shift\": -1, \"flags\": 1}]}\n{\"node\": 0, \"op\": \"tick\", \"marker\": 2, \"records\": [{\"version\": 6, \"tsc\": 180564524, \"time\": 78643915, \"multiplier\": 3587549226, \"shift\": -1, \"flags\": 1}, {\"version\": 2, \"tsc\": 48389716, \"time\": 21349097, \"multiplier\": 3587549226, \"shift\": -1, \"flags\": 1}]}\n{\"node\": 1, \"op\": \"read\", \"marker\": 2, \"records\": [{\"version\": 6, \"tsc\": 180564524, \"time\": 78643915, \"multiplier\": 3587549226, \"shift\": -1, \"flags\": 1}, {\"version\": 2, \"tsc\": 48389716, \"time\": 21349097, \"multiplier\": 3587549226, \"shift\": -1, \"flags\": 1}]}\nPVCLOCK_CHECK {\"round\": 0, \"cpu\": 0, \"pass\": true, \"valid_update\": true, \"peer_matches\": true, \"claim_preserves_records\": true, \"update_preserves_other_record\": true}\n{\"node\": 1, \"op\": \"claim\"}\n{\"node\": 1, \"op\": \"tick\", \"marker\": 2, \"records\": [{\"version\": 6, \"tsc\": 180564524, \"time\": 78643915, \"multiplier\": 3587549226, \"shift\": -1, \"flags\": 1}, {\"version\": 4, \"tsc\": 167480416, \"time\": 71086886, \"multiplier\": 3587549226, \"shift\": -1, \"flags\": 1}]}\n{\"node\": 0, \"op\": \"claim\"}\n{\"node\": 0, \"op\": \"read\", \"marker\": 1, \"records\": [{\"version\": 6, \"tsc\": 180564524, \"time\": 78643915, \"multiplier\": 3587549226, \"shift\": -1, \"flags\": 1}, {\"version\": 4, \"tsc\": 167480416, \"time\": 71086886, \"multiplier\": 3587549226, \"shift\": -1, \"flags\": 1}]}\n{\"node\": 1, \"op\": \"tick\", \"marker\": 1, \"records\": [{\"version\": 6, \"tsc\": 180564524, \"time\": 78643915, \"multiplier\": 3587549226, \"shift\": -1, \"flags\": 1}, {\"version\": 6, \"tsc\": 229666886, \"time\": 97059047, \"multiplier\": 3587549226, \"shift\": -1, \"flags\": 1}]}\n{\"node\": 0, \"op\": \"read\", \"marker\": 1, \"records\": [{\"version\": 6, \"tsc\": 180564524, \"time\": 78643915, \"multiplier\": 3587549226, \"shift\": -1, \"flags\": 1}, {\"version\": 6, \"tsc\": 229666886, \"time\": 97059047, \"multiplier\": 3587549226, \"shift\": -1, \"flags\": 1}]}\nPVCLOCK_CHECK {\"round\": 0, \"cpu\": 1, \"pass\": true, \"valid_update\": true, \"peer_matches\": true, \"claim_preserves_records\": true, \"update_preserves_other_record\": true}\n{\"node\": 0, \"op\": \"claim\"}\n{\"node\": 0, \"op\": \"tick\", \"marker\": 1, \"records\": [{\"version\": 8, \"tsc\": 331694650, \"time\": 141762826, \"multiplier\": 3587549226, \"shift\": -1, \"flags\": 1}, {\"version\": 6, \"tsc\": 229666886, \"time\": 97059047, \"multiplier\": 3587549226, \"shift\": -1, \"flags\": 1}]}\n{\"node\": 1, \"op\": \"claim\"}\n{\"node\": 1, \"op\": \"read\", \"marker\": 2, \"records\": [{\"version\": 8, \"tsc\": 331694650, \"time\": 141762826, \"multiplier\": 3587549226, \"shift\": -1, \"flags\": 1}, {\"version\": 6, \"tsc\": 229666886, \"time\": 97059047, \"multiplier\": 3587549226, \"shift\": -1, \"flags\": 1}]}\n{\"node\": 0, \"op\": \"tick\", \"marker\": 2, \"records\": [{\"version\": 10, \"tsc\": 387153356, \"time\": 164925024, \"multiplier\": 3587549226, \"shift\": -1, \"flags\": 1}, {\"version\": 6, \"tsc\": 229666886, \"time\": 97059047, \"multiplier\": 3587549226, \"shift\": -1, \"flags\": 1}]}\n{\"node\": 1, \"op\": \"read\", \"marker\": 2, \"records\": [{\"version\": 10, \"tsc\": 387153356, \"time\": 164925024, \"multiplier\": 3587549226, \"shift\": -1, \"flags\": 1}, {\"version\": 6, \"tsc\": 229666886, \"time\": 97059047, \"multiplier\": 3587549226, \"shift\": -1, \"flags\": 1}]}\nPVCLOCK_CHECK {\"round\": 1, \"cpu\": 0, \"pass\": true, \"valid_update\": true, \"peer_matches\": true, \"claim_preserves_records\": true, \"update_preserves_other_record\": true}\n{\"node\": 1, \"op\": \"claim\"}\n{\"node\": 1, \"op\": \"tick\", \"marker\": 2, \"records\": [{\"version\": 10, \"tsc\": 387153356, \"time\": 164925024, \"multiplier\": 3587549226, \"shift\": -1, \"flags\": 1}, {\"version\": 8, \"tsc\": 366205846, \"time\": 154084022, \"multiplier\": 3587549226, \"shift\": -1, \"flags\": 1}]}\n{\"node\": 0, \"op\": \"claim\"}\n{\"node\": 0, \"op\": \"read\", \"marker\": 1, \"records\": [{\"version\": 10, \"tsc\": 387153356, \"time\": 164925024, \"multiplier\": 3587549226, \"shift\": -1, \"flags\": 1}, {\"version\": 8, \"tsc\": 366205846, \"time\": 154084022, \"multiplier\": 3587549226, \"shift\": -1, \"flags\": 1}]}\n{\"node\": 1, \"op\": \"tick\", \"marker\": 1, \"records\": [{\"version\": 10, \"tsc\": 387153356, \"time\": 164925024, \"multiplier\": 3587549226, \"shift\": -1, \"flags\": 1}, {\"version\": 10, \"tsc\": 445472050, \"time\": 187189403, \"multiplier\": 3587549226, \"shift\": -1, \"flags\": 1}]}\n{\"node\": 0, \"op\": \"read\", \"marker\": 1, \"records\": [{\"version\": 10, \"tsc\": 387153356, \"time\": 164925024, \"multiplier\": 3587549226, \"shift\": -1, \"flags\": 1}, {\"version\": 10, \"tsc\": 445472050, \"time\": 187189403, \"multiplier\": 3587549226, \"shift\": -1, \"flags\": 1}]}\nPVCLOCK_CHECK {\"round\": 1, \"cpu\": 1, \"pass\": true, \"valid_update\": true, \"peer_matches\": true, \"claim_preserves_records\": true, \"update_preserves_other_record\": true}\n{\"node\": 0, \"op\": \"claim\"}\n{\"node\": 0, \"op\": \"tick\", \"marker\": 1, \"records\": [{\"version\": 12, \"tsc\": 552505328, \"time\": 233983600, \"multiplier\": 3587549226, \"shift\": -1, \"flags\": 1}, {\"version\": 10, \"tsc\": 445472050, \"time\": 187189403, \"multiplier\": 3587549226, \"shift\": -1, \"flags\": 1}]}\n{\"node\": 1, \"op\": \"claim\"}\n{\"node\": 1, \"op\": \"read\", \"marker\": 2, \"records\": [{\"version\": 12, \"tsc\": 552505328, \"time\": 233983600, \"multiplier\": 3587549226, \"shift\": -1, \"flags\": 1}, {\"version\": 10, \"tsc\": 445472050, \"time\": 187189403, \"multiplier\": 3587549226, \"shift\": -1, \"flags\": 1}]}\n{\"node\": 0, \"op\": \"tick\", \"marker\": 2, \"records\": [{\"version\": 14, \"tsc\": 589522312, \"time\": 249443657, \"multiplier\": 3587549226, \"shift\": -1, \"flags\": 1}, {\"version\": 10, \"tsc\": 445472050, \"time\": 187189403, \"multiplier\": 3587549226, \"shift\": -1, \"flags\": 1}]}\n{\"node\": 1, \"op\": \"read\", \"marker\": 2, \"records\": [{\"version\": 14, \"tsc\": 589522312, \"time\": 249443657, \"multiplier\": 3587549226, \"shift\": -1, \"flags\": 1}, {\"version\": 10, \"tsc\": 445472050, \"time\": 187189403, \"multiplier\": 3587549226, \"shift\": -1, \"flags\": 1}]}\nPVCLOCK_CHECK {\"round\": 2, \"cpu\": 0, \"pass\": true, \"valid_update\": true, \"peer_matches\": true, \"claim_preserves_records\": true, \"update_preserves_other_record\": true}\n{\"node\": 1, \"op\": \"claim\"}\n{\"node\": 1, \"op\": \"tick\", \"marker\": 2, \"records\": [{\"version\": 14, \"tsc\": 589522312, \"time\": 249443657, \"multiplier\": 3587549226, \"shift\": -1, \"flags\": 1}, {\"version\": 12, \"tsc\": 568624720, \"time\": 238623647, \"multiplier\": 3587549226, \"shift\": -1, \"flags\": 1}]}\n{\"node\": 0, \"op\": \"claim\"}\n{\"node\": 0, \"op\": \"read\", \"marker\": 1, \"records\": [{\"version\": 14, \"tsc\": 589522312, \"time\": 249443657, \"multiplier\": 3587549226, \"shift\": -1, \"flags\": 1}, {\"version\": 12, \"tsc\": 568624720, \"time\": 238623647, \"multiplier\": 3587549226, \"shift\": -1, \"flags\": 1}]}\n{\"node\": 1, \"op\": \"tick\", \"marker\": 1, \"records\": [{\"version\": 14, \"tsc\": 589522312, \"time\": 249443657, \"multiplier\": 3587549226, \"shift\": -1, \"flags\": 1}, {\"version\": 14, \"tsc\": 604591326, \"time\": 253645096, \"multiplier\": 3587549226, \"shift\": -1, \"flags\": 1}]}\n{\"node\": 0, \"op\": \"read\", \"marker\": 1, \"records\": [{\"version\": 14, \"tsc\": 589522312, \"time\": 249443657, \"multiplier\": 3587549226, \"shift\": -1, \"flags\": 1}, {\"version\": 14, \"tsc\": 604591326, \"time\": 253645096, \"multiplier\": 3587549226, \"shift\": -1, \"flags\": 1}]}\nPVCLOCK_CHECK {\"round\": 2, \"cpu\": 1, \"pass\": true, \"valid_update\": true, \"peer_matches\": true, \"claim_preserves_records\": true, \"update_preserves_other_record\": true}\n{\"node\": 0, \"op\": \"claim\"}\n{\"node\": 0, \"op\": \"tick\", \"marker\": 1, \"records\": [{\"version\": 16, \"tsc\": 711766082, \"time\": 300498270, \"multiplier\": 3587549226, \"shift\": -1, \"flags\": 1}, {\"version\": 14, \"tsc\": 604591326, \"time\": 253645096, \"multiplier\": 3587549226, \"shift\": -1, \"flags\": 1}]}\n{\"node\": 1, \"op\": \"claim\"}\n{\"node\": 1, \"op\": \"read\", \"marker\": 2, \"records\": [{\"version\": 16, \"tsc\": 711766082, \"time\": 300498270, \"multiplier\": 3587549226, \"shift\": -1, \"flags\": 1}, {\"version\": 14, \"tsc\": 604591326, \"time\": 253645096, \"multiplier\": 3587549226, \"shift\": -1, \"flags\": 1}]}\n{\"node\": 0, \"op\": \"tick\", \"marker\": 2, \"records\": [{\"version\": 18, \"tsc\": 759309188, \"time\": 320354507, \"multiplier\": 3587549226, \"shift\": -1, \"flags\": 1}, {\"version\": 14, \"tsc\": 604591326, \"time\": 253645096, \"multiplier\": 3587549226, \"shift\": -1, \"flags\": 1}]}\n{\"node\": 1, \"op\": \"read\", \"marker\": 2, \"records\": [{\"version\": 18, \"tsc\": 759309188, \"time\": 320354507, \"multiplier\": 3587549226, \"shift\": -1, \"flags\": 1}, {\"version\": 14, \"tsc\": 604591326, \"time\": 253645096, \"multiplier\": 3587549226, \"shift\": -1, \"flags\": 1}]}\nPVCLOCK_CHECK {\"round\": 3, \"cpu\": 0, \"pass\": true, \"valid_update\": true, \"peer_matches\": true, \"claim_preserves_records\": true, \"update_preserves_other_record\": true}\n{\"node\": 1, \"op\": \"claim\"}\n{\"node\": 1, \"op\": \"tick\", \"marker\": 2, \"records\": [{\"version\": 18, \"tsc\": 759309188, \"time\": 320354507, \"multiplier\": 3587549226, \"shift\": -1, \"flags\": 1}, {\"version\": 16, \"tsc\": 740527944, \"time\": 310418631, \"multiplier\": 3587549226, \"shift\": -1, \"flags\": 1}]}\n{\"node\": 0, \"op\": \"claim\"}\n{\"node\": 0, \"op\": \"read\", \"marker\": 1, \"records\": [{\"version\": 18, \"tsc\": 759309188, \"time\": 320354507, \"multiplier\": 3587549226, \"shift\": -1, \"flags\": 1}, {\"version\": 16, \"tsc\": 740527944, \"time\": 310418631, \"multiplier\": 3587549226, \"shift\": -1, \"flags\": 1}]}\n{\"node\": 1, \"op\": \"tick\", \"marker\": 1, \"records\": [{\"version\": 18, \"tsc\": 759309188, \"time\": 320354507, \"multiplier\": 3587549226, \"shift\": -1, \"flags\": 1}, {\"version\": 18, \"tsc\": 773839340, \"time\": 324331112, \"multiplier\": 3587549226, \"shift\": -1, \"flags\": 1}]}\n{\"node\": 0, \"op\": \"read\", \"marker\": 1, \"records\": [{\"version\": 18, \"tsc\": 759309188, \"time\": 320354507, \"multiplier\": 3587549226, \"shift\": -1, \"flags\": 1}, {\"version\": 18, \"tsc\": 773839340, \"time\": 324331112, \"multiplier\": 3587549226, \"shift\": -1, \"flags\": 1}]}\nPVCLOCK_CHECK {\"round\": 3, \"cpu\": 1, \"pass\": true, \"valid_update\": true, \"peer_matches\": true, \"claim_preserves_records\": true, \"update_preserves_other_record\": true}\n{\"node\": 1, \"op\": \"closed\"}\n{\"node\": 0, \"op\": \"closed\"}\nPVCLOCK_RESULT {\"checks\": 8, \"failures\": 0, \"errors\": []}\n",
+    "nodes": [
+      {
+        "host_log": "Nov 06 00:27:19 lab-node-0 kernel: kvm-dsm: node-0 established connection with node-1 [192.0.2.11:37711]\nNov 06 00:27:20 lab-node-0 kernel: ktcp_receive: __ktcp_receive error, ret -104\nNov 06 00:27:20 lab-node-0 kernel: ktcp_receive: __ktcp_receive error, ret -104\nNov 06 00:27:20 lab-node-0 kernel: ktcp_receive: __ktcp_receive error, ret -104\nNov 06 00:27:20 lab-node-0 kernel: ktcp_receive: __ktcp_receive error, ret -104\nNov 06 00:27:20 lab-node-0 kernel: ktcp_receive: __ktcp_receive error, ret -104\nNov 06 00:27:20 lab-node-0 kernel: ktcp_receive: __ktcp_receive error, ret -104\nNov 06 00:27:20 lab-node-0 kernel: ktcp_receive: __ktcp_receive error, ret -104\nNov 06 00:27:20 lab-node-0 kernel: ktcp_receive: __ktcp_receive error, ret -104\nNov 06 00:27:20 lab-node-0 kernel: kvm_dsm_free: node-0 dsm root server exited with -104\n",
+        "runtime_hashes": "8967674a2b770b350927d387002046cc1c2899995c9f1dd68f19c61a985cf4ee  /boot/vmlinuz-7.1.0-rc3-sshpool-gvm-pf8\n86f12c44e32069272174d1768e30d494fb126bdfb97d51aa60edd85ba3987756  /LAB/ssi/probe-pvclock\n"
+      },
+      {
+        "host_log": "Nov 06 00:27:19 lab-node-1 kernel: kvm-dsm: node-1 established connection with node-0 [192.0.2.10:37710]\nNov 06 00:27:20 lab-node-1 kernel: ktcp_receive: __ktcp_receive error, ret -4\n",
+        "runtime_hashes": "8967674a2b770b350927d387002046cc1c2899995c9f1dd68f19c61a985cf4ee  /boot/vmlinuz-7.1.0-rc3-sshpool-gvm-pf8\n86f12c44e32069272174d1768e30d494fb126bdfb97d51aa60edd85ba3987756  /LAB/ssi/probe-pvclock\n"
+      }
+    ]
+  },
+  "compiled_sources": {
+    "arch/x86/kvm/dsm.c": {
+      "compiled": "03ca12b574b3cb0f81266a42e03f1cd2fc2034c2893d704ea2db6d7cf915b28f",
+      "candidate": "03ca12b574b3cb0f81266a42e03f1cd2fc2034c2893d704ea2db6d7cf915b28f",
+      "replayed": "03ca12b574b3cb0f81266a42e03f1cd2fc2034c2893d704ea2db6d7cf915b28f"
+    },
+    "arch/x86/kvm/ktcp.c": {
+      "compiled": "139119fccbc3f9d2f9d4bf6ad4fe7f3fd9dcfaee1037681e2072c4af6a80f567",
+      "candidate": "139119fccbc3f9d2f9d4bf6ad4fe7f3fd9dcfaee1037681e2072c4af6a80f567",
+      "replayed": "139119fccbc3f9d2f9d4bf6ad4fe7f3fd9dcfaee1037681e2072c4af6a80f567"
+    },
+    "arch/x86/include/asm/kvm_host.h": {
+      "compiled": "02ae725b01d300a861b4fed25463163303eb1aabb0a89c5dcd8021a14639cfc1",
+      "candidate": "02ae725b01d300a861b4fed25463163303eb1aabb0a89c5dcd8021a14639cfc1",
+      "replayed": "02ae725b01d300a861b4fed25463163303eb1aabb0a89c5dcd8021a14639cfc1"
+    }
+  },
+  "source_sha256": {
+    "scripts/ssi-lab/experiments/kernel-dsm-startup.patch": "c93c4a36f1408cd869f68be56f94375ca822164835db999517f4d07c4a00507f",
+    "scripts/ssi-lab/probe-dsm-startup.c": "93782726bf7460c365622b274199d8bafcf32ca6bbc321bf5d78f6b9306c3206",
+    "scripts/ssi-lab/check-startup.py": "ce8bceadf9c80e2d40ba86988b13f6a58f3edb8608f4d0cca187e322d9e75008"
+  },
+  "preflight_interventions": [
+    {
+      "attempts": [
+        "pf8-qemu-conflict-node0-1",
+        "pf8-qemu-conflict-node1-1"
+      ],
+      "outcome": "Harness refused nonempty TCP state before spawning QEMU; assertion did not capture the exact state. Later read-only inspection found ports clear. New -2 labels were then used. No workload was launched by these attempts."
+    },
+    {
+      "label": "pf8-startup-workspace-pair-1",
+      "outcome": "Node 1 all-TCP-state guard rejected startup before any QEMU spawn. Earlier read-only inspection had observed TIME-WAIT; the failed compound guard itself did not save state. Rerun only after both nodes showed empty ports, using pair-2 label."
+    }
+  ],
+  "workspace": {
+    "label": "pf8-startup-workspace-pair-2",
+    "result": {
+      "mode": "pair",
+      "variant": "sync",
+      "phases": {
+        "identity": {
+          "exit": 0,
+          "seconds": 25.712
+        },
+        "clock-upload": {
+          "exit": 0,
+          "seconds": 30.945
+        },
+        "clock": {
+          "exit": 0,
+          "seconds": 18.154
+        },
+        "stress": {
+          "exit": 0,
+          "seconds": 49.709
+        },
+        "sftp": {
+          "exit": 0,
+          "seconds": 26.281
+        },
+        "poweroff": {
+          "exit": 255,
+          "seconds": 17.763
+        }
+      },
+      "samples_errors": [],
+      "qemu": "qemu-system-x86_64-mmio-completion-1",
+      "qemu_sha256": "45eeeabe124051c2d40d763313d6c1941fd23b4ce1c57aaf6e6f2466e6fd4156",
+      "sftp_matches": true,
+      "sftp_sha256": "fbbab289f7f94b25736c58be46a994c441fd02552cc6022352e3d86d2fab7c83",
+      "qemu_ssh_exits": [
+        0,
+        0
+      ],
+      "seconds": 276.24
+    },
+    "stress_log": "STRESS_START pid=149 online_cpus=4 bytes=4194304 rounds=8 allocations=2\nSTRESS_ROUND allocation=0 round=0 counter=512\nSTRESS_ROUND allocation=0 round=1 counter=1024\nSTRESS_ROUND allocation=0 round=2 counter=1536\nSTRESS_ROUND allocation=0 round=3 counter=2048\nSTRESS_ROUND allocation=0 round=4 counter=2560\nSTRESS_ROUND allocation=0 round=5 counter=3072\nSTRESS_ROUND allocation=0 round=6 counter=3584\nSTRESS_THREAD allocation=0 pid=149 tid=152 requested_cpu=1 observed_cpu=1\nSTRESS_ROUND allocation=0 round=7 counter=4096\nSTRESS_THREAD allocation=0 pid=149 tid=151 requested_cpu=0 observed_cpu=0\nSTRESS_THREAD allocation=0 pid=149 tid=153 requested_cpu=2 observed_cpu=2\nSTRESS_THREAD allocation=0 pid=149 tid=154 requested_cpu=3 observed_cpu=3\nSTRESS_ROUND allocation=1 round=0 counter=512\nSTRESS_ROUND allocation=1 round=1 counter=1024\nSTRESS_ROUND allocation=1 round=2 counter=1536\nSTRESS_ROUND allocation=1 round=3 counter=2048\nSTRESS_ROUND allocation=1 round=4 counter=2560\nSTRESS_ROUND allocation=1 round=5 counter=3072\nSTRESS_ROUND allocation=1 round=6 counter=3584\nSTRESS_THREAD allocation=1 pid=149 tid=156 requested_cpu=1 observed_cpu=1\nSTRESS_ROUND allocation=1 round=7 counter=4096\nSTRESS_THREAD allocation=1 pid=149 tid=155 requested_cpu=0 observed_cpu=0\nSTRESS_THREAD allocation=1 pid=149 tid=158 requested_cpu=3 observed_cpu=3\nSTRESS_THREAD allocation=1 pid=149 tid=157 requested_cpu=2 observed_cpu=2\nSTRESS_PASS cpus=4 rounds=8 allocations=2 counter_per_allocation=4096 bytes=4194304\nSTRESS_EXIT status=0\n",
+    "clock_log": "CLOCK_START online_cpus=4 rounds=8\nCLOCK_SAMPLE round=0 cpu=0 tsc=416289673094 mono=165249287425 raw=165149254813 boot=165249289389\nCLOCK_SAMPLE round=0 cpu=2 tsc=419246275866 mono=165261233193 raw=165161198912 boot=165261233452\nCLOCK_SAMPLE round=0 cpu=1 tsc=419261181870 mono=165267608883 raw=165167574601 boot=165267609131\nCLOCK_SAMPLE round=0 cpu=3 tsc=419306363608 mono=165286328454 raw=165186294090 boot=165286328610\nCLOCK_SAMPLE round=1 cpu=0 tsc=419330930468 mono=165299948260 raw=165199914437 boot=165299948966\nCLOCK_SAMPLE round=1 cpu=2 tsc=419359559578 mono=165308545571 raw=165208511201 boot=165308545732\nCLOCK_SAMPLE round=1 cpu=1 tsc=419375067424 mono=165315110490 raw=165215076228 boot=165315110748\nCLOCK_SAMPLE round=1 cpu=3 tsc=419413668522 mono=165331144109 raw=165231109722 boot=165331144243\nCLOCK_SAMPLE round=2 cpu=0 tsc=419432100340 mono=165338913319 raw=165238879004 boot=165338913516\nCLOCK_SAMPLE round=2 cpu=2 tsc=420213132996 mono=165665118814 raw=165565084479 boot=165665119007\nCLOCK_SAMPLE round=2 cpu=1 tsc=420238511182 mono=165675637803 raw=165575603524 boot=165675638074\nCLOCK_SAMPLE round=2 cpu=3 tsc=420389147000 mono=165738661614 raw=165638627387 boot=165738661905\nCLOCK_SAMPLE round=3 cpu=0 tsc=420418461574 mono=165750791298 raw=165650756924 boot=165750791441\nCLOCK_SAMPLE round=3 cpu=2 tsc=420429686530 mono=165755563256 raw=165655528912 boot=165755563430\nCLOCK_SAMPLE round=3 cpu=1 tsc=422529467622 mono=166632444084 raw=166532409700 boot=166632444217\nCLOCK_SAMPLE round=3 cpu=3 tsc=423023739684 mono=166838990187 raw=166738955995 boot=166838990524\nCLOCK_SAMPLE round=4 cpu=0 tsc=423234416316 mono=166926863026 raw=166826828706 boot=166926863254\nCLOCK_SAMPLE round=4 cpu=2 tsc=423769546770 mono=167150358057 raw=167050323731 boot=167150358277\nCLOCK_SAMPLE round=4 cpu=1 tsc=423874199334 mono=167194275653 raw=167094242138 boot=167194276684\nCLOCK_SAMPLE round=4 cpu=3 tsc=423902081526 mono=167205979432 raw=167105945461 boot=167205979991\nCLOCK_SAMPLE round=5 cpu=0 tsc=424350791492 mono=167393309622 raw=167293275415 boot=167393309932\nCLOCK_SAMPLE round=5 cpu=2 tsc=424410286334 mono=167417960339 raw=167317925959 boot=167417960481\nCLOCK_SAMPLE round=5 cpu=1 tsc=426758372570 mono=168398629646 raw=168298595319 boot=168398629856\nCLOCK_SAMPLE round=5 cpu=3 tsc=428713754964 mono=169215285363 raw=169115251024 boot=169215285560\nCLOCK_SAMPLE round=6 cpu=0 tsc=428789606148 mono=169248977073 raw=169148943676 boot=169248978195\nCLOCK_SAMPLE round=6 cpu=2 tsc=429226801726 mono=169429645653 raw=169329611377 boot=169429645917\nCLOCK_SAMPLE round=6 cpu=1 tsc=429255671102 mono=169441614144 raw=169341579792 boot=169441614327\nCLOCK_SAMPLE round=6 cpu=3 tsc=429290670412 mono=169456231246 raw=169356196856 boot=169456231364\nCLOCK_SAMPLE round=7 cpu=0 tsc=429324523172 mono=169470369983 raw=169370335627 boot=169470370143\nCLOCK_TIMER cpu=0 requested_ns=20000000 elapsed_ns=20582911\nCLOCK_SAMPLE round=7 cpu=2 tsc=429402497718 mono=169502936090 raw=169402901702 boot=169502936225\nCLOCK_TIMER cpu=2 requested_ns=20000000 elapsed_ns=21534692\nCLOCK_SAMPLE round=7 cpu=1 tsc=429683842416 mono=169620586504 raw=169520552289 boot=169620586808\nCLOCK_TIMER cpu=1 requested_ns=20000000 elapsed_ns=74411303\nCLOCK_SAMPLE round=7 cpu=3 tsc=429949943720 mono=169731574223 raw=169631539829 boot=169731574341\nCLOCK_TIMER cpu=3 requested_ns=20000000 elapsed_ns=20140600\nCLOCK_PASS cpus=4 samples=32 timers=4\n",
+    "nodes": [
+      {
+        "serial_log": "configure_accelerators\nkvm_irqchip_create\nkvm_arch_init_irq_routing\nCPU 2 is remote CPU, pause\nCPU 3 is remote CPU, pause\nstart kvm dsm server, total memory size: 268435456\nserial_irq 4\nconnect_io_router...\nconnecting 192.0.2.11:40001\nQEMU 0 listen on TCP socket 192.0.2.10:40000\nconnecting io router done\nconnect_io_router done\nQEMU 0 set kvmclock: 2951663\nenter router_loop\n[    0.000000] Linux version 6.8.0-147-generic (buildd@lcy02-amd64-081) (x86_64-linux-gnu-gcc-13 (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0, GNU ld (GNU Binutils for Ubuntu) 2.42) #147-Ubuntu SMP PREEMPT_DYNAMIC Thu Sep 24 11:33:16 UTC 2026 (Ubuntu 6.8.0-147.147-generic 6.8.12)\n[    0.000000] Command line: console=ttyS0 rdinit=/init nokaslr panic=10 nox2apic\n[    0.000000] KERNEL supported cpus:\n[    0.000000]   Intel GenuineIntel\n[    0.000000]   AMD AuthenticAMD\n[    0.000000]   Hygon HygonGenuine\n[    0.000000]   Centaur CentaurHauls\n[    0.000000]   zhaoxin   Shanghai  \n[    0.000000] BIOS-provided physical RAM map:\n[    0.000000] BIOS-e820: [mem 0x0000000000000000-0x000000000009fbff] usable\n[    0.000000] BIOS-e820: [mem 0x000000000009fc00-0x000000000009ffff] reserved\n[    0.000000] BIOS-e820: [mem 0x00000000000f0000-0x00000000000fffff] reserved\n[    0.000000] BIOS-e820: [mem 0x0000000000100000-0x000000000ffdffff] usable\n[    0.000000] BIOS-e820: [mem 0x000000000ffe0000-0x000000000fffffff] reserved\n[    0.000000] BIOS-e820: [mem 0x00000000feffc000-0x00000000feffffff] reserved\n[    0.000000] BIOS-e820: [mem 0x00000000fffc0000-0x00000000ffffffff] reserved\n[    0.000000] NX (Execute Disable) protection: active\n[    0.000000] APIC: Static calls initialized\n[    0.000000] SMBIOS 2.8 present.\n[    0.000000] DMI: QEMU Standard PC (i440FX + PIIX, 1996), BIOS rel-1.17.0-0-gb52ca86e094d-prebuilt.qemu.org 04/01/2014\n[    0.000000] Hypervisor detected: KVM\n[    0.000000] kvm-clock: Using msrs 4b564d01 and 4b564d00\n[    0.000002] kvm-clock: using sched offset of 603585851 cycles\n[    0.000005] clocksource: kvm-clock: mask: 0xffffffffffffffff max_cycles: 0x1cd42e4dffb, max_idle_ns: 881590591483 ns\n[    0.000010] tsc: Detected 2394.374 MHz processor\n[    0.000408] last_pfn = 0xffe0 max_arch_pfn = 0x400000000\n[    0.000605] MTRR map: 4 entries (3 fixed + 1 variable; max 19), built from 8 variable MTRRs\n[    0.000614] x86/PAT: Configuration [0-7]: WB  WC  UC- UC  WB  WP  UC- WT  \n[    0.011983] found SMP MP-table at [mem 0x000f54a0-0x000f54af]\n[    0.012255] RAMDISK: [mem 0x0fb3b000-0x0ffdffff]\n[    0.012312] ACPI: Early table checksum verification disabled\n[    0.012318] ACPI: RSDP 0x00000000000F5270 000014 (v00 BOCHS )\n[    0.012351] ACPI: RSDT 0x000000000FFE2423 000034 (v01 BOCHS  BXPC     00000001 BXPC 00000001)\n[    0.012360] ACPI: FACP 0x000000000FFE22BF 000074 (v01 BOCHS  BXPC     00000001 BXPC 00000001)\n[    0.012384] ACPI: DSDT 0x000000000FFE0040 00227F (v01 BOCHS  BXPC     00000001 BXPC 00000001)\n[    0.012390] ACPI: FACS 0x000000000FFE0000 000040\n[    0.012395] ACPI: APIC 0x000000000FFE2333 000090 (v03 BOCHS  BXPC     00000001 BXPC 00000001)\n[    0.012401] ACPI: HPET 0x000000000FFE23C3 000038 (v01 BOCHS  BXPC     00000001 BXPC 00000001)\n[    0.012406] ACPI: WAET 0x000000000FFE23FB 000028 (v01 BOCHS  BXPC     00000001 BXPC 00000001)\n[    0.012410] ACPI: Reserving FACP table memory at [mem 0xffe22bf-0xffe2332]\n[    0.012412] ACPI: Reserving DSDT table memory at [mem 0xffe0040-0xffe22be]\n[    0.012413] ACPI: Reserving FACS table memory at [mem 0xffe0000-0xffe003f]\n[    0.012414] ACPI: Reserving APIC table memory at [mem 0xffe2333-0xffe23c2]\n[    0.012415] ACPI: Reserving HPET table memory at [mem 0xffe23c3-0xffe23fa]\n[    0.012416] ACPI: Reserving WAET table memory at [mem 0xffe23fb-0xffe2422]\n[    0.013609] No NUMA configuration found\n[    0.013612] Faking a node at [mem 0x0000000000000000-0x000000000ffdffff]\n[    0.013621] NODE_DATA(0) allocated [mem 0x0fb10000-0x0fb3afff]\n[    0.014679] Zone ranges:\n[    0.014681]   DMA      [mem 0x0000000000001000-0x0000000000ffffff]\n[    0.014684]   DMA32    [mem 0x0000000001000000-0x000000000ffdffff]\n[    0.014686]   Normal   empty\n[    0.014687]   Device   empty\n[    0.014688] Movable zone start for each node\n[    0.014693] Early memory node ranges\n[    0.014693]   node   0: [mem 0x0000000000001000-0x000000000009efff]\n[    0.014695]   node   0: [mem 0x0000000000100000-0x000000000ffdffff]\n[    0.014697] Initmem setup node 0 [mem 0x0000000000001000-0x000000000ffdffff]\n[    0.014781] On node 0, zone DMA: 1 pages in unavailable ranges\n[    0.015846] On node 0, zone DMA: 97 pages in unavailable ranges\n[    0.032544] On node 0, zone DMA32: 32 pages in unavailable ranges\n[    0.033844] ACPI: PM-Timer IO Port: 0x608\n[    0.033864] ACPI: LAPIC_NMI (acpi_id[0xff] dfl dfl lint[0x1])\n[    0.034039] IOAPIC[0]: apic_id 0, version 32, address 0xfec00000, GSI 0-23\n[    0.034046] ACPI: INT_SRC_OVR (bus 0 bus_irq 0 global_irq 2 dfl dfl)\n[    0.034048] ACPI: INT_SRC_OVR (bus 0 bus_irq 5 global_irq 5 high level)\n[    0.034050] ACPI: INT_SRC_OVR (bus 0 bus_irq 9 global_irq 9 high level)\n[    0.034052] ACPI: INT_SRC_OVR (bus 0 bus_irq 10 global_irq 10 high level)\n[    0.034053] ACPI: INT_SRC_OVR (bus 0 bus_irq 11 global_irq 11 high level)\n[    0.034060] ACPI: Using ACPI (MADT) for SMP configuration information\n[    0.034063] ACPI: HPET id: 0x8086a201 base: 0xfed00000\n[    0.034069] smpboot: Allowing 4 CPUs, 0 hotplug CPUs\n[    0.034111] kvm-guest: APIC: eoi() replaced with kvm_guest_apic_eoi_write()\n[    0.034146] PM: hibernation: Registered nosave memory: [mem 0x00000000-0x00000fff]\n[    0.034149] PM: hibernation: Registered nosave memory: [mem 0x0009f000-0x000fffff]\n[    0.034151] [mem 0x10000000-0xfeffbfff] available for PCI devices\n[    0.034153] Booting paravirtualized kernel on KVM\n[    0.034156] clocksource: refined-jiffies: mask: 0xffffffff max_cycles: 0xffffffff, max_idle_ns: 1910969940391419 ns\n[    0.034183] setup_percpu: NR_CPUS:8192 nr_cpumask_bits:4 nr_cpu_ids:4 nr_node_ids:1\n[    0.041910] percpu: Embedded 86 pages/cpu s229376 r8192 d114688 u524288\n[    0.042038] kvm-guest: PV spinlocks disabled, no host support\n[    0.042040] Kernel command line: console=ttyS0 rdinit=/init nokaslr panic=10 nox2apic\n[    0.042115] Unknown kernel command line parameters \"nokaslr\", will be passed to user space.\n[    0.043653] Dentry cache hash table entries: 32768 (order: 6, 262144 bytes, linear)\n[    0.044216] Inode-cache hash table entries: 16384 (order: 5, 131072 bytes, linear)\n[    0.044471] Fallback order for Node 0: 0 \n[    0.044476] Built 1 zonelists, mobility grouping on.  Total pages: 64224\n[    0.044478] Policy zone: DMA32\n[    0.044486] mem auto-init: stack:all(zero), heap alloc:on, heap free:off\n[    0.045176] Memory: 196584K/261624K available (22528K kernel code, 4441K rwdata, 14440K rodata, 4936K init, 4772K bss, 64784K reserved, 0K cma-reserved)\n[    0.081518] SLUB: HWalign=64, Order=0-3, MinObjects=0, CPUs=4, Nodes=1\n[    0.081637] Kernel/User page tables isolation: enabled\n[    0.093546] ftrace: allocating 57776 entries in 228 pages\n[    0.093550] ftrace: allocated 228 pages with 4 groups\n[    0.094716] Dynamic Preempt: voluntary\n[    0.094944] rcu: Preemptible hierarchical RCU implementation.\n[    0.094946] rcu: \tRCU restricting CPUs from NR_CPUS=8192 to nr_cpu_ids=4.\n[    0.094948] \tTrampoline variant of Tasks RCU enabled.\n[    0.094949] \tRude variant of Tasks RCU enabled.\n[    0.094950] \tTracing variant of Tasks RCU enabled.\n[    0.094951] rcu: RCU calculated value of scheduler-enlistment delay is 100 jiffies.\n[    0.094952] rcu: Adjusting geometry for rcu_fanout_leaf=16, nr_cpu_ids=4\n[    0.094965] RCU Tasks: Setting shift to 2 and lim to 1 rcu_task_cb_adjust=1 rcu_task_cpu_ids=4.\n[    0.094968] RCU Tasks Rude: Setting shift to 2 and lim to 1 rcu_task_cb_adjust=1 rcu_task_cpu_ids=4.\n[    0.094970] RCU Tasks Trace: Setting shift to 2 and lim to 1 rcu_task_cb_adjust=1 rcu_task_cpu_ids=4.\n[    0.099542] NR_IRQS: 524544, nr_irqs: 456, preallocated irqs: 16\n[    0.100017] rcu: srcu_init: Setting srcu_struct sizes based on contention.\n[    0.100293] Console: colour *CGA 80x25\n[    0.100372] printk: legacy console [ttyS0] enabled\n[    0.335847] ACPI: Core revision 20230628\n[    0.337680] clocksource: hpet: mask: 0xffffffff max_cycles: 0xffffffff, max_idle_ns: 19112604467 ns\n[    0.340621] APIC: Switch to symmetric I/O mode setup\n[    0.361150] ..TIMER: vector=0x30 apic1=0 pin1=2 apic2=-1 pin2=-1\n[    0.365046] clocksource: tsc-early: mask: 0xffffffffffffffff max_cycles: 0x228374dae5d, max_idle_ns: 440795268352 ns\n[    0.368416] Calibrating delay loop (skipped) preset value.. 4788.74 BogoMIPS (lpj=2394374)\n[    0.370881] Last level iTLB entries: 4KB 0, 2MB 0, 4MB 0\n[    0.371413] Last level dTLB entries: 4KB 0, 2MB 0, 4MB 0, 1GB 0\n[    0.372417] Spectre V1 : Mitigation: usercopy/swapgs barriers and __user pointer sanitization\n[    0.373415] Spectre V2 : Mitigation: Retpolines\n[    0.374413] Spectre V2 : Spectre v2 / SpectreRSB: Filling RSB on context switch and VMEXIT\n[    0.375414] Speculative Store Bypass: Vulnerable\n[    0.376414] MDS: Vulnerable: Clear CPU buffers attempted, no microcode\n[    0.377413] MMIO Stale Data: Unknown: No mitigations\n[    0.378414] active return thunk: its_return_thunk\n[    0.379413] ITS: Mitigation: Aligned branch/return thunks\n[    0.380422] x86/fpu: x87 FPU will use FXSAVE\n[    0.412937] Freeing SMP alternatives memory: 48K\n[    0.413418] pid_max: default: 32768 minimum: 301\n[    0.415885] LSM: initializing lsm=lockdown,capability,landlock,yama,apparmor,integrity\n[    0.417530] landlock: Up and running.\n[    0.418413] Yama: becoming mindful.\n[    0.419495] AppArmor: AppArmor initialized\n[    0.420681] Mount-cache hash table entries: 512 (order: 0, 4096 bytes, linear)\n[    0.421415] Mountpoint-cache hash table entries: 512 (order: 0, 4096 bytes, linear)\n[    0.526102] smpboot: CPU0: Intel QEMU Virtual CPU version 2.5+ (family: 0xf, model: 0x6b, stepping: 0x1)\n[    0.526721] Performance Events: unsupported Netburst CPU model 107 no PMU driver, software events only.\n[    0.527749] signal: max sigframe size: 1440\n[    0.528488] rcu: Hierarchical SRCU implementation.\n[    0.529414] rcu: \tMax phase no-delay instances is 400.\n[    0.534854] NMI watchdog: Perf NMI watchdog permanently disabled\n[    0.535526] smp: Bringing up secondary CPUs ...\n[    0.536659] smpboot: x86: Booting SMP configuration:\n[    0.537418] .... node  #0, CPUs:      #1 #2 #3\n[    0.266376] smpboot: CPU 2 Converting physical 0 to logical die 1\n[    0.701679] smp: Brought up 1 node, 4 CPUs\n[    0.704694] smpboot: Max logical packages: 2\n[    0.706062] smpboot: Total of 4 processors activated (19154.99 BogoMIPS)\n[    0.893008] devtmpfs: initialized\n[    0.897018] x86/mm: Memory block size: 128MB\n[    0.941893] clocksource: jiffies: mask: 0xffffffff max_cycles: 0xffffffff, max_idle_ns: 1911260446275000 ns\n[    0.943904] futex hash table entries: 1024 (order: 4, 65536 bytes, linear)\n[    0.958436] pinctrl core: initialized pinctrl subsystem\n[    0.961730] PM: RTC time: 00:30:02, date: 2026-11-06\n[    1.003412] NET: Registered PF_NETLINK/PF_ROUTE protocol family\n[    1.008717] DMA: preallocated 128 KiB GFP_KERNEL pool for atomic allocations\n[    1.009894] DMA: preallocated 128 KiB GFP_KERNEL|GFP_DMA pool for atomic allocations\n[    1.011038] DMA: preallocated 128 KiB GFP_KERNEL|GFP_DMA32 pool for atomic allocations\n[    1.011531] audit: initializing netlink subsys (disabled)\n[    1.053792] thermal_sys: Registered thermal governor 'fair_share'\n[    1.053798] thermal_sys: Registered thermal governor 'bang_bang'\n[    1.054086] audit: type=2000 audit(1793925001.040:1): state=initialized audit_enabled=0 res=1\n[    1.064574] thermal_sys: Registered thermal governor 'step_wise'\n[    1.065414] thermal_sys: Registered thermal governor 'user_space'\n[    1.066414] thermal_sys: Registered thermal governor 'power_allocator'\n[    1.072560] cpuidle: using governor ladder\n[    1.087099] cpuidle: using governor menu\n[    1.110529] acpiphp: ACPI Hot Plug PCI Controller Driver version: 0.5\n[    1.116812] PCI: Using configuration type 1 for base access\n[    1.434536] kprobes: kprobe jump-optimization is enabled. All kprobes are optimized if possible.\n[    1.547254] HugeTLB: registered 2.00 MiB page size, pre-allocated 0 pages\n[    1.549412] HugeTLB: 28 KiB vmemmap can be freed for a 2.00 MiB page\n[    2.202930] ACPI: Added _OSI(Module Device)\n[    2.203416] ACPI: Added _OSI(Processor Device)\n[    2.204415] ACPI: Added _OSI(Processor Aggregator Device)\n[    2.212461] ACPI: 1 ACPI AML tables successfully acquired and loaded\n[    2.283118] ACPI: _OSC evaluation for CPUs failed, trying _PDC\n[    2.286462] ACPI: Interpreter enabled\n[    2.289643] ACPI: PM: (supports S0 S3 S4 S5)\n[    2.292417] ACPI: Using IOAPIC for interrupt routing\n[    2.299418] PCI: Using host bridge windows from ACPI; if necessary, use \"pci=nocrs\" and report a bug\n[    2.301414] PCI: Using E820 reservations for host bridge windows\n[    2.303694] ACPI: Enabled 2 GPEs in block 00 to 0F\n[    2.328498] ACPI: PCI Root Bridge [PCI0] (domain 0000 [bus 00-ff])\n[    2.329421] acpi PNP0A03:00: _OSC: OS supports [ASPM ClockPM Segments MSI EDR HPX-Type3]\n[    2.330415] acpi PNP0A03:00: _OSC: not requesting OS control; OS requires [ExtendedConfig ASPM ClockPM MSI]\n[    2.331543] acpi PNP0A03:00: fail to add MMCONFIG information, can't access extended configuration space under this bridge\n[    2.340006] acpiphp: Slot [2] registered\n[    2.342467] acpiphp: Slot [3] registered\n[    2.343482] acpiphp: Slot [4] registered\n[    2.346554] acpiphp: Slot [5] registered\n[    2.347458] acpiphp: Slot [6] registered\n[    2.349458] acpiphp: Slot [7] registered\n[    2.351459] acpiphp: Slot [8] registered\n[    2.352455] acpiphp: Slot [9] registered\n[    2.354429] acpiphp: Slot [10] registered\n[    2.356484] acpiphp: Slot [11] registered\n[    2.358501] acpiphp: Slot [12] registered\n[    2.359447] acpiphp: Slot [13] registered\n[    2.360449] acpiphp: Slot [14] registered\n[    2.361459] acpiphp: Slot [15] registered\n[    2.363459] acpiphp: Slot [16] registered\n[    2.364453] acpiphp: Slot [17] registered\n[    2.365521] acpiphp: Slot [18] registered\n[    2.366489] acpiphp: Slot [19] registered\n[    2.368456] acpiphp: Slot [20] registered\n[    2.370429] acpiphp: Slot [21] registered\n[    2.371557] acpiphp: Slot [22] registered\n[    2.373491] acpiphp: Slot [23] registered\n[    2.374457] acpiphp: Slot [24] registered\n[    2.377461] acpiphp: Slot [25] registered\n[    2.386515] acpiphp: Slot [26] registered\n[    2.388458] acpiphp: Slot [27] registered\n[    2.389455] acpiphp: Slot [28] registered\n[    2.391457] acpiphp: Slot [29] registered\n[    2.392468] acpiphp: Slot [30] registered\n[    2.394468] acpiphp: Slot [31] registered\n[    2.400422] PCI host bridge to bus 0000:00\n[    2.401416] pci_bus 0000:00: root bus resource [io  0x0000-0x0cf7 window]\n[    2.403415] pci_bus 0000:00: root bus resource [io  0x0d00-0xffff window]\n[    2.404414] pci_bus 0000:00: root bus resource [mem 0x000a0000-0x000bffff window]\n[    2.405414] pci_bus 0000:00: root bus resource [mem 0x10000000-0xfebfffff window]\n[    2.408413] pci_bus 0000:00: root bus resource [mem 0x100000000-0x17fffffff window]\n[    2.411415] pci_bus 0000:00: root bus resource [bus 00-ff]\n[    2.413679] pci 0000:00:00.0: [8086:1237] type 00 class 0x060000 conventional PCI endpoint\n[    2.422304] pci 0000:00:01.0: [8086:7000] type 00 class 0x060100 conventional PCI endpoint\n[    2.428750] pci 0000:00:01.1: [8086:7010] type 00 class 0x010180 conventional PCI endpoint\n[    2.431480] pci 0000:00:01.1: BAR 4 [io  0xc020-0xc02f]\n[    2.433549] pci 0000:00:01.1: BAR 0 [io  0x01f0-0x01f7]: legacy IDE quirk\n[    2.434414] pci 0000:00:01.1: BAR 1 [io  0x03f6]: legacy IDE quirk\n[    2.435414] pci 0000:00:01.1: BAR 2 [io  0x0170-0x0177]: legacy IDE quirk\n[    2.436414] pci 0000:00:01.1: BAR 3 [io  0x0376]: legacy IDE quirk\n[    2.438825] pci 0000:00:01.3: [8086:7113] type 00 class 0x068000 conventional PCI endpoint\n[    2.443601] pci 0000:00:01.3: quirk: [io  0x0600-0x063f] claimed by PIIX4 ACPI\n[    2.448490] pci 0000:00:01.3: quirk: [io  0x0700-0x070f] claimed by PIIX4 SMB\n[    2.453969] pci 0000:00:02.0: [1af4:1000] type 00 class 0x020000 conventional PCI endpoint\n[    2.459739] pci 0000:00:02.0: BAR 0 [io  0xc000-0xc01f]\n[    2.462458] pci 0000:00:02.0: ROM [mem 0xfebc0000-0xfebfffff pref]\n[    2.538042] ACPI: PCI: Interrupt link LNKA configured for IRQ 10\n[    2.540586] ACPI: PCI: Interrupt link LNKB configured for IRQ 10\n[    2.541629] ACPI: PCI: Interrupt link LNKC configured for IRQ 11\n[    2.544638] ACPI: PCI: Interrupt link LNKD configured for IRQ 11\n[    2.547543] ACPI: PCI: Interrupt link LNKS configured for IRQ 9\n[    2.602687] iommu: Default domain type: Translated\n[    2.606415] iommu: DMA domain TLB invalidation policy: lazy mode\n[    2.613809] SCSI subsystem initialized\n[    2.645148] ACPI: bus type USB registered\n[    2.646855] usbcore: registered new interface driver usbfs\n[    2.647468] usbcore: registered new interface driver hub\n[    2.648421] usbcore: registered new device driver usb\n[    2.650766] pps_core: LinuxPPS API ver. 1 registered\n[    2.651413] pps_core: Software ver. 5.3.6 - Copyright 2005-2007 Rodolfo Giometti <giometti@linux.it>\n[    2.652421] PTP clock support registered\n[    2.772874] EDAC MC: Ver: 3.0.0\n[    2.834448] NetLabel: Initializing\n[    2.836650] NetLabel:  domain hash size = 128\n[    2.837414] NetLabel:  protocols = UNLABELED CIPSOv4 CALIPSO\n[    2.840675] NetLabel:  unlabeled traffic allowed by default\n[    2.844793] mctp: management component transport protocol core\n[    2.846535] NET: Registered PF_MCTP protocol family\n[    2.847562] PCI: Using ACPI for IRQ routing\n[    2.851658] vgaarb: loaded\n[    2.870873] hpet: 3 channels of 0 reserved for per-cpu timers\n[    2.873445] hpet0: at MMIO 0xfed00000, IRQs 2, 8, 0\n[    2.874412] hpet0: 3 comparators, 64-bit 100.000000 MHz counter\n[    6.094259] clocksource: Switched to clocksource kvm-clock\n[    6.097665] hrtimer: interrupt took 2278452 ns\n[    6.271483] VFS: Disk quotas dquot_6.6.0\n[    6.272292] VFS: Dquot-cache hash table entries: 512 (order 0, 4096 bytes)\n[    6.285663] AppArmor: AppArmor Filesystem Enabled\n[    6.288082] pnp: PnP ACPI init\n[    6.295863] pnp: PnP ACPI: found 5 devices\n[    6.314387] clocksource: acpi_pm: mask: 0xffffff max_cycles: 0xffffff, max_idle_ns: 2085701024 ns\n[    6.320927] NET: Registered PF_INET protocol family\n[    6.324370] IP idents hash table entries: 4096 (order: 3, 32768 bytes, linear)\n[    6.373103] tcp_listen_portaddr_hash hash table entries: 256 (order: 0, 4096 bytes, linear)\n[    6.379049] Table-perturb hash table entries: 65536 (order: 6, 262144 bytes, linear)\n[    6.388091] TCP established hash table entries: 2048 (order: 2, 16384 bytes, linear)\n[    6.388091] TCP bind hash table entries: 2048 (order: 4, 65536 bytes, linear)\n[    6.394126] TCP: Hash tables configured (established 2048 bind 2048)\n[    6.396438] MPTCP token hash table entries: 256 (order: 1, 6144 bytes, linear)\n[    6.397994] UDP hash table entries: 256 (order: 1, 8192 bytes, linear)\n[    6.399374] UDP-Lite hash table entries: 256 (order: 1, 8192 bytes, linear)\n[    6.401224] NET: Registered PF_UNIX/PF_LOCAL protocol family\n[    6.402528] NET: Registered PF_XDP protocol family\n[    6.403675] pci_bus 0000:00: resource 4 [io  0x0000-0x0cf7 window]\n[    6.404999] pci_bus 0000:00: resource 5 [io  0x0d00-0xffff window]\n[    6.406428] pci_bus 0000:00: resource 6 [mem 0x000a0000-0x000bffff window]\n[    6.407840] pci_bus 0000:00: resource 7 [mem 0x10000000-0xfebfffff window]\n[    6.409225] pci_bus 0000:00: resource 8 [mem 0x100000000-0x17fffffff window]\n[    6.411010] pci 0000:00:01.0: PIIX3: Enabling Passive Release\n[    6.412296] pci 0000:00:00.0: Limiting direct PCI/PCI transfers\n[    6.413746] PCI: CLS 0 bytes, default 64\n[    6.415721] clocksource: tsc: mask: 0xffffffffffffffff max_cycles: 0x228374dae5d, max_idle_ns: 440795268352 ns\n[    6.416829] Trying to unpack rootfs image as initramfs...\n[    6.429065] Initialise system trusted keyrings\n[    6.429185] Key type blacklist registered\n[   11.346364] workingset: timestamp_bits=36 max_order=16 bucket_order=0\n[   11.658280] Freeing initrd memory: 4756K\n[   11.659608] zbud: loaded\n[   11.779702] squashfs: version 4.0 (2009/01/31) Phillip Lougher\n[   12.054697] fuse: init (API version 7.39)\n[   14.047937] integrity: Platform Keyring initialized\n[   14.054709] integrity: Machine keyring initialized\n[   14.072867] Key type asymmetric registered\n[   14.074034] Asymmetric key parser 'x509' registered\n[   14.081859] Block layer SCSI generic (bsg) driver version 0.4 loaded (major 243)\n[   14.097889] io scheduler mq-deadline registered\n[   14.327861] shpchp: Standard Hot Plug PCI Controller Driver version: 0.4\n[   14.333698] input: Power Button as /devices/LNXSYSTM:00/LNXPWRBN:00/input/input0\n[   14.337140] ACPI: button: Power Button [PWRF]\n[   14.400971] ACPI: \\_SB_.LNKB: Enabled at IRQ 10\n[   14.505769] virtio-pci 0000:00:02.0: virtio_pci: leaving for legacy driver\n[   14.517665] Serial: 8250/16550 driver, 32 ports, IRQ sharing enabled\n[   14.553108] 00:03: ttyS0 at I/O 0x3f8 (irq = 4, base_baud = 115200) is a 16550A\n[   18.334057] Linux agpgart interface v0.103\n[   18.483740] loop: module loaded\n[   24.032153] scsi host0: ata_piix\n[   24.061865] scsi host1: ata_piix\n[   24.064365] ata1: PATA max MWDMA2 cmd 0x1f0 ctl 0x3f6 bmdma 0xc020 irq 14 lpm-pol 0\n[   24.066733] ata2: PATA max MWDMA2 cmd 0x170 ctl 0x376 bmdma 0xc028 irq 15 lpm-pol 0\n[   24.071203] ACPI: bus type drm_connector registered\n[   24.083055] tun: Universal TUN/TAP device driver, 1.6\n[   32.946419] PPP generic driver version 2.4.2\n[   33.309831] i8042: PNP: PS/2 Controller [PNP0303:KBD,PNP0f13:MOU] at 0x60,0x64 irq 1,12\n[   33.367346] serio: i8042 KBD port at 0x60,0x64 irq 1\n[   33.376122] serio: i8042 AUX port at 0x60,0x64 irq 12\n[   33.982306] mousedev: PS/2 mouse device common for all mice\n[   35.150923] rtc_cmos 00:04: RTC can wake from S4\n[   35.292367] rtc_cmos 00:04: registered as rtc0\n[   35.296116] rtc_cmos 00:04: setting system clock to 2026-11-06T00:30:43 UTC (1793925043)\n[   35.299924] rtc_cmos 00:04: alarms up to one day, y3k, 242 bytes nvram, hpet irqs\n[   35.304278] i2c_dev: i2c /dev entries driver\n[   35.313309] device-mapper: core: CONFIG_IMA_DISABLE_HTABLE is disabled. Duplicate IMA measurements will not be recorded in the IMA log.\n[   35.320645] device-mapper: uevent: version 1.0.3\n[   35.316298] input: AT Translated Set 2 keyboard as /devices/platform/i8042/serio0/input/input1\n[   35.675096] device-mapper: ioctl: 4.48.0-ioctl (2023-03-01) initialised: dm-devel@redhat.com\n[   35.677891] intel_pstate: CPU model not supported\n[   35.692859] ledtrig-cpu: registered to indicate activity on CPUs\n[   35.706884] drop_monitor: Initializing network drop monitor service\n[   35.712098] NET: Registered PF_INET6 protocol family\n[   37.500954] workqueue: psi_avgs_work hogged CPU for >10000us 4 times, consider switching to WQ_UNBOUND\n[   40.154967] Segment Routing with IPv6\n[   40.160742] In-situ OAM (IOAM) with IPv6\n[   40.164610] NET: Registered PF_PACKET protocol family\n[   40.172683] Key type dns_resolver registered\n[   40.225776] IPI shorthand broadcast: enabled\n[   40.511572] sched_clock: Marking stable (40246176877, 265376215)->(49293815272, -8782262173)\n[   40.548361] registered taskstats version 1\n[   41.362311] workqueue: vmstat_update hogged CPU for >10000us 4 times, consider switching to WQ_UNBOUND\n[   41.396114] Loading compiled-in X.509 certificates\n[   41.439945] Loaded X.509 cert 'Build time autogenerated kernel key: 67dae3bf0284ce2ad34b9632cb7c8734f4f57c6c'\n[   41.452765] Loaded X.509 cert 'Canonical Ltd. Live Patch Signing 2025 Kmod: d541cef61dc7e793b7eb7e899970a2eef0b5dc8c'\n[   41.455914] Loaded X.509 cert 'Canonical Ltd. Live Patch Signing: 14df34d1a87cf37625abec039ef2bf521249b969'\n[   41.460143] Loaded X.509 cert 'Canonical Ltd. Kernel Module Signing 2025 Kmod: 4627603d2357a2a3f81006370894c221175893e9'\n[   41.552542] Loaded X.509 cert 'Canonical Ltd. Kernel Module Signing: 88f752e560a1e0737e31163a466ad7b70a850c19'\n[   41.564131] blacklist: Loading compiled-in revocation X.509 certificates\n[   41.566417] Loaded X.509 cert 'Canonical Ltd. Secure Boot Signing: 61482aa2830d0ab2ad5af10b7250da9033ddcef0'\n[   41.569364] Loaded X.509 cert 'Canonical Ltd. Secure Boot Signing (2017): 242ade75ac4a15e50d50c84b0d45ff3eae707a03'\n[   41.573194] Loaded X.509 cert 'Canonical Ltd. Secure Boot Signing (ESM 2018): 365188c1d374d6b07c3c8f240f8ef722433d6a8b'\n[   41.576893] Loaded X.509 cert 'Canonical Ltd. Secure Boot Signing (2019): c0746fd6c5da3ae827864651ad66ae47fe24b3e8'\n[   41.579250] Loaded X.509 cert 'Canonical Ltd. Secure Boot Signing (2021 v1): a8d54bbb3825cfb94fa13c9f8a594a195c107b8d'\n[   41.584017] Loaded X.509 cert 'Canonical Ltd. Secure Boot Signing (2021 v2): 4cf046892d6fd3c9a5b03f98d845f90851dc6a8c'\n[   41.588880] Loaded X.509 cert 'Canonical Ltd. Secure Boot Signing (2021 v3): 100437bb6de6e469b581e61cd66bce3ef4ed53af'\n[   41.595262] Loaded X.509 cert 'Canonical Ltd. Secure Boot Signing (Ubuntu Core 2019): c1d57b8f6b743f23ee41f4f7ee292f06eecadfb9'\n[   41.859253] Key type .fscrypt registered\n[   41.861364] Key type fscrypt-provisioning registered\n[   48.734177] Key type encrypted registered\n[   48.736383] AppArmor: AppArmor sha256 policy hashing enabled\n[   48.741874] ima: No TPM chip found, activating TPM-bypass!\n[   48.746351] Loading compiled-in module X.509 certificates\n[   48.751990] Loaded X.509 cert 'Build time autogenerated kernel key: 67dae3bf0284ce2ad34b9632cb7c8734f4f57c6c'\n[   48.755101] ima: Allocated hash algorithm: sha256\n[   48.757079] ima: No architecture policies found\n[   48.759936] evm: Initialising EVM extended attributes:\n[   48.761590] evm: security.selinux\n[   48.762898] evm: security.SMACK64\n[   48.764037] evm: security.SMACK64EXEC\n[   48.765225] evm: security.SMACK64TRANSMUTE\n[   48.766574] evm: security.SMACK64MMAP\n[   48.767906] evm: security.apparmor\n[   48.768973] evm: security.ima\n[   48.770113] evm: security.capability\n[   48.771051] evm: HMAC attrs: 0x1\n[   48.777761] PM:   Magic number: 2:954:505\n[   48.781090] i8042 i8042: hash matches\n[   49.001966] RAS: Correctable Errors collector initialized.\n[   49.004540] clk: Disabling unused clocks\n[   49.728944] Freeing unused decrypted memory: 2028K\n[   49.763345] Freeing unused kernel image (initmem) memory: 4936K\n[   49.951006] Write protecting the kernel read-only data: 38912k\n[   49.998372] Freeing unused kernel image (rodata/data gap) memory: 1944K\n[   50.060540] x86/mm: Checked W+X mappings: passed, no W+X pages found.\n[   50.062315] x86/mm: Checking user space page tables\n[   50.112202] x86/mm: Checked W+X mappings: passed, no W+X pages found.\n[   50.326236] Run /init as init process\nSSH_INIT_NETWORK_BUILTIN\n[   53.845866] clocksource: Long readout interval, skipping watchdog check: cs_nsec: 2614267462 wd_nsec: 2614277913\n[   68.468461] clocksource: Long readout interval, skipping watchdog check: cs_nsec: 9484362388 wd_nsec: 9484362362\n[   86.057580] random: crng init done\nSSH_GUEST_READY kernel=6.8.0-147-generic cpus=4\nServer listening on 0.0.0.0 port 22.\n\nServer listening on :: port 22.\n\n[  103.499448] workqueue: vmstat_update hogged CPU for >10000us 8 times, consider switching to WQ_UNBOUND\nAccepted publickey for root from 10.0.2.2 port 58216 ssh2: ED25519 SHA256:LAB-PUBLIC-KEY\n\nReceived disconnect from 10.0.2.2 port 58216:11: disconnected by user\n\nDisconnected from user root 10.0.2.2 port 58216\n\nAccepted publickey for root from 10.0.2.2 port 39636 ssh2: ED25519 SHA256:LAB-PUBLIC-KEY\n\nConnection closed by 10.0.2.2 port 39636\n\nAccepted publickey for root from 10.0.2.2 port 36664 ssh2: ED25519 SHA256:LAB-PUBLIC-KEY\n\n[  159.664957] workqueue: psi_avgs_work hogged CPU for >10000us 8 times, consider switching to WQ_UNBOUND\n[  171.371620] workqueue: vmstat_update hogged CPU for >10000us 16 times, consider switching to WQ_UNBOUND\nConnection closed by 10.0.2.2 port 36664\n\nAccepted publickey for root from 10.0.2.2 port 37300 ssh2: ED25519 SHA256:LAB-PUBLIC-KEY\n\n[  176.529153] workqueue: delayed_vfree_work hogged CPU for >10000us 4 times, consider switching to WQ_UNBOUND\nConnection closed by 10.0.2.2 port 37300\n\n[  221.624860] workqueue: delayed_vfree_work hogged CPU for >10000us 8 times, consider switching to WQ_UNBOUND\nAccepted publickey for root from 10.0.2.2 port 39448 ssh2: ED25519 SHA256:LAB-PUBLIC-KEY\n\n[  233.365547] workqueue: vmstat_shepherd hogged CPU for >10000us 4 times, consider switching to WQ_UNBOUND\nConnection closed by 10.0.2.2 port 39448\n\nAccepted publickey for root from 10.0.2.2 port 46976 ssh2: ED25519 SHA256:LAB-PUBLIC-KEY\n\n[  262.944356] ACPI: PM: Preparing to enter system sleep state S5\n[  263.855569] reboot: Power down\n",
+        "stderr_log": "qemu-system-x86_64-mmio-completion-1: warning: Number of SMP cpus requested (4) exceeds the recommended cpus supported by KVM (2)\nqemu-system-x86_64-mmio-completion-1: warning: Number of hotpluggable cpus requested (4) exceeds the recommended cpus supported by KVM (2)\nSSI_CLOCK_SOURCE khz=2394374 flags=14 offset=18446742182660681348\n",
+        "host_log": "Nov 06 00:29:59 lab-node-0 kernel: kvm-dsm: node-0 established connection with node-1 [192.0.2.11:37711]\nNov 06 00:34:32 lab-node-0 kernel: ktcp_receive: __ktcp_receive error, ret -104\nNov 06 00:34:32 lab-node-0 kernel: ktcp_receive: __ktcp_receive error, ret -104\nNov 06 00:34:32 lab-node-0 kernel: ktcp_receive: __ktcp_receive error, ret -104\nNov 06 00:34:32 lab-node-0 kernel: ktcp_receive: __ktcp_receive error, ret -104\nNov 06 00:34:32 lab-node-0 kernel: ktcp_receive: __ktcp_receive error, ret -104\nNov 06 00:34:32 lab-node-0 kernel: ktcp_receive: __ktcp_receive error, ret -104\nNov 06 00:34:32 lab-node-0 kernel: ktcp_receive: __ktcp_receive error, ret -104\nNov 06 00:34:32 lab-node-0 kernel: ktcp_receive: __ktcp_receive error, ret -104\nNov 06 00:34:32 lab-node-0 kernel: kvm_dsm_free: node-0 dsm root server exited with -104\n",
+        "runtime_hashes": "8967674a2b770b350927d387002046cc1c2899995c9f1dd68f19c61a985cf4ee  /boot/vmlinuz-7.1.0-rc3-sshpool-gvm-pf8\n45eeeabe124051c2d40d763313d6c1941fd23b4ce1c57aaf6e6f2466e6fd4156  /LAB/ssi/qemu-system-x86_64-mmio-completion-1\n41ba36d860aa0b0cd995f4ca8856d80249b244577e704929b55be13fbd1ebd2f  /LAB/ssi/guest-vmlinuz\n87342480b6393c24c82aa72125ffb328ff5b9c32e4af24116365a37fb87e9861  /LAB/ssi/guest-ssh-ubuntu-initramfs.cpio.gz\nae6f0cc156d6ee1da62f4b6b76a5ff34cb7d8d14e5128ba7538fe73f00f58c0f  /LAB/ssi/run-clock-node.sh\n"
+      },
+      {
+        "serial_log": "configure_accelerators\nkvm_irqchip_create\nkvm_arch_init_irq_routing\nCPU 0 is remote CPU, pause\nCPU 1 is remote CPU, pause\nstart kvm dsm server, total memory size: 268435456\nserial_irq 4\nconnect_io_router...\nconnecting 192.0.2.10:40000\nQEMU 1 listen on TCP socket 192.0.2.11:40001\nconnecting io router done\nconnect_io_router done\nQEMU 2 set kvmclock: 2832618\nenter router_loop\n",
+        "stderr_log": "qemu-system-x86_64-mmio-completion-1: warning: Number of SMP cpus requested (4) exceeds the recommended cpus supported by KVM (2)\nqemu-system-x86_64-mmio-completion-1: warning: Number of hotpluggable cpus requested (4) exceeds the recommended cpus supported by KVM (2)\nSSI_CLOCK_SAMPLE samples=16 khz=2394374 rtt_ns=104043 uncertainty_ns=52021 source_flags=14\nSSI_CLOCK_TARGET khz=2394374 offset=18446742415785033194 clock=7455763\n",
+        "host_log": "Nov 06 00:29:59 lab-node-1 kernel: kvm-dsm: node-1 established connection with node-0 [192.0.2.10:37710]\nNov 06 00:34:33 lab-node-1 kernel: ktcp_receive: __ktcp_receive error, ret -4\n",
+        "runtime_hashes": "8967674a2b770b350927d387002046cc1c2899995c9f1dd68f19c61a985cf4ee  /boot/vmlinuz-7.1.0-rc3-sshpool-gvm-pf8\n45eeeabe124051c2d40d763313d6c1941fd23b4ce1c57aaf6e6f2466e6fd4156  /LAB/ssi/qemu-system-x86_64-mmio-completion-1\n41ba36d860aa0b0cd995f4ca8856d80249b244577e704929b55be13fbd1ebd2f  /LAB/ssi/guest-vmlinuz\n87342480b6393c24c82aa72125ffb328ff5b9c32e4af24116365a37fb87e9861  /LAB/ssi/guest-ssh-ubuntu-initramfs.cpio.gz\nae6f0cc156d6ee1da62f4b6b76a5ff34cb7d8d14e5128ba7538fe73f00f58c0f  /LAB/ssi/run-clock-node.sh\n"
+      }
+    ]
+  },
+  "restoration": [
+    {
+      "node": 0,
+      "stock_kernel": "6.8.0-147-generic",
+      "identity_verified": true,
+      "lib_symlink": "usr/lib",
+      "remaining_processes": "",
+      "grub_environment_empty": true,
+      "firewall_rules_preserved": true,
+      "firewall_exact_json_match": true
+    },
+    {
+      "node": 1,
+      "stock_kernel": "6.8.0-147-generic",
+      "identity_verified": true,
+      "lib_symlink": "usr/lib",
+      "remaining_processes": "",
+      "grub_environment_empty": true,
+      "firewall_rules_preserved": true,
+      "firewall_exact_json_match": true
+    }
+  ]
+}

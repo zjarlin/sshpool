@@ -1,4 +1,4 @@
-Feature: SSI 传输等待不挤占客体计算资源
+Feature: SSI 传输等待与启动资源生命周期
   先在真实 KVM 监听器和独占实验 VM 中验证，不将同一 ESXi 的结果当作跨物理机性能。
 
   # evidence: docs/evidence/ssi-receive-probes-20261106.json
@@ -27,7 +27,27 @@ Feature: SSI 传输等待不挤占客体计算资源
     Then 正常关闭须完成双方确认和在途请求排空
     And 故障退出必须传递给客体管理层且不能伪装成干净关机
 
-  @research @p0
+  # evidence: docs/evidence/ssi-startup-20261106.json
+  @verified @p0
+  Scenario: 本地监听失败同步返回并允许在同一空 VM 重试
+    Given 独占实验节点上有一个占用 DSM 端口的真实监听器
+    When 通过 KVM ioctl 启用 DSM
+    Then 返回 EADDRINUSE 而不是异步报告成功
+    And 释放端口后在同一个 VM 启用成功并可关闭
+    And 真实 QEMU 遇到相同冲突会报告错误并在客体启动前退出
+
+  # evidence: docs/evidence/ssi-startup-20261106.json
+  @verified @p0
+  Scenario: 无连接的重复启停和参数失败不会遗留监听器
+    Given 两台独占实验节点各运行创建空 VM 的真实 KVM 探针
+    When 每台节点执行六十四次启用与关闭
+    Then 每次关闭后原端口都能由新的监听器绑定
+    And 空列表越界节点和过多节点返回 EINVAL
+    And 无效用户地址返回 EFAULT
+    And 参数失败后同一 VM 可使用有效参数启用并关闭
+    And 所有探针退出后没有 DSM 线程残留
+
+  @partial @p0
   Scenario: 重启实验时处理端口占用与监听失败
     Given 上一实例已经退出但 TCP 连接尚未完全回收
     When 尝试再次创建分布式客体

@@ -1,0 +1,603 @@
+--- a/arch/x86/include/asm/kvm_host.h
++++ b/arch/x86/include/asm/kvm_host.h
+@@ -1769,6 +1769,7 @@
+ 	struct mutex conn_init_lock; /* protects connection initialization */
+ 
+ 	struct task_struct *dsm_thread;
++	kconnection_t *dsm_listen_sock;
+ 	kconnection_t **dsm_conn_socks;
+ 	bool dsm_stopped;
+ 
+--- a/arch/x86/kvm/dsm.c
++++ b/arch/x86/kvm/dsm.c
+@@ -25,6 +25,7 @@
+ #include "lapic.h"
+ 
+ #include <linux/kthread.h>
++#include <linux/inet.h>
+ #include <linux/mmu_context.h>
+ #include "smm.h"
+ 
+@@ -448,191 +449,190 @@
+  * Invariant: Inv request should not be blocked. The multiple server threads
+  * help.
+  */
++/* 初始化失败和 VM 销毁共用回收；调用前必须停止所有连接线程。 */
++static void kvm_dsm_free_config(struct kvm *kvm)
++{
++	int i;
++
++	if (kvm->arch.dsm_conn_socks) {
++		for (i = 0; i < DSM_MAX_INSTANCES * 2; i++) {
++			if (kvm->arch.dsm_conn_socks[i])
++				network_ops.release(kvm->arch.dsm_conn_socks[i]);
++		}
++		kfree(kvm->arch.dsm_conn_socks);
++		kvm->arch.dsm_conn_socks = NULL;
++	}
++	if (kvm->arch.dsm_listen_sock) {
++		network_ops.release(kvm->arch.dsm_listen_sock);
++		kvm->arch.dsm_listen_sock = NULL;
++	}
++	for (i = 0; i < kvm->arch.cluster_iplist_len; i++)
++		kfree(kvm->arch.cluster_iplist[i]);
++	kfree(kvm->arch.cluster_iplist);
++	kvm->arch.cluster_iplist = NULL;
++	kvm->arch.cluster_iplist_len = 0;
++}
++
+ static int kvm_dsm_threadfn(void *data)
+ {
+-	int ret;
+-
+-	kconnection_t *listen_sock = NULL;
+-	kconnection_t *accept_sock = NULL;
+-	struct dsm_address addr;
++	struct kvm *kvm = data;
++	kconnection_t *accept_sock;
+ 	struct dsm_conn *conn;
+-	struct list_head conn_list;
+ 	struct task_struct *thread;
+-	int i, count;
++	LIST_HEAD(conn_list);
++	int ret = 0, stopped, i, count = 0;
+ 	char comm[TASK_COMM_LEN];
+ 
+-	struct kvm *kvm = (struct kvm *)data;
+-
+ 	allow_signal(SIGKILL);
+-	INIT_LIST_HEAD(&conn_list);
+-
+-	ret = get_dsm_address(kvm, kvm->arch.dsm_id, &addr);
+-	if (ret < 0)
+-		return ret;
+-	ret = network_ops.listen(addr.host, addr.port, &listen_sock);
+-	if (ret < 0)
+-		return ret;
+-
+-	pr_devel("dsm: kvm[%d] started dsm server on %s:%u\n", kvm->arch.dsm_id,
+-		 addr.host, addr.port);
+-	count = 0;
+-	while (1) {
+-		if (kthread_should_stop()) {
+-			ret = 0;
+-			goto out_listen_sock;
+-		}
+-		ret = network_ops.accept(listen_sock, &accept_sock, 0);
++	while (!kthread_should_stop()) {
++		ret = network_ops.accept(kvm->arch.dsm_listen_sock, &accept_sock, 0);
+ 		if (ret < 0) {
+-			/* We only exit with -ERESTARTSYS when the kthread should stop. */
+ 			if (ret == -ERESTARTSYS)
+ 				ret = 0;
+-			goto out_listen_sock;
+-		}
+-		conn = kmalloc(sizeof(*conn), GFP_KERNEL);
++			break;
++		}
++		conn = kzalloc(sizeof(*conn), GFP_KERNEL);
+ 		if (!conn) {
++			network_ops.release(accept_sock);
+ 			ret = -ENOMEM;
+-			goto out_accept_sock;
+-		}
+-		pr_devel("kvm-dsm: node-%d accepted connection\n",
+-			 kvm->arch.dsm_id);
++			break;
++		}
+ 		conn->kvm = kvm;
+ 		conn->sock = accept_sock;
+-
++		/* 提前登记，部分线程创建失败也走相同的停止与回收路径。 */
++		list_add_tail(&conn->link, &conn_list);
+ 		for (i = 0; i < NDSM_CONN_THREADS; i++) {
+-			/*
+-			 * The count is somewhat meaningless since it doesn't contain
+-			 * information about which remote node it connects to.
+-			 */
+-			thread = kthread_run(kvm_dsm_handle_req, (void *)conn,
+-					     "dsm-conn/%d:%d", kvm->arch.dsm_id,
+-					     count++);
++			thread = kthread_create(kvm_dsm_handle_req, conn,
++						"dsm-conn/%d:%d", kvm->arch.dsm_id,
++						count++);
+ 			if (IS_ERR(thread)) {
+-				pr_err("kvm-dsm: failed to start kernel thread for dsm connection\n");
+ 				ret = PTR_ERR(thread);
+-				goto out_accept_sock;
++				pr_err("kvm-dsm: failed to create connection thread: %d\n", ret);
++				goto out;
+ 			}
++			/* 在线程开始执行前持有引用，允许它因错误提前退出。 */
++			get_task_struct(thread);
+ 			conn->threads[i] = thread;
+-		}
+-		list_add_tail(&conn->link, &conn_list);
+-	}
+-
+-out_accept_sock:
+-	network_ops.release(accept_sock);
+-out_listen_sock:
+-	for (i = 0; i < DSM_MAX_INSTANCES; i++) {
+-		if (kvm->arch.dsm_conn_socks[i])
+-			network_ops.release(kvm->arch.dsm_conn_socks[i]);
+-		if (kvm->arch.dsm_conn_socks[DSM_MAX_INSTANCES + i])
+-			network_ops.release(
+-				kvm->arch.dsm_conn_socks[DSM_MAX_INSTANCES + i]);
+-	}
+-	kfree(kvm->arch.dsm_conn_socks);
+-
++			wake_up_process(thread);
++		}
++	}
++out:
++	/* 先通知所有线程，避免先等待的线程依赖尚未收到退出信号的同伴。 */
++	list_for_each_entry(conn, &conn_list, link) {
++		for (i = 0; i < NDSM_CONN_THREADS; i++) {
++			if (conn->threads[i])
++				send_sig(SIGKILL, conn->threads[i], 1);
++		}
++	}
+ 	while (!list_empty(&conn_list)) {
+ 		conn = list_first_entry(&conn_list, struct dsm_conn, link);
+ 		list_del(&conn->link);
+ 		for (i = 0; i < NDSM_CONN_THREADS; i++) {
+-			get_task_comm(comm, conn->threads[i]);
+-			send_sig(SIGKILL, conn->threads[i], 1);
+-			ret = kthread_stop(conn->threads[i]);
+-			dsm_debug(
+-				"kvm[%d] dsm connection thread %s exited with %d",
+-				kvm->arch.dsm_id, comm, ret);
++			thread = conn->threads[i];
++			if (!thread)
++				continue;
++			get_task_comm(comm, thread);
++			stopped = kthread_stop(thread);
++			put_task_struct(thread);
++			dsm_debug("kvm[%d] dsm connection thread %s exited with %d",
++				  kvm->arch.dsm_id, comm, stopped);
++			/* 不让后续成功退出覆盖先前线程或监听器的错误。 */
++			if (!ret && stopped)
++				ret = stopped;
+ 		}
+ 		network_ops.release(conn->sock);
+ 		kfree(conn);
+ 	}
+-
+-	network_ops.release(listen_sock);
+-
+ 	clean_couter();
+ 	return ret;
+ }
+ 
+ static int kvm_dsm_init(struct kvm *kvm, struct kvm_dsm_params *params)
+ {
+-	int ret = 0;
++	int ret = 0, i;
+ 	struct task_struct *thread;
+-	int i;
+-	char **user_cluster_iplist;
+-
+-	if (params->dsm_id >= DSM_MAX_INSTANCES)
++	char **user_cluster_iplist = NULL;
++	struct dsm_address addr;
++	__be32 address;
++	const char *end;
++
++	if (!params->cluster_iplist_len ||
++	    params->cluster_iplist_len > DSM_MAX_INSTANCES ||
++	    params->dsm_id >= params->cluster_iplist_len)
+ 		return -EINVAL;
+-
+ 	if (kvm->arch.dsm_enabled)
+-		return ret;
+-
++		return 0;
+ 	/* 调用方持有 kvm->lock，与开启 dirty ring 的路径互斥。 */
+ 	if (kvm->dirty_ring_size)
+ 		return -EOPNOTSUPP;
+ 
+-	dsm_debug("Enable kvm dsm mode, this kvm instance will be node-%u\n",
+-		  params->dsm_id);
+-
+-	/* Deep copy cluster_iplist from user space. */
+-	kvm->arch.cluster_iplist_len = params->cluster_iplist_len;
+-	kvm->arch.cluster_iplist =
+-		kcalloc(params->cluster_iplist_len, sizeof(void *), GFP_KERNEL);
++	kvm->arch.cluster_iplist = kcalloc(params->cluster_iplist_len,
++					 sizeof(char *), GFP_KERNEL);
+ 	if (!kvm->arch.cluster_iplist)
+ 		return -ENOMEM;
+-	user_cluster_iplist =
+-		kcalloc(params->cluster_iplist_len, sizeof(void *), GFP_KERNEL);
++	kvm->arch.cluster_iplist_len = params->cluster_iplist_len;
++	user_cluster_iplist = kcalloc(params->cluster_iplist_len,
++				     sizeof(char *), GFP_KERNEL);
+ 	if (!user_cluster_iplist) {
+ 		ret = -ENOMEM;
+-		goto out_free_cluster_iplist;
+-	}
+-	WARN_ON(copy_from_user(user_cluster_iplist, params->cluster_iplist,
+-			       sizeof(void *) * params->cluster_iplist_len) !=
+-		0);
++		goto out;
++	}
++	if (copy_from_user(user_cluster_iplist, params->cluster_iplist,
++			   sizeof(char *) * params->cluster_iplist_len)) {
++		ret = -EFAULT;
++		goto out;
++	}
+ 	for (i = 0; i < params->cluster_iplist_len; i++) {
+-		kvm->arch.cluster_iplist[i] = kmalloc(20, GFP_KERNEL);
+-		if (!kvm->arch.cluster_iplist[i]) {
+-			ret = -ENOMEM;
+-			goto out_free_cluster_iplist;
+-		}
+-		if (strncpy_from_user(kvm->arch.cluster_iplist[i],
+-				      user_cluster_iplist[i], 20) == 20) {
++		char *host = strndup_user(user_cluster_iplist[i], 20);
++
++		if (IS_ERR(host)) {
++			ret = PTR_ERR(host);
++			goto out;
++		}
++		kvm->arch.cluster_iplist[i] = host;
++		if (!in4_pton(host, -1, (u8 *)&address, -1, &end) || *end) {
+ 			ret = -EINVAL;
+-			goto out_free_cluster_iplist;
+-		}
+-	}
++			goto out;
++		}
++	}
++	kfree(user_cluster_iplist);
++	user_cluster_iplist = NULL;
+ 
+ 	mutex_init(&kvm->arch.conn_init_lock);
+-
+ 	network_ops.send = ktcp_send;
+ 	network_ops.receive = ktcp_receive;
+ 	network_ops.connect = ktcp_connect;
+ 	network_ops.listen = ktcp_listen;
+ 	network_ops.accept = ktcp_accept;
+ 	network_ops.release = ktcp_release;
+-	dsm_debug("%s: kvm %d use TCP connection\n", __func__, params->dsm_id);
+-
+ 	kvm->arch.dsm_conn_socks = kcalloc(DSM_MAX_INSTANCES * 2,
+-					   sizeof(kconnection_t *), GFP_KERNEL);
+-	if (!kvm->arch.dsm_conn_socks)
+-		return -ENOMEM;
+-
+-	kvm->arch.dsm_enabled = true;
++					 sizeof(kconnection_t *), GFP_KERNEL);
++	if (!kvm->arch.dsm_conn_socks) {
++		ret = -ENOMEM;
++		goto out;
++	}
+ 	kvm->arch.dsm_id = params->dsm_id;
+-	thread = kthread_run(kvm_dsm_threadfn, (void *)kvm, "kvm-dsm/%d",
+-			     kvm->arch.dsm_id);
++	ret = get_dsm_address(kvm, params->dsm_id, &addr);
++	if (ret)
++		goto out;
++	/* 在 ioctl 返回前完成绑定和监听，让端口冲突直接返回调用方。 */
++	ret = network_ops.listen(addr.host, addr.port, &kvm->arch.dsm_listen_sock);
++	if (ret)
++		goto out;
++	thread = kthread_create(kvm_dsm_threadfn, kvm, "kvm-dsm/%d", params->dsm_id);
+ 	if (IS_ERR(thread)) {
+-		pr_err("kvm-dsm: failed to start kernel thread for dsm server\n");
+ 		ret = PTR_ERR(thread);
+ 		goto out;
+ 	}
++	get_task_struct(thread);
+ 	kvm->arch.dsm_thread = thread;
+-	return ret;
+-
++	kvm->arch.dsm_stopped = false;
++	kvm->arch.dsm_enabled = true;
++	wake_up_process(thread);
++	return 0;
+ out:
+-	kfree(kvm->arch.dsm_conn_socks);
+-	kvm->arch.dsm_enabled = false;
+-	return ret;
+-out_free_cluster_iplist:
+-	for (i = 0; i < params->cluster_iplist_len; i++)
+-		kfree(kvm->arch.cluster_iplist[i]);
+-	kfree(kvm->arch.cluster_iplist);
+ 	kfree(user_cluster_iplist);
++	kvm_dsm_free_config(kvm);
+ 	return ret;
+ }
+ 
+@@ -660,14 +660,15 @@
+ 		smp_mb();
+ 		send_sig(SIGKILL, kvm->arch.dsm_thread, 1);
+ 		ret = kthread_stop(kvm->arch.dsm_thread);
++		put_task_struct(kvm->arch.dsm_thread);
++		kvm->arch.dsm_thread = NULL;
+ 		if (ret < 0) {
+ 			pr_err("%s: node-%d dsm root server exited with %d\n",
+ 			       __func__, kvm->arch.dsm_id, ret);
+ 		}
+-		for (i = 0; i < kvm->arch.cluster_iplist_len; i++)
+-			kfree(kvm->arch.cluster_iplist[i]);
+-		kfree(kvm->arch.cluster_iplist);
+-	}
++	}
++	/* 监听器归 VM 所有，即使线程尚未运行就被停止，也必须释放。 */
++	kvm_dsm_free_config(kvm);
+ 
+ 	slots = kvm->arch.dsm_hvaslots;
+ 	if (!slots)
+--- a/arch/x86/kvm/ktcp.c
++++ b/arch/x86/kvm/ktcp.c
+@@ -309,18 +309,12 @@
+ 
+ static int ktcp_create_cb(struct ktcp_cb **cbp)
+ {
+-	int i;
+-	struct ktcp_cb *cb;
+-
+-	cb = kmalloc(sizeof(*cb), GFP_KERNEL);
++	struct ktcp_cb *cb = kzalloc(sizeof(*cb), GFP_KERNEL);
++
+ 	if (!cb)
+ 		return -ENOMEM;
+-
+-	for (i = 0; i < KTCP_RECV_BUF_SIZE; ++i) {
+-		cb->recv_trans_buf[i].txid = 0;
+-		cb->recv_trans_buf[i].recv_buf = NULL;
+-	}
+-
++	mutex_init(&cb->slock);
++	mutex_init(&cb->rlock);
+ 	*cbp = cb;
+ 	return 0;
+ }
+@@ -328,91 +322,81 @@
+ int ktcp_connect(const char *host, u16 port, struct ktcp_cb **conn_cb)
+ {
+ 	int ret;
+-	struct sockaddr_in saddr;
++	struct sockaddr_in saddr = {};
+ 	struct ktcp_cb *cb;
+ 	struct socket *conn_socket;
+ 
+ 	if (!host || !conn_cb)
+ 		return -EINVAL;
+-
+ 	ret = ktcp_create_cb(&cb);
+-	if (ret < 0) {
+-		pr_err("%s: ktcp_create_cb fail, return %d\n", __func__, ret);
+-	}
+-
++	if (ret)
++		return ret;
+ 	ret = sock_create(PF_INET, SOCK_STREAM, IPPROTO_TCP, &conn_socket);
+-	if (ret < 0) {
+-		pr_err("%s: sock_create failed, return %d\n", __func__, ret);
+-		return ret;
+-	}
+-
+-	memset(&saddr, 0, sizeof(saddr));
++	if (ret)
++		goto out_cb;
+ 	saddr.sin_family = AF_INET;
+ 	saddr.sin_port = htons(port);
+ 	saddr.sin_addr.s_addr = in_aton(host);
+-
+ re_connect:
++	if (ktcp_should_stop()) {
++		ret = -EINTR;
++		goto out_socket;
++	}
+ 	ret = conn_socket->ops->connect(conn_socket,
+ 					(struct sockaddr_unsized *)&saddr,
+ 					sizeof(saddr), O_RDWR);
+-
+ 	if (ret == -EAGAIN || ret == -ERESTARTSYS)
+ 		goto re_connect;
+-
+-	if (ret && (ret != -EINPROGRESS)) {
+-		pr_err("%s: connct failed, return %d\n", __func__, ret);
+-		sock_release(conn_socket);
+-		return ret;
+-	}
+-
++	if (ret && ret != -EINPROGRESS) {
++		pr_err("%s: connect failed, return %d\n", __func__, ret);
++		goto out_socket;
++	}
+ 	cb->socket = conn_socket;
+-	mutex_init(&cb->slock);
+-	mutex_init(&cb->rlock);
+ 	*conn_cb = cb;
+-	return SUCCESS;
++	return 0;
++out_socket:
++	sock_release(conn_socket);
++out_cb:
++	kfree(cb);
++	return ret;
+ }
+ 
+ int ktcp_listen(const char *host, u16 port, struct ktcp_cb **listen_cb)
+ {
+ 	int ret;
+-	struct sockaddr_in saddr;
++	struct sockaddr_in saddr = {};
+ 	struct ktcp_cb *cb;
+ 	struct socket *listen_socket;
+ 
+ 	ret = ktcp_create_cb(&cb);
+-	if (ret < 0) {
+-		pr_err("%s: ktcp_create_cb failed, return %d\n", __func__, ret);
+-	}
+-
++	if (ret)
++		return ret;
+ 	ret = sock_create(PF_INET, SOCK_STREAM, IPPROTO_TCP, &listen_socket);
+-	if (ret != 0) {
+-		pr_err("%s: sock_create failed, return %d\n", __func__, ret);
+-		return ret;
+-	}
+-	memset(&saddr, 0, sizeof(saddr));
++	if (ret)
++		goto out_cb;
+ 	saddr.sin_family = AF_INET;
+ 	saddr.sin_port = htons(port);
+ 	saddr.sin_addr.s_addr = in_aton(host);
+-
+ 	ret = listen_socket->ops->bind(listen_socket,
+ 				       (struct sockaddr_unsized *)&saddr,
+ 				       sizeof(saddr));
+-	if (ret != 0) {
++	if (ret) {
+ 		pr_err("%s: bind failed, return %d\n", __func__, ret);
+-		sock_release(listen_socket);
+-		return ret;
+-	}
+-
++		goto out_socket;
++	}
+ 	ret = listen_socket->ops->listen(listen_socket, DEFAULT_BACKLOG);
+-	if (ret != 0) {
++	if (ret) {
+ 		pr_err("%s: listen failed, return %d\n", __func__, ret);
+-		sock_release(listen_socket);
+-		return ret;
+-	}
+-
++		goto out_socket;
++	}
+ 	cb->socket = listen_socket;
+ 	*listen_cb = cb;
+-	return SUCCESS;
++	return 0;
++out_socket:
++	sock_release(listen_socket);
++out_cb:
++	kfree(cb);
++	return ret;
+ }
+ 
+ int ktcp_accept(struct ktcp_cb *listen_cb, struct ktcp_cb **accept_cb,
+@@ -421,72 +405,46 @@
+ 	int ret;
+ 	struct ktcp_cb *cb;
+ 	struct socket *listen_socket, *accept_socket;
+-
+-	if (!listen_cb) {
+-		pr_err("%s: null listen_cb\n", __func__);
++	struct proto_accept_arg arg = { .flags = flag, .kern = false };
++
++	if (!listen_cb || !listen_cb->socket)
+ 		return -EINVAL;
+-	}
+ 	listen_socket = listen_cb->socket;
+-	if (!listen_socket) {
+-		pr_err("%s: null listen_socket\n", __func__);
+-		return -EINVAL;
+-	}
+-
+ 	ret = ktcp_create_cb(&cb);
+-	if (ret < 0) {
+-		pr_err("%s: ktcp_create_cb failed, return %d\n", __func__, ret);
+-	}
+-
++	if (ret)
++		return ret;
+ 	ret = sock_create_lite(listen_socket->sk->sk_family,
+ 			       listen_socket->sk->sk_type,
+ 			       listen_socket->sk->sk_protocol, &accept_socket);
+-	if (ret != 0) {
+-		pr_err("%s: sock_create failed, return %d\n", __func__, ret);
+-		return ret;
+-	}
+-
++	if (ret)
++		goto out_cb;
+ re_accept:
+-	pr_devel("%s: retry\n", __func__);
+-	struct proto_accept_arg arg = { .flags = flag, .kern = false };
+-
+ 	ret = listen_socket->ops->accept(listen_socket, accept_socket, &arg);
+-
+-	pr_devel("%s: retry\n", __func__);
+-	if (ret == -ERESTARTSYS) {
+-		if (kthread_should_stop())
+-			return ret;
++	if (ret == -ERESTARTSYS && !ktcp_should_stop())
+ 		goto re_accept;
+-	}
+-	/*
+-	 * When setting SOCK_NONBLOCK flag, accept returns
+-	 * this when there is nothing in waiting queue.
+-	 */
+-	if (ret == -EWOULDBLOCK || ret == -EAGAIN) {
+-		sock_release(accept_socket);
+-		accept_socket = NULL;
+-		return ret;
+-	}
+-	if (ret < 0) {
+-		pr_err("%s: accept failed, return %d\n", __func__, ret);
+-		sock_release(accept_socket);
+-		accept_socket = NULL;
+-		return ret;
+-	}
+-
++	if (ret)
++		goto out_socket;
+ 	accept_socket->ops = listen_socket->ops;
+ 	cb->socket = accept_socket;
+-	mutex_init(&cb->slock);
+-	mutex_init(&cb->rlock);
+ 	*accept_cb = cb;
+-	pr_devel("%s: success\n", __func__);
+-	return SUCCESS;
++	return 0;
++out_socket:
++	sock_release(accept_socket);
++out_cb:
++	kfree(cb);
++	return ret;
+ }
+ 
+ int ktcp_release(struct ktcp_cb *conn_cb)
+ {
++	int i;
++
+ 	if (!conn_cb)
+ 		return -EINVAL;
+-
++	/* 所有使用者退出后，释放 socket 和尚未分流出去的完整报文。 */
+ 	sock_release(conn_cb->socket);
+-	return SUCCESS;
+-}
++	for (i = 0; i < KTCP_RECV_BUF_SIZE; i++)
++		kfree(conn_cb->recv_trans_buf[i].recv_buf);
++	kfree(conn_cb);
++	return 0;
++}
