@@ -89,3 +89,7 @@ PF12、PF13 是未实际启用拦截的中间候选，不是补丁依赖。公�
 ## PF15：宿主定时器延期重装
 
 在 PF14 后应用 `kernel-dsm-host-timer-rearm.patch`，单独构建 `-sshpool-gvm-pf15`。它在 x86 KVM 返回、重新开启中断前调用已有 `hrtimer_rearm_deferred()`，影响该配置下的普通 KVM 返回路径，因此另有单节点回归；不是只针对 DSM 的开关。两侧完整跟踪与两次无跟踪三轮时钟测试见 [宿主定时器实验](../../../docs/ssi-host-timers.md)。RTC、watchdog、关闭协议以及所有业务持久化门槛仍未完成。默认安装流程不应用此候选，不应部署到业务宿主。
+
+## 分布式 PIO 合并缓冲
+
+在已有 MMIO 完成确认 QEMU 上应用 `qemu-dsm-pio-coalescing.patch` 并另存二进制。它只在分布式拓扑下停止注册本地合并 PIO 区域，避免 RTC 索引写入本地缓冲而数据读取转发远端；普通单节点保留原行为。用 PF15 做独立时间基准和注册调用对照，见 [RTC 实验](../../../docs/ssi-rtc.md)。未增加通用 PIO 写完成协议，未修复合并 MMIO；默认流程不应用此候选。

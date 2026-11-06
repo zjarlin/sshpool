@@ -35,6 +35,13 @@ Feature: SSI 远端设备操作具有可验证的完成边界
     And 两端无段错误或残留线程
 
   @research @p0
+  Scenario: 通用 PIO 和合并 MMIO 具有完整设备顺序
+    Given 分布式客体已禁用本地合并 PIO 注册
+    When 交错访问端口设备与合并 MMIO 区域并注入延迟或连接故障
+    Then 写操作完成与错误有明确的跨节点协议
+    And 不把 RTC 索引读取修正当作所有设备的屏障和完成确认
+
+  @research @p0
   Scenario: 持久磁盘与数据库另行验证刷盘语义
     Given 已验证的跨节点 MMIO 与 DMA 访问路径
     When 接入独立实验磁盘及后续 Ceph 存储

@@ -51,3 +51,14 @@ Feature: SSI 客体计时信息保持跨节点一致
     When 长时间负载暂停恢复重置或执行节点重连
     Then 时钟误差受明确界限约束且不会倒退
     And 未实现这些协议的冷启动候选不能被视为可用替代
+
+  # evidence: docs/evidence/ssi-rtc-20261106.json
+  @verified @p0
+  Scenario: 跨节点 RTC 读取用独立时间基准验收
+    Given 两个专用实验 VM 上的四 CPU 无磁盘客体
+    When 同一线程按 0 2 1 3 顺序读取八轮 RTC
+    Then 原版本错误日期由独立控制端和宿主时间窗口检出
+    And 禁用分布式合并 PIO 注册的候选通过全部三十二次读取
+    And 普通单节点对照保留合并 PIO 注册且通过读取
+    And 不把合法日期字段或 ioctl 成功当作正确时间
+    And 秒级短窗口通过不代表 RTC 中断长期漂移或完整 SSI 通过

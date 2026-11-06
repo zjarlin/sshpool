@@ -1,0 +1,28 @@
+--- a/accel/kvm/kvm-all.c
++++ b/accel/kvm/kvm-all.c
+@@ -1273,8 +1273,10 @@
+                                 hwaddr start, hwaddr size)
+ {
+     KVMState *s = kvm_state;
+-
+-    if (s->coalesced_pio) {
++    MachineState *ms = MACHINE(qdev_get_machine());
++
++    /* 合并缓冲只在本节点刷新；分布式 PIO 必须进入统一转发路径。 */
++    if (s->coalesced_pio && ms->local_cpus == ms->smp.cpus) {
+         struct kvm_coalesced_mmio_zone zone;
+ 
+         zone.addr = start;
+@@ -1290,8 +1292,10 @@
+                                 hwaddr start, hwaddr size)
+ {
+     KVMState *s = kvm_state;
+-
+-    if (s->coalesced_pio) {
++    MachineState *ms = MACHINE(qdev_get_machine());
++
++    /* 合并缓冲只在本节点刷新；分布式 PIO 必须进入统一转发路径。 */
++    if (s->coalesced_pio && ms->local_cpus == ms->smp.cpus) {
+         struct kvm_coalesced_mmio_zone zone;
+ 
+         zone.addr = start;
