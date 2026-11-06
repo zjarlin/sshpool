@@ -52,6 +52,26 @@ Feature: SSI 客体计时信息保持跨节点一致
     Then 时钟误差受明确界限约束且不会倒退
     And 未实现这些协议的冷启动候选不能被视为可用替代
 
+  # evidence: docs/evidence/ssi-virtio-dsm-pins-20261107.json
+  @verified @p0
+  Scenario: 本地 QMP 暂停能唤醒远端 vCPU 占位线程
+    Given 两个实验 VM 的 QEMU 各含两个本地 vCPU 和两个远端占位线程
+    When 协调器分别向两边发送 stop
+    Then 旧版的暂停等待与占位线程阻塞由实际线程栈复现
+    And 候选唤醒独立条件变量并等待占位线程确认停止
+    And 正常写入后暂停再关闭两端退出零且没有强制清理
+    And 不声称一次 stop 已停止真实远端或已支持恢复
+
+  # evidence: docs/ssi-virtio-dsm-pins.md
+  @research @p0
+  Scenario: 全局暂停恢复建立新的时钟同步边界
+    Given 两端已分别暂停且实际 vCPU 和设备生产者均已停止
+    When 请求恢复同一客体
+    Then 以新代际重新同步时间并协调释放执行许可
+    And 跨 CPU 计时在多轮暂停恢复后仍不倒退或提前到期
+    And 现有冷启动限制触发的真实失败保持可见直到协议完成
+    And 不以删除 cold start only 检查替代实现
+
   # evidence: docs/evidence/ssi-rtc-20261106.json
   @verified @p0
   Scenario: 跨节点 RTC 读取用独立时间基准验收

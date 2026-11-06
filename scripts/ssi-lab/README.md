@@ -188,3 +188,7 @@ timeout --kill-after=5 45 python3 scripts/ssi-lab/probe-dsm-device.py \
 `probe-shutdown-flush.py` 只在新目录创建独立测试盘，通过原生 HMP 写读和 blkdebug 注入 EIO/ENOSPC，保存块层跟踪、QMP 和实际退出码；`check-shutdown-flush.py <记录.json>` 区分单节点与配对故障传播。原版内核仅用于单节点，配对要求 PF24。完整参数、失败记录和未覆盖的客体 DMA/掉电语义见 [关闭刷盘实验](../../docs/ssi-shutdown-flush.md)。
 
 探针使用回环 37710/37711，临时例外必须同时允许回环目标端口和源端口，避免随机客户端端口落入实验防火墙受保护段而拦截返回包。仅允许 `lo` 与 `127.0.0.0/8`，执行前核对所有方向的 TCP 状态为空，执行后恢复精确原规则。它不需要外网或业务网段的新权限，不应在业务宿主运行。
+
+## 真实设备请求的原生 DSM 引用
+
+`probe-virtio-dsm-pins.py` 在两台独占 PF24 实验 VM 上分别启动实际 Linux 客体的同一个分布式实例，通过标准输入 JSON 协调写入、快照、暂停、销毁与退出。它使用只读诊断 HMP 查询 QEMU 自己所属 KVM 的引用；`check-virtio-dsm-pins.py <记录.json>` 将原始 QMP、请求 trace、队列、引用、磁盘内容和退出码相互核对。普通候选不含该诊断入口。两台节点的实验盘彼此独立，不能当作存储副本；复现方法和保留的 reset／resume 失败见 [实际设备页引用](../../docs/ssi-virtio-dsm-pins.md)。

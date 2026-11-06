@@ -152,4 +152,10 @@ PF23 后应用 `kernel-dsm-pin-release.patch`，单独构建 `-sshpool-gvm-pf24`
 
 ## QEMU 未恢复的块设备错误
 
-在最终刷盘候选之后应用 `qemu-shutdown-iostatus.patch`。即使最终 flush 成功，只要仍有 BlockBackend 保留非 ok I/O 状态，就直接报错并失败退出。两台原版内核 VM 共 20 次真实客体写入、重试、复位、管理接口销毁及关闭对照通过；尚未验证本候选的双节点 DSM 页引用或完整工作区。补丁为 GPL-2.0-or-later，不进入默认构建，证据与边界见 [真实 virtio 请求实验](../../../docs/ssi-virtio-pending.md)。
+在最终刷盘候选之后应用 `qemu-shutdown-iostatus.patch`。即使最终 flush 成功，只要仍有 BlockBackend 保留非 ok I/O 状态，就直接报错并失败退出。两台原版内核 VM 共 20 次真实客体写入、重试、复位、管理接口销毁及关闭对照通过；该轮没有观察 DSM 引用，后续见下节。补丁为 GPL-2.0-or-later，不进入默认构建，证据与边界见 [真实 virtio 请求实验](../../../docs/ssi-virtio-pending.md)。
+
+## QEMU 暂停与真实 virtio 引用清理
+
+在上述候选后依次应用 `qemu-remote-pause.patch` 和 `qemu-virtio-blk-unrealize.patch`。前者令本进程远端占位线程确认 stop；后者在 unrealize 销毁队列前复用 reset 的排空和重试请求取消。内核仍为 PF24。实际另一节点仍须单独停止，时钟恢复和 reset 后关闭尚未通过。
+
+`qemu-device-pins-probe.patch` 只供诊断变体查询原生 KVM 引用；普通候选不应用此补丁。诊断还要求 `SSHPOOL_LAB_DEVICE_PINS=1`、精确 PF24 内核及受限拓扑，查询失败必须保留。三个补丁均为 GPL-2.0-or-later，均不进入默认安装。原生 EIO／ENOSPC、暂停栈、失败记录和普通工作区回归见 [真实设备页引用实验](../../../docs/ssi-virtio-dsm-pins.md)。

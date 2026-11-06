@@ -1,0 +1,33 @@
+--- a/system/cpus.c
++++ b/system/cpus.c
+@@ -641,10 +641,18 @@
+ void pause_all_vcpus(void)
+ {
+     CPUState *cpu;
++    bool remote_pause_needed = false;
+ 
+     qemu_clock_enable(QEMU_CLOCK_VIRTUAL, false);
+     CPU_FOREACH(cpu) {
++        if (!cpu->local && !cpu->stopped) {
++            remote_pause_needed = true;
++        }
+         cpu_pause(cpu);
++    }
++    /* 远端占位线程等待独立条件变量，普通 vCPU kick 不会唤醒它。 */
++    if (remote_pause_needed) {
++        wakeup_remote_cpu();
+     }
+ 
+     /* We need to drop the replay_lock so any vCPU threads woken up
+--- a/accel/kvm/kvm-accel-ops.c
++++ b/accel/kvm/kvm-accel-ops.c
+@@ -72,7 +72,8 @@
+                 remote_cpu_count_dec();
+                 break;
+             }
+-            if (qemu_reset_requested_get()) {
++            /* 只确认本进程占位线程的暂停；实际远端 vCPU 仍须另行协调。 */
++            if (qemu_reset_requested_get() || cpu->stop) {
+                 cpu->stopped = true;
+             }
+             remote_cpu_count_dec();

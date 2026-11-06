@@ -1,0 +1,71 @@
+--- a/monitor/hmp-cmds.c
++++ b/monitor/hmp-cmds.c
+@@ -458,3 +458,5 @@
+     monitor_printf(mon, "DTB dumped to '%s'\n", filename);
+ }
+ #endif
++
++#include "ssi-device-pins.inc"
+--- a/include/monitor/hmp.h
++++ b/include/monitor/hmp.h
+@@ -16,6 +16,8 @@
+ 
+ #include "qemu/readline.h"
+ #include "qapi/qapi-types-common.h"
++
++void hmp_ssi_device_pins(Monitor *mon, const QDict *qdict);
+ 
+ bool hmp_handle_error(Monitor *mon, Error *err);
+ void hmp_help_cmd(Monitor *mon, const char *name);
+--- a/hmp-commands.hx
++++ b/hmp-commands.hx
+@@ -1888,3 +1888,11 @@
+   List event channels in the guest
+ ERST
+ #endif
++
++    {
++        .name       = "ssi_device_pins",
++        .args_type  = "",
++        .params     = "",
++        .help       = "隔离实验的只读 DSM 页引用查询",
++        .cmd        = hmp_ssi_device_pins,
++    },
+--- /dev/null
++++ b/monitor/ssi-device-pins.inc
+@@ -0,0 +1,35 @@
++/* SPDX-License-Identifier: GPL-2.0-or-later */
++/* 仅供隔离诊断：查询当前 QEMU 所属 KVM 的原生引用，不改变设备或内核状态。 */
++#include "system/kvm.h"
++#include "hw/boards.h"
++#include <sys/utsname.h>
++
++void hmp_ssi_device_pins(Monitor *mon, const QDict *qdict)
++{
++    struct {
++        uint32_t version, active_ops;
++        uint64_t read_refs, write_refs;
++        int32_t error;
++        uint32_t reserved;
++    } status = { 0 };
++    MachineState *ms = MACHINE(qdev_get_machine());
++    const char *enabled = getenv("SSHPOOL_LAB_DEVICE_PINS");
++    struct utsname system;
++    int ret;
++
++    if (!enabled || strcmp(enabled, "1") || uname(&system) ||
++        strcmp(system.release, "7.1.0-rc3-sshpool-gvm-pf24") ||
++        !kvm_enabled() || ms->smp.cpus != 4 || ms->local_cpus != 2 ||
++        ms->shm_path) {
++        monitor_printf(mon, "{\"refused\":true}\n");
++        return;
++    }
++    /* 只读 ABI；保留原始返回码，查询失败不能被解释为引用归零。 */
++    ret = kvm_vm_ioctl(kvm_state, 0x8020aef9, &status);
++    monitor_printf(mon,
++                   "{\"ret\":%d,\"version\":%u,\"active_ops\":%u,"
++                   "\"read_refs\":%" PRIu64 ",\"write_refs\":%" PRIu64 ","
++                   "\"error\":%d,\"reserved\":%u}\n",
++                   ret, status.version, status.active_ops, status.read_refs,
++                   status.write_refs, status.error, status.reserved);
++}

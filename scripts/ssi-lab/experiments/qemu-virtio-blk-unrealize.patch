@@ -1,0 +1,56 @@
+--- a/hw/block/virtio-blk.c
++++ b/hw/block/virtio-blk.c
+@@ -1106,31 +1106,30 @@
+     }
+ }
+ 
+-static void virtio_blk_reset(VirtIODevice *vdev)
+-{
+-    VirtIOBlock *s = VIRTIO_BLK(vdev);
++/* 排空后再丢弃重试队列，保证请求解除映射早于队列和互斥量销毁。 */
++static void virtio_blk_drain_and_drop_requests(VirtIOBlock *s)
++{
+     VirtIOBlockReq *req;
+ 
+-    /* Dataplane has stopped... */
+-    assert(!s->ioeventfd_started);
+-
+-    /* ...but requests may still be in flight. */
+     blk_drain(s->blk);
+-
+-    /* We drop queued requests after blk_drain() because blk_drain() itself can
+-     * produce them. */
++    /* drain 自身也可能把失败的在途请求放入重试队列。 */
+     WITH_QEMU_LOCK_GUARD(&s->rq_lock) {
+         while (s->rq) {
+             req = s->rq;
+             s->rq = req->next;
+-
+-            /* No other threads can access req->vq here */
+             virtqueue_detach_element(req->vq, &req->elem, 0);
+-
+             g_free(req);
+         }
+     }
+-
++}
++
++static void virtio_blk_reset(VirtIODevice *vdev)
++{
++    VirtIOBlock *s = VIRTIO_BLK(vdev);
++
++    /* dataplane 必须先停止，避免清理过程中继续产生设备请求。 */
++    assert(!s->ioeventfd_started);
++    virtio_blk_drain_and_drop_requests(s);
+     blk_set_enable_write_cache(s->blk, s->original_wce);
+ }
+ 
+@@ -1823,7 +1822,7 @@
+     VirtIOBlkConf *conf = &s->conf;
+     unsigned i;
+ 
+-    blk_drain(s->blk);
++    virtio_blk_drain_and_drop_requests(s);
+     del_boot_device_lchs(dev, "/disk@0,0");
+     virtio_blk_vq_aio_context_cleanup(s);
+     for (i = 0; i < conf->num_queues; i++) {

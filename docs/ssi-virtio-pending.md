@@ -1,5 +1,7 @@
 # 真实 virtio 写入错误与关闭状态
 
+后续已在双节点真实客体中观察原生 DSM 引用，确认并修复管理销毁泄漏；暂停恢复和复位后退出仍有失败，见 [后续实验](ssi-virtio-dsm-pins.md)。本文保留前期单节点结果及当时的验收边界。
+
 真实 Linux 客体写盘失败后，QEMU 的最终刷盘仍可能成功。上一轮只检查 `vm_shutdown()` 的返回值，因此会在请求尚未完成、磁盘内容未写入时退出零。本轮在最终刷盘之后检查各 BlockBackend 保留的 I/O 状态；仍为 `failed` 或 `nospace` 时向 stderr 报错并退出一。正常写入和成功重试保留退出零。
 
 先看 [场景](../features/150-ssi-device-memory.feature)，再看 [候选补丁](../scripts/ssi-lab/experiments/qemu-shutdown-iostatus.patch)、[采集器](../scripts/ssi-lab/probe-virtio-pending.py)、[检查器](../scripts/ssi-lab/check-virtio-pending.py) 和 [实际证据](evidence/ssi-virtio-pending-20261106.json)。补丁应用在 `qemu-shutdown-flush-error.patch` 之后，许可 GPL-2.0-or-later，默认构建仍不自动启用。

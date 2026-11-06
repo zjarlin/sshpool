@@ -87,6 +87,15 @@ jobs:
             --error 5 --action quit --directory "$RUNNER_TEMP/virtio-must-not-exist" || virtio_status=$?
           test "$virtio_status" -eq 2
           test ! -e "$RUNNER_TEMP/virtio-must-not-exist"
+          dsm_virtio_status=0
+          python3 scripts/ssi-lab/probe-virtio-dsm-pins.py --require-kernel kernel-must-not-match \
+            --qemu "$RUNNER_TEMP/no-qemu" --require-sha256 invalid --firmware "$RUNNER_TEMP" \
+            --guest-kernel "$RUNNER_TEMP/no-kernel" --guest-kernel-sha256 invalid \
+            --initramfs "$RUNNER_TEMP/no-initramfs" --initramfs-sha256 invalid \
+            --node 0 --peers 127.0.0.1 127.0.0.2 --error 5 \
+            --directory "$RUNNER_TEMP/dsm-virtio-must-not-exist" || dsm_virtio_status=$?
+          test "$dsm_virtio_status" -eq 2
+          test ! -e "$RUNNER_TEMP/dsm-virtio-must-not-exist"
           sh -n scripts/ssi-lab/guest-block-init.sh
           cc -O2 -Wall -Wextra -Werror -static scripts/ssi-lab/probe-pvclock.c -o "$RUNNER_TEMP/probe-pvclock"
           cc -O2 -Wall -Wextra -Werror -static scripts/ssi-lab/probe-dsm-startup.c -o "$RUNNER_TEMP/probe-dsm-startup"
