@@ -25,10 +25,10 @@
 | [100-ssi-research.feature](100-ssi-research.feature) | 0 | 0 | 0 | 3 |
 | [110-pooled-linux.feature](110-pooled-linux.feature) | 0 | 0 | 0 | 7 |
 | [120-stateful-recovery.feature](120-stateful-recovery.feature) | 0 | 0 | 2 | 3 |
-| [130-ssi-lab.feature](130-ssi-lab.feature) | 7 | 0 | 0 | 1 |
+| [130-ssi-lab.feature](130-ssi-lab.feature) | 8 | 0 | 0 | 1 |
 | [140-ssi-workspace.feature](140-ssi-workspace.feature) | 2 | 2 | 0 | 1 |
 | [150-ssi-device-memory.feature](150-ssi-device-memory.feature) | 3 | 1 | 1 | 0 |
 | [160-ssi-clock.feature](160-ssi-clock.feature) | 2 | 3 | 0 | 1 |
-| [170-ssi-transport.feature](170-ssi-transport.feature) | 8 | 3 | 0 | 3 |
+| [170-ssi-transport.feature](170-ssi-transport.feature) | 9 | 3 | 0 | 3 |
 | [180-ssi-device-order.feature](180-ssi-device-order.feature) | 1 | 1 | 0 | 3 |
-| 合计 | 44 | 17 | 18 | 23 |
+| 合计 | 46 | 17 | 18 | 23 |

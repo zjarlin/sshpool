@@ -74,3 +74,14 @@ Feature: 隔离的同 ISA 双节点 GiantVM 实验
     Then 排除页引用重复释放以及未经 DSM 授权的预取映射
     And 通过内存压力并发原子操作与长时间运行验证
     And 未完成该门槛前不迁移生产数据库
+
+  # evidence: docs/evidence/ssi-scheduling-20261106.json
+  @verified @p0
+  Scenario: 性能实验前检查虚拟化层限额和真实限速计数
+    Given 明确指定实验 VM 的 MoID 和归属注解
+    When 只读查询 ESXi 的 VM 与父资源池配置和近期性能计数
+    Then 报告 CPU 限额限速时间和真实物理宿主数量
+    And 拒绝把有限额历史限速或者缺指标的窗口作为未限速基线
+    And 根资源池总容量不误报为人为子池限额
+    And ready maxlimited 和 costop 存在重叠不能作为独立时间相加
+    And 客体 steal 为零不能排除 ESXi 限速

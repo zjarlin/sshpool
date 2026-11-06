@@ -20,6 +20,16 @@ Feature: SSI 传输等待与启动资源生命周期
     And 两侧窗口在导出任一大文件之前同时停止避免导出污染对端
     And 仍须在无跟踪运行中消除秒级停顿与 watchdog 告警后才通过完整工作区验收
 
+  # evidence: docs/evidence/ssi-scheduling-20261106.json
+  @verified @p0
+  Scenario: 调度等待分解必须保留未知边界并拒绝丢失采样
+    Given 独占实验 VM 中记录目标 QEMU 与 DSM 线程的身份及切换事件
+    When 分解函数调用期间的等待
+    Then 区分可运行等待睡眠已调度和窗口外未知时间
+    And 已调度时间不冒充有效 CPU 计算且空闲接收不冒充响应延迟
+    And 跟踪溢出探针遗漏时间倒退和线程身份变化均不能通过验收
+    And 未覆盖的窗口边界不能用最后一次线程状态外推
+
   # evidence: docs/evidence/ssi-receive-probes-20261106.json
   @verified @p0
   Scenario: 空闲连接和未完整接收的帧都能让出 CPU

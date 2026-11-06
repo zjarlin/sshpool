@@ -25,6 +25,8 @@ TCP 版本不能与共享内存分支混配。使用上游源码地址，不使�
 
 `probe-dsm-latency.c` / `.py` 在真实 KVM 页面交接的 ioctl 内计时，`trace-dsm-latency.py` 配对页面锁和网络调用，`check-dsm-latency.py` 重算顺序/并发数据与耗时。附加 QEMU 的窗口另记录客体缺页位置，入口和返回落在窗口外的调用单独报告。使用与限制见 [延迟定位](../../docs/ssi-latency.md)；不得将空闲监听等待当作响应延迟。
 
+性能实验先用 `check-esxi-resources.py` 只读检查指定 VM、父资源池与限速计数，避免将管理层 CPU 限速误判为内核缺陷。再用 `trace-dsm-scheduling.py` / `check-dsm-scheduling.py` 分解 DSM 等待，必须拒绝跟踪丢失且保留窗口边界未知时间。具体用法及证据边界见 [调度与资源预检](../../docs/ssi-scheduling.md)。
+
 ```sh
 git init GVM-kernel
 git -C GVM-kernel remote add origin https://github.com/GiantVM/GVM-kernel.git
