@@ -73,6 +73,12 @@ jobs:
             --output "$RUNNER_TEMP/map-must-not-exist.json" || map_status=$?
           test "$map_status" -eq 2
           test ! -e "$RUNNER_TEMP/map-must-not-exist.json"
+          flush_status=0
+          python3 scripts/ssi-lab/probe-shutdown-flush.py --require-kernel kernel-must-not-match \
+            --qemu "$RUNNER_TEMP/no-qemu" --require-sha256 invalid --firmware "$RUNNER_TEMP" \
+            --error 5 --directory "$RUNNER_TEMP/flush-must-not-exist" || flush_status=$?
+          test "$flush_status" -eq 2
+          test ! -e "$RUNNER_TEMP/flush-must-not-exist"
           cc -O2 -Wall -Wextra -Werror -static scripts/ssi-lab/probe-pvclock.c -o "$RUNNER_TEMP/probe-pvclock"
           cc -O2 -Wall -Wextra -Werror -static scripts/ssi-lab/probe-dsm-startup.c -o "$RUNNER_TEMP/probe-dsm-startup"
           cc -O2 -Wall -Wextra -Werror -static scripts/ssi-lab/probe-dsm-request.c -o "$RUNNER_TEMP/probe-dsm-request"

@@ -122,6 +122,16 @@ Feature: SSI 设备访问的脏页和反向映射
     And 取消与超时释放本次资源但保留既有引用和首次错误
     And 全部设备后台任务停止后才允许最终 DSM 关闭确认
 
+  # evidence: docs/ssi-shutdown-flush.md
+  @research @p0
+  Scenario: I/O 错误暂停后的待完成设备请求在关闭前有明确归宿
+    Given 真实 virtio 块设备因错误停止并保留尚未完成的请求
+    When 分别执行暂停复位销毁和整机关闭
+    Then 核对待完成描述符与 DSM 读写固定引用的真实生命周期
+    And 保留首次 I/O 错误而不是只检查最后一次刷盘返回
+    And 请求被取消或恢复后引用才可清零且不能重复释放
+    And 不以直接 HMP BlockBackend 写入代替客体设备请求验收
+
   # evidence: docs/ssi-qemu-map-failure.md
   @partial @p0
   Scenario: 设备映射不能把固定失败当作可用内存

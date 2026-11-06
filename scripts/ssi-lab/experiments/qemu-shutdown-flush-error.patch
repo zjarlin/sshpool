@@ -1,0 +1,18 @@
+--- a/system/runstate.c
++++ b/system/runstate.c
+@@ -993,8 +993,13 @@
+     blk_exp_close_all();
+ 
+ 
+-    /* No more vcpu or device emulation activity beyond this point */
+-    vm_shutdown();
++    /* 停止通知或最终刷盘失败时，不能继续宣称正常排空。 */
++    int shutdown_ret = vm_shutdown();
++    if (shutdown_ret) {
++        fprintf(stderr, "QEMU device shutdown/flush failed (%d); terminating this node\n",
++                shutdown_ret);
++        exit(EXIT_FAILURE);
++    }
+     replay_finish();
+ 
+ 

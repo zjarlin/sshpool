@@ -145,3 +145,7 @@ PF23 后应用 `kernel-dsm-pin-release.patch`，单独构建 `-sshpool-gvm-pf24`
 在路由排空候选后应用 `qemu-dsm-map-failure.patch`，另存普通候选运行时；宿主保持 PF24。真实 KVM 固定或解除失败后平衡 QEMU 区域引用、直接写 stderr 并失败退出，不继续交出成功映射或清理结果。它不执行数据库安全关闭，也不提供接管。
 
 `qemu-map-probe.patch` 只用于独立诊断变体，增加受环境变量、内核和暂停拓扑限制的 HMP 命令；普通候选必须不含此入口。两补丁均为 GPL-2.0-or-later，不进入默认安装路径。实际 ioctl、保留的失败记录、完整客体回归和边界见 [映射失败实验](../../../docs/ssi-qemu-map-failure.md)。
+
+## QEMU 最终刷盘失败
+
+在映射失败候选后应用 `qemu-shutdown-flush-error.patch`，构建独立运行时，内核保持 PF24。`qemu_cleanup()` 不再忽略 `vm_shutdown()` 的设备停止/刷盘返回；非零时直接写 stderr 并失败退出。补丁为 GPL-2.0-or-later，不进入默认构建。两台实验 VM 的真实 blkdebug 错误、双节点失败传播、无故障回归与未覆盖范围见 [关闭刷盘实验](../../../docs/ssi-shutdown-flush.md)。不能以本补丁替代设备全部解除、CLOSE/ACK 或数据库恢复。

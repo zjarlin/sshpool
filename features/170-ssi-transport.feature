@@ -1,6 +1,17 @@
 Feature: SSI 传输等待与启动资源生命周期
   先在真实 KVM 监听器和独占实验 VM 中验证，不将同一 ESXi 的结果当作跨物理机性能。
 
+  # evidence: docs/evidence/ssi-shutdown-flush-20261106.json
+  @verified @p0
+  Scenario: 最终块层刷盘失败不能被 QEMU 关闭吞掉
+    Given 新建的独立测试盘已完成真实非 FUA 写入且 blkdebug 只令最终刷盘失败
+    When 原版和候选分别以单节点及暂停双节点实例关闭
+    Then 保留原版在 EIO 与 ENOSPC 时仍退出零的真实对照
+    And 候选故障节点保留原始刷盘错误并退出一
+    And 双节点另一端也退出一且没有正常排空完成标记
+    And 无故障对照仍退出零并核对原生块层跟踪与实际进程状态
+    And 不把 HMP 写入或缓存读回当作客体 DMA 或掉电持久化证明
+
   # evidence: docs/evidence/ssi-host-timers-20261106.json
   @verified @p0
   Scenario: 宿主定时器中断退出与延期重装使用同一时钟核查
