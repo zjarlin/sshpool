@@ -125,3 +125,9 @@ PF12、PF13 是未实际启用拦截的中间候选，不是补丁依赖。公�
 ## PF20：VM/vCPU ioctl 准入屏障
 
 在 PF19 后应用 `kernel-dsm-ioctl-admission.patch`，单独构建 `-sshpool-gvm-pf20`。它封闭普通 VM/vCPU ioctl 的入口并统计完整调用，控制查询和等待不计入自己等待的操作；已准入调用与页面服务继续完成。十组真实 KVM 探针及客体回归见 [入口准入实验](../../../docs/ssi-ioctl-admission.md)。现有 QEMU 尚不调用新接口；后台设备、跨调用 DMA pin、完整出站事务和最终网络关闭仍未协调，不能把此屏障成功当作整机可以关闭。默认流程不自动应用。
+
+## PF21/PF22：出站事务与缓存消费
+
+PF20 后依次应用 `kernel-dsm-exchange-accounting.patch` 和 `kernel-dsm-exchange-id-exhaustion.patch`，构建后缀 `-sshpool-gvm-pf22`。PF21 增加完整出站计数、连接内的活跃事务登记、缓存消费及状态查询；PF22 修复编号耗尽时重复取得保留编号的无限循环。**不要只应用 PF21 作为最终候选。** 这两个补丁和 `idr-exhaustion.c` 为 GPL-2.0-only，默认流程不应用。
+
+先看 [事务与缓存实验](../../../docs/ssi-exchange-accounting.md)，再看 [探针](../probe-exchanges.py) 与 [检查器](../check-exchanges.py)。证据保留 PF21 的边界失败，区分缓存成功消费和故障丢弃。`idr-exhaustion.c` 使用 Linux 原有 IDR 用户态测试环境及从候选源提取的函数，锁为单线程替身；不能当作大规模 KVM 并发或网络验证。QEMU 尚不使用新状态接口，最终 DSM CLOSE/ACK、设备排空和持久化仍未实现。

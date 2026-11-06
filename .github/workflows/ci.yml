@@ -52,6 +52,11 @@ jobs:
             --mode validation --output "$RUNNER_TEMP/admission-must-not-exist.json" || admission_status=$?
           test "$admission_status" -eq 2
           test ! -e "$RUNNER_TEMP/admission-must-not-exist.json"
+          exchange_status=0
+          python3 scripts/ssi-lab/probe-exchanges.py --require-kernel kernel-must-not-match \
+            --mode reverse --output "$RUNNER_TEMP/exchanges-must-not-exist.json" || exchange_status=$?
+          test "$exchange_status" -eq 2
+          test ! -e "$RUNNER_TEMP/exchanges-must-not-exist.json"
           cc -O2 -Wall -Wextra -Werror -static scripts/ssi-lab/probe-pvclock.c -o "$RUNNER_TEMP/probe-pvclock"
           cc -O2 -Wall -Wextra -Werror -static scripts/ssi-lab/probe-dsm-startup.c -o "$RUNNER_TEMP/probe-dsm-startup"
           cc -O2 -Wall -Wextra -Werror -static scripts/ssi-lab/probe-dsm-request.c -o "$RUNNER_TEMP/probe-dsm-request"

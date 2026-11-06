@@ -1,0 +1,19 @@
+--- a/arch/x86/kvm/ktcp.c
++++ b/arch/x86/kvm/ktcp.c
+@@ -163,11 +163,12 @@
+ 	ret = READ_ONCE(cb->error);
+ 	if (ret)
+ 		goto out;
+-	do {
++	id = idr_alloc_cyclic(&cb->transactions, tx, 0, 65536, GFP_KERNEL);
++	if (id == 0xff) {
++		/* 暂时占住保留编号再分配，耗尽时返回 ENOSPC，不能循环重取 0xff。 */
+ 		id = idr_alloc_cyclic(&cb->transactions, tx, 0, 65536, GFP_KERNEL);
+-		if (id == 0xff)
+-			idr_remove(&cb->transactions, id);
+-	} while (id == 0xff);
++		idr_remove(&cb->transactions, 0xff);
++	}
+ 	ret = id < 0 ? id : 0;
+ 	if (!ret) {
+ 		tx->kvm = kvm;

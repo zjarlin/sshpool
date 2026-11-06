@@ -1,0 +1,492 @@
+--- a/arch/x86/kvm/dsm.c
++++ b/arch/x86/kvm/dsm.c
+@@ -941,7 +941,8 @@
+ 	int ret;
+ 
+ 	if (vm_ioctl && (ioctl == KVM_DSM_IOCTL_DRAIN ||
+-			 ioctl == KVM_DSM_IOCTL_STATUS))
++			 ioctl == KVM_DSM_IOCTL_STATUS ||
++			 ioctl == KVM_DSM_TRANSPORT_STATUS))
+ 		return 0;
+ 	spin_lock_irqsave(&kvm->arch.dsm_admission_lock, flags);
+ 	ret = READ_ONCE(kvm->arch.dsm_error);
+@@ -1027,12 +1028,71 @@
+ 	return copy_to_user(argp, &status, sizeof(status)) ? -EFAULT : 0;
+ }
+ 
++/* 入站处理器和已准入调用都可发起反向请求，不依据 socket bank 再次限流。 */
++int kvm_dsm_exchange_begin(struct kvm *kvm)
++{
++	unsigned long flags;
++	int ret;
++
++	spin_lock_irqsave(&kvm->arch.dsm_admission_lock, flags);
++	ret = READ_ONCE(kvm->arch.dsm_error);
++	if (!ret && READ_ONCE(kvm->arch.dsm_stopped))
++		ret = -EPIPE;
++	if (!ret)
++		kvm->arch.dsm_active_exchanges++;
++	spin_unlock_irqrestore(&kvm->arch.dsm_admission_lock, flags);
++	return ret;
++}
++
++static void dsm_counter_update(struct kvm *kvm, u32 *counter, bool add)
++{
++	unsigned long flags;
++
++	spin_lock_irqsave(&kvm->arch.dsm_admission_lock, flags);
++	if (add)
++		(*counter)++;
++	else if (!WARN_ON_ONCE(!*counter))
++		(*counter)--;
++	spin_unlock_irqrestore(&kvm->arch.dsm_admission_lock, flags);
++}
++
++void kvm_dsm_exchange_done(struct kvm *kvm)
++{
++	dsm_counter_update(kvm, &kvm->arch.dsm_active_exchanges, false);
++}
++
++void kvm_dsm_cache_count(struct kvm *kvm, bool add)
++{
++	dsm_counter_update(kvm, &kvm->arch.dsm_cached_responses, add);
++}
++
++void kvm_dsm_request_count(struct kvm *kvm, bool add)
++{
++	dsm_counter_update(kvm, &kvm->arch.dsm_active_requests, add);
++}
++
++static int kvm_dsm_transport_status(struct kvm *kvm, void __user *argp)
++{
++	struct kvm_dsm_transport_status status = { .version = 1 };
++	unsigned long flags;
++
++	spin_lock_irqsave(&kvm->arch.dsm_admission_lock, flags);
++	status.exchanges = kvm->arch.dsm_active_exchanges;
++	status.cached_responses = kvm->arch.dsm_cached_responses;
++	status.inbound_requests = kvm->arch.dsm_active_requests;
++	status.error = READ_ONCE(kvm->arch.dsm_error);
++	spin_unlock_irqrestore(&kvm->arch.dsm_admission_lock, flags);
++	return copy_to_user(argp, &status, sizeof(status)) ? -EFAULT : 0;
++}
++
+ long kvm_vm_ioctl_dsm(struct kvm *kvm, unsigned int ioctl, unsigned long arg)
+ {
+ 	void __user *argp = (void __user *)arg;
+ 	int r = -EFAULT;
+ 
+ 	switch (ioctl) {
++	case KVM_DSM_TRANSPORT_STATUS:
++		return kvm_dsm_transport_status(kvm, argp);
+ 	case KVM_DSM_IOCTL_DRAIN:
+ 		return kvm_dsm_ioctl_drain(kvm, argp);
+ 	case KVM_DSM_IOCTL_STATUS:
+--- a/arch/x86/kvm/ivy.c
++++ b/arch/x86/kvm/ivy.c
+@@ -98,17 +98,17 @@
+ 			 const struct dsm_request *req, void *data,
+ 			 struct dsm_response *resp)
+ {
+-	kconnection_t **conn_sock, *connection;
++	kconnection_t **conn_sock, *connection = NULL;
++	struct ktcp_transaction transaction;
++	bool registered = false;
+ 	int ret;
+-	tx_add_t tx_add = {
+-		.txid = generate_txid(kvm, dest_id),
+-	};
++	tx_add_t tx_add = {};
+ 	int retry_cnt = 0;
+ 
+-	if (READ_ONCE(kvm->arch.dsm_error))
+-		return READ_ONCE(kvm->arch.dsm_error);
+-	if (READ_ONCE(kvm->arch.dsm_stopped))
+-		return -EPIPE;
++	/* 从等待建连之前开始，直到响应元数据已复制且事务缓存回收之后结束。 */
++	ret = kvm_dsm_exchange_begin(kvm);
++	if (ret)
++		return ret;
+ 
+ 	if (!from_server)
+ 		conn_sock = &kvm->arch.dsm_conn_socks[dest_id];
+@@ -125,7 +125,7 @@
+ 		if (READ_ONCE(kvm->arch.dsm_error) || READ_ONCE(kvm->arch.dsm_stopped)) {
+ 			ret = READ_ONCE(kvm->arch.dsm_error) ?: -EPIPE;
+ 			mutex_unlock(&kvm->arch.conn_init_lock);
+-			return ret;
++			goto done;
+ 		}
+ 		if (!*conn_sock) {
+ 			ret = kvm_dsm_connect(kvm, dest_id, conn_sock);
+@@ -141,8 +141,13 @@
+ 	if (READ_ONCE(kvm->arch.dsm_error) || READ_ONCE(kvm->arch.dsm_stopped)) {
+ 		ret = READ_ONCE(kvm->arch.dsm_error) ?: -EPIPE;
+ 		network_ops.abort(connection, ret);
+-		return ret;
+-	}
++		goto done;
++	}
++	ret = ktcp_begin_transaction(connection, kvm, &transaction);
++	if (ret)
++		goto done;
++	registered = true;
++	tx_add.txid = transaction.id;
+ 
+ 	pr_devel(
+ 		"dsm: kvm[%d] sent request[0x%x] to kvm[%d] req_type[%s] gfn[0x%llx,%d]",
+@@ -180,6 +185,9 @@
+ done:
+ 	if (ret < 0 && !READ_ONCE(kvm->arch.dsm_stopped))
+ 		kvm_dsm_fail(kvm, ret);
++	if (registered)
++		ktcp_end_transaction(connection, &transaction);
++	kvm_dsm_exchange_done(kvm);
+ 	pr_devel(
+ 		"dsm: kvm[%d] received response[0x%x] from kvm[%d] req_type[%s] gfn[0x%llx,%d], ret=%d",
+ 		kvm->arch.dsm_id, tx_add.txid, dest_id, req_desc[req->req_type],
+@@ -538,6 +546,7 @@
+ 
+ static void dsm_request_done(struct dsm_conn *conn)
+ {
++	kvm_dsm_request_count(conn->kvm, false);
+ 	atomic_dec(&conn->active_requests);
+ 	wake_up_all(&conn->drain_wait);
+ }
+@@ -615,6 +624,7 @@
+ 		goto out;
+ 	}
+ 	atomic_inc(&conn->active_requests);
++	kvm_dsm_request_count(kvm, true);
+ out:
+ 	/* 先锁存流内错误再允许下一读者进入，避免后续屏障越过已识别的故障。 */
+ 	if (ret < 0 && !(READ_ONCE(kvm->arch.dsm_stopped) &&
+--- a/arch/x86/kvm/ktcp.c
++++ b/arch/x86/kvm/ktcp.c
+@@ -36,23 +36,18 @@
+ #include <linux/kvm_host.h>
+ 
+ #include "ktcp.h"
+-
+-#define KTCP_RECV_BUF_SIZE 32
++#include "dsm-util.h"
++#include <linux/idr.h>
+ 
+ struct ktcp_hdr {
+ 	size_t length;
+ 	tx_add_t tx_add;
+ } __packed;
+ 
+-typedef struct ktcp_msg {
+-	u16 txid;
+-	void *recv_buf;
+-} ktcp_msg_t;
+-
+ struct ktcp_cb {
+ 	struct mutex slock; /* protects send buffer */
+ 	struct mutex rlock; /* protects recv buffer */
+-	ktcp_msg_t recv_trans_buf[KTCP_RECV_BUF_SIZE];
++	struct idr transactions;
+ 	struct socket *socket;
+ 	/* 不依赖收发锁，故障线程可以唤醒持锁的网络等待者。 */
+ 	int error;
+@@ -156,54 +151,62 @@
+ 	return ret < 0 ? ret : hdr.length;
+ }
+ 
+-static bool search_recv_buf(struct ktcp_cb *cb, uint16_t txid, ktcp_msg_t *msg)
+-{
+-	int i;
+-
+-	for (i = 0; i < KTCP_RECV_BUF_SIZE; ++i) {
+-		if (cb->recv_trans_buf[i].txid == txid &&
+-		    cb->recv_trans_buf[i].recv_buf) {
+-			*msg = cb->recv_trans_buf[i];
+-			cb->recv_trans_buf[i].txid = 0;
+-			cb->recv_trans_buf[i].recv_buf = NULL;
+-			return true;
+-		}
+-	}
+-	return false;
+-}
+-
+-static bool insert_into_recv_buf(struct ktcp_cb *cb, ktcp_msg_t msg)
+-{
+-	int i;
+-
+-	for (i = 0; i < KTCP_RECV_BUF_SIZE; ++i) {
+-		if (cb->recv_trans_buf[i].txid == 0 &&
+-		    !cb->recv_trans_buf[i].recv_buf) {
+-			cb->recv_trans_buf[i] = msg;
+-			return true;
+-		}
+-	}
+-
+-	return false;
+-}
+-
+-static int build_ktcp_recv_output(ktcp_msg_t msg, char *buffer,
++/* 每条连接只给尚未结束的事务分配编号；跳过任意请求接收器使用的 0xff。 */
++int ktcp_begin_transaction(struct ktcp_cb *cb, struct kvm *kvm,
++			   struct ktcp_transaction *tx)
++{
++	int id, ret;
++
++	memset(tx, 0, sizeof(*tx));
++	if (mutex_lock_killable(&cb->rlock))
++		return ktcp_abort(cb, -EINTR);
++	ret = READ_ONCE(cb->error);
++	if (ret)
++		goto out;
++	do {
++		id = idr_alloc_cyclic(&cb->transactions, tx, 0, 65536, GFP_KERNEL);
++		if (id == 0xff)
++			idr_remove(&cb->transactions, id);
++	} while (id == 0xff);
++	ret = id < 0 ? id : 0;
++	if (!ret) {
++		tx->kvm = kvm;
++		tx->id = id;
++	}
++out:
++	mutex_unlock(&cb->rlock);
++	return ret;
++}
++
++/* 故障时也由原事务调用方清理缓存；释放缓存不等于成功消费响应。 */
++void ktcp_end_transaction(struct ktcp_cb *cb, struct ktcp_transaction *tx)
++{
++	mutex_lock(&cb->rlock);
++	WARN_ON_ONCE(idr_remove(&cb->transactions, tx->id) != tx);
++	if (tx->response) {
++		kfree(tx->response);
++		tx->response = NULL;
++		kvm_dsm_cache_count(tx->kvm, false);
++	}
++	mutex_unlock(&cb->rlock);
++}
++
++static int build_ktcp_recv_output(void *frame, char *buffer,
+ 				  size_t capacity, tx_add_t *tx_add)
+ {
+ 	size_t real_length;
+ 	struct ktcp_hdr hdr;
+ 
+-	memcpy(&hdr, (char *)msg.recv_buf, sizeof(struct ktcp_hdr));
+-	real_length = hdr.length - sizeof(struct ktcp_hdr);
+-	/* 新收到与事务缓存中的帧共用此边界，复制前拒绝超容量报文。 */
++	memcpy(&hdr, frame, sizeof(hdr));
++	real_length = hdr.length - sizeof(hdr);
++	/* 即使由其他接收者缓存，复制前仍检查本事务实际的目标容量。 */
+ 	if (real_length > capacity) {
+-		kfree(msg.recv_buf);
++		kfree(frame);
+ 		return -EMSGSIZE;
+ 	}
+-	memcpy(buffer, (char *)msg.recv_buf + sizeof(struct ktcp_hdr),
+-	       real_length);
++	memcpy(buffer, (char *)frame + sizeof(hdr), real_length);
+ 	*tx_add = hdr.tx_add;
+-	kfree(msg.recv_buf);
++	kfree(frame);
+ 	return real_length;
+ }
+ 
+@@ -264,7 +267,7 @@
+ {
+ 	struct ktcp_hdr hdr;
+ 	int ret;
+-	ktcp_msg_t msg;
++	struct ktcp_transaction *tx, *target;
+ 	u32 usec_sleep = 0;
+ 	char *local_buffer;
+ 
+@@ -281,9 +284,24 @@
+ 		ret = -EINTR;
+ 		goto out;
+ 	}
+-	if (search_recv_buf(cb, tx_add->txid, &msg)) {
+-		ret = build_ktcp_recv_output(msg, buffer, capacity, tx_add);
+-		goto out;
++	tx = NULL;
++	if (tx_add->txid != 0xff) {
++		tx = idr_find(&cb->transactions, tx_add->txid);
++		if (!tx) {
++			ret = -EPROTO;
++			goto out;
++		}
++		if (tx->response) {
++			local_buffer = tx->response;
++			tx->response = NULL;
++			ret = build_ktcp_recv_output(local_buffer, buffer, capacity, tx_add);
++			kvm_dsm_cache_count(tx->kvm, false);
++			goto out;
++		}
++		if (tx->received) {
++			ret = -EPROTO;
++			goto out;
++		}
+ 	}
+ 	local_buffer = kmalloc(KTCP_BUFFER_SIZE, GFP_KERNEL);
+ 	if (!local_buffer) {
+@@ -320,29 +338,22 @@
+ 		ret = -EPROTO;
+ 		goto out;
+ 	}
+-	msg.recv_buf = local_buffer;
+-	msg.txid = hdr.tx_add.txid;
+-	if (hdr.tx_add.txid != tx_add->txid && tx_add->txid != 0xFF) {
+-		while (!insert_into_recv_buf(cb, msg)) {
+-			if (READ_ONCE(cb->error) || ktcp_should_stop()) {
+-				kfree(local_buffer);
+-				ret = READ_ONCE(cb->error) ?: -EINTR;
+-				goto out;
+-			}
+-			mutex_unlock(&cb->rlock);
+-			usec_sleep = (usec_sleep + 1) > 1000 ? 1000 :
+-							       (usec_sleep + 1);
+-			usleep_range(usec_sleep, usec_sleep + 1);
+-			if (mutex_lock_killable(&cb->rlock)) {
+-				kfree(local_buffer);
+-				return ktcp_abort(cb, -EINTR);
+-			}
++	if (tx) {
++		target = idr_find(&cb->transactions, hdr.tx_add.txid);
++		/* 未登记、重复或已结束事务的响应不能留在缓存中等待未来编号复用。 */
++		if (!target || target->received) {
++			kfree(local_buffer);
++			ret = -EPROTO;
++			goto out;
+ 		}
+-		usec_sleep = 0;
+-		goto repoll;
+-	} else {
+-		ret = build_ktcp_recv_output(msg, buffer, capacity, tx_add);
+-	}
++		target->received = true;
++		if (target != tx) {
++			target->response = local_buffer;
++			kvm_dsm_cache_count(target->kvm, true);
++			goto repoll;
++		}
++	}
++	ret = build_ktcp_recv_output(local_buffer, buffer, capacity, tx_add);
+ out:
+ 	if (ret < 0)
+ 		ret = ktcp_abort(cb, ret);
+@@ -358,6 +369,7 @@
+ 		return -ENOMEM;
+ 	mutex_init(&cb->slock);
+ 	mutex_init(&cb->rlock);
++	idr_init(&cb->transactions);
+ 	*cbp = cb;
+ 	return 0;
+ }
+@@ -487,14 +499,12 @@
+ 
+ int ktcp_release(struct ktcp_cb *conn_cb)
+ {
+-	int i;
+-
+ 	if (!conn_cb)
+ 		return -EINVAL;
+-	/* 所有使用者退出后，释放 socket 和尚未分流出去的完整报文。 */
++	/* 连接销毁前所有 fetch 必须已结束，响应缓存由各事务清理。 */
++	WARN_ON_ONCE(!idr_is_empty(&conn_cb->transactions));
++	idr_destroy(&conn_cb->transactions);
+ 	sock_release(conn_cb->socket);
+-	for (i = 0; i < KTCP_RECV_BUF_SIZE; i++)
+-		kfree(conn_cb->recv_trans_buf[i].recv_buf);
+ 	kfree(conn_cb);
+ 	return 0;
+ }
+--- a/arch/x86/include/asm/kvm_host.h
++++ b/arch/x86/include/asm/kvm_host.h
+@@ -1779,6 +1779,10 @@
+ 	wait_queue_head_t dsm_ioctl_wait;
+ 	u64 dsm_ioctl_generation;
+ 	unsigned int dsm_active_ioctls;
++	/* 与准入计数共用锁，快照不会把缓存响应误认为已消费。 */
++	u32 dsm_active_exchanges;
++	u32 dsm_cached_responses;
++	u32 dsm_active_requests;
+ 
+ 	u32 cluster_iplist_len;
+ 	char **cluster_iplist;
+--- a/include/uapi/linux/kvm.h
++++ b/include/uapi/linux/kvm.h
+@@ -1422,6 +1422,18 @@
+ #define KVM_DSM_IOCTL_DRAIN _IOW(KVMIO, 0xf6, struct kvm_dsm_ioctl_drain)
+ #define KVM_DSM_IOCTL_STATUS _IOR(KVMIO, 0xf7, struct kvm_dsm_ioctl_status)
+ 
++/* 仅是本地瞬时快照，不能替代跨节点的请求链终止确认。 */
++struct kvm_dsm_transport_status {
++	__u32 version;
++	__u32 exchanges;
++	__u32 cached_responses;
++	__u32 inbound_requests;
++	__s32 error;
++	__u32 reserved[3];
++};
++
++#define KVM_DSM_TRANSPORT_STATUS _IOR(KVMIO, 0xf8, struct kvm_dsm_transport_status)
++
+ /**
+  * struct kvm_dsm_memcpy - Parameters for DSM memory copy between guest and userspace.
+  *
+--- a/arch/x86/kvm/ktcp.h
++++ b/arch/x86/kvm/ktcp.h
+@@ -24,6 +24,19 @@
+ struct tx_add;
+ typedef struct tx_add tx_add_t;
+ struct ktcp_cb;
++struct kvm;
++
++/* 由 fetch 的栈持有，登记至结束期间不能提前销毁；字段由连接接收锁保护。 */
++struct ktcp_transaction {
++	struct kvm *kvm;
++	void *response;
++	u16 id;
++	bool received;
++};
++
++int ktcp_begin_transaction(struct ktcp_cb *cb, struct kvm *kvm,
++			   struct ktcp_transaction *tx);
++void ktcp_end_transaction(struct ktcp_cb *cb, struct ktcp_transaction *tx);
+ 
+ typedef u32 extent_t;
+ 
+--- a/arch/x86/kvm/dsm-util.h
++++ b/arch/x86/kvm/dsm-util.h
+@@ -42,6 +42,10 @@
+ extern struct kvm_network_ops network_ops;
+ 
+ void kvm_dsm_fail(struct kvm *kvm, int error);
++int kvm_dsm_exchange_begin(struct kvm *kvm);
++void kvm_dsm_exchange_done(struct kvm *kvm);
++void kvm_dsm_cache_count(struct kvm *kvm, bool add);
++void kvm_dsm_request_count(struct kvm *kvm, bool add);
+ 
+ struct dsm_address {
+ 	const char *host;
+@@ -74,20 +78,6 @@
+ void kvm_dsm_apply_access_right(struct kvm *kvm,
+ 				struct kvm_dsm_memory_slot *slot, hfn_t vfn,
+ 				unsigned long dsm_access);
+-
+-static inline u16 generate_txid(struct kvm *kvm, u16 dest_id)
+-{
+-	/* TODO: currently only 4 nodes are supported here. */
+-	static atomic_t id[44] = { ATOMIC_INIT(0) };
+-
+-	u16 r = 0;
+-
+-	do {
+-		r = (u16)atomic_add_return(1, &id[kvm->arch.dsm_id * 10 + dest_id]);
+-	} while (r == 0xFF);
+-
+-	return r;
+-}
+ 
+ static inline u32 jhash32(const void *s, int n)
+ {
