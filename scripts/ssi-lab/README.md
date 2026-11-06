@@ -21,6 +21,8 @@ TCP 版本不能与共享内存分支混配。使用上游源码地址，不使�
 
 `probe-dsm-request.c` 保持空 VM 打开并按命令延迟注册一页内存；`probe-request-cancel.py` 发送完整读页请求，跟踪接收、线程定向信号与退出；`check-request-cancel.py` 检查无需补注册的取消和正常读页对照。PF10 的限定修复见 [请求取消实验](../../docs/ssi-request-cancel.md)，不覆盖页面锁等待与异常报文资源回收。
 
+`probe-request-safety.py` 在 PF11 上发送十五类异常请求，并用受控对端制造同页锁竞争；`check-request-safety.py` 从真实分配/释放、锁、SRCU 和线程事件重算验收。先看 [异常请求与页面锁实验](../../docs/ssi-request-safety.md)，再运行探针；不能把异常超长帧发送给未修复的旧内核。
+
 ```sh
 git init GVM-kernel
 git -C GVM-kernel remote add origin https://github.com/GiantVM/GVM-kernel.git

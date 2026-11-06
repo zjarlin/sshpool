@@ -1,0 +1,272 @@
+--- a/arch/x86/kvm/ktcp.c
++++ b/arch/x86/kvm/ktcp.c
+@@ -106,11 +106,15 @@
+ 	struct ktcp_hdr hdr;
+ 	char *local_buffer;
+ 
++	if (length > PAGE_SIZE)
++		return -EMSGSIZE;
++
+ 	if (mutex_lock_killable(&cb->slock))
+ 		return -EINTR;
+ 	hdr.tx_add = *tx_add;
+ 	hdr.length = sizeof(hdr) + length;
+-	local_buffer = kmalloc(KTCP_BUFFER_SIZE, GFP_KERNEL);
++	/* 固定帧的未使用尾部必须清零，不能把旧堆内容发送给对端。 */
++	local_buffer = kzalloc(KTCP_BUFFER_SIZE, GFP_KERNEL);
+ 	if (!local_buffer) {
+ 		mutex_unlock(&cb->slock);
+ 		return -ENOMEM;
+@@ -159,13 +163,18 @@
+ }
+ 
+ static int build_ktcp_recv_output(ktcp_msg_t msg, char *buffer,
+-				  tx_add_t *tx_add)
++				  size_t capacity, tx_add_t *tx_add)
+ {
+ 	size_t real_length;
+ 	struct ktcp_hdr hdr;
+ 
+ 	memcpy(&hdr, (char *)msg.recv_buf, sizeof(struct ktcp_hdr));
+ 	real_length = hdr.length - sizeof(struct ktcp_hdr);
++	/* 新收到与事务缓存中的帧共用此边界，复制前拒绝超容量报文。 */
++	if (real_length > capacity) {
++		kfree(msg.recv_buf);
++		return -EMSGSIZE;
++	}
+ 	memcpy(buffer, (char *)msg.recv_buf + sizeof(struct ktcp_hdr),
+ 	       real_length);
+ 	*tx_add = hdr.tx_add;
+@@ -225,8 +234,8 @@
+ 	return len;
+ }
+ 
+-int ktcp_receive(struct ktcp_cb *cb, char *buffer, unsigned long flags,
+-		 tx_add_t *tx_add)
++int ktcp_receive(struct ktcp_cb *cb, char *buffer, size_t capacity,
++		 unsigned long flags, tx_add_t *tx_add)
+ {
+ 	struct ktcp_hdr hdr;
+ 	int ret;
+@@ -245,7 +254,7 @@
+ 		goto out;
+ 	}
+ 	if (search_recv_buf(cb, tx_add->txid, &msg)) {
+-		ret = build_ktcp_recv_output(msg, buffer, tx_add);
++		ret = build_ktcp_recv_output(msg, buffer, capacity, tx_add);
+ 		mutex_unlock(&cb->rlock);
+ 		return ret;
+ 	}
+@@ -300,11 +309,11 @@
+ 		usec_sleep = 0;
+ 		goto repoll;
+ 	} else {
+-		build_ktcp_recv_output(msg, buffer, tx_add);
++		ret = build_ktcp_recv_output(msg, buffer, capacity, tx_add);
+ 	}
+ out:
+ 	mutex_unlock(&cb->rlock);
+-	return ret < 0 ? ret : hdr.length - sizeof(struct ktcp_hdr);
++	return ret;
+ }
+ 
+ static int ktcp_create_cb(struct ktcp_cb **cbp)
+--- a/arch/x86/kvm/ktcp.h
++++ b/arch/x86/kvm/ktcp.h
+@@ -30,8 +30,8 @@
+ int ktcp_send(struct ktcp_cb *cb, const char *buffer, size_t length,
+ 	      unsigned long flags, const tx_add_t *tx_add);
+ 
+-int ktcp_receive(struct ktcp_cb *cb, char *buffer, unsigned long flags,
+-		 tx_add_t *tx_add);
++int ktcp_receive(struct ktcp_cb *cb, char *buffer, size_t capacity,
++		 unsigned long flags, tx_add_t *tx_add);
+ 
+ int ktcp_connect(const char *host, u16 port, struct ktcp_cb **conn_cb);
+ 
+--- a/arch/x86/kvm/dsm-util.h
++++ b/arch/x86/kvm/dsm-util.h
+@@ -29,8 +29,8 @@
+ struct kvm_network_ops {
+ 	int (*send)(kconnection_t *conn, const char *buf, size_t len,
+ 		    unsigned long flags, const tx_add_t *tx_add);
+-	int (*receive)(kconnection_t *conn, char *buf, unsigned long flags,
+-		       tx_add_t *tx_add);
++	int (*receive)(kconnection_t *conn, char *buf, size_t capacity,
++		       unsigned long flags, tx_add_t *tx_add);
+ 	int (*connect)(const char *host, u16 port, kconnection_t **conn);
+ 	int (*listen)(const char *host, u16 port, kconnection_t **conn);
+ 	int (*accept)(kconnection_t *listen_conn, kconnection_t **accept_conn,
+@@ -150,6 +150,7 @@
+ 
+ void dsm_lock(struct kvm *kvm, struct kvm_dsm_memory_slot *slot,
+ 	      hfn_t vfn, struct kvm_memory_slot *memslot);
++int dsm_lock_killable(struct kvm_dsm_memory_slot *slot, hfn_t vfn);
+ void dsm_unlock(struct kvm *kvm, struct kvm_dsm_memory_slot *slot,
+ 		hfn_t vfn, struct kvm_memory_slot *memslot);
+ int dsm_trylock(struct kvm *kvm, struct kvm_dsm_memory_slot *slot, hfn_t vfn);
+--- a/arch/x86/kvm/dsm-util.c
++++ b/arch/x86/kvm/dsm-util.c
+@@ -115,6 +115,12 @@
+ 	      struct kvm_memory_slot *memslot)
+ {
+ 	return mutex_lock(&slot->vfn_dsm_state[vfn - slot->base_vfn].lock);
++}
++
++/* 接收线程等待页面所有权时允许根线程取消；失败时调用者未持有锁。 */
++int dsm_lock_killable(struct kvm_dsm_memory_slot *slot, hfn_t vfn)
++{
++	return mutex_lock_killable(&slot->vfn_dsm_state[vfn - slot->base_vfn].lock);
+ }
+ 
+ void dsm_unlock(struct kvm *kvm, struct kvm_dsm_memory_slot *slot, hfn_t vfn,
+--- a/arch/x86/kvm/ivy.c
++++ b/arch/x86/kvm/ivy.c
+@@ -72,7 +72,7 @@
+ 	unsigned char msg_sender;
+ 	gfn_t gfn;
+ 	unsigned char req_type;
+-	bool is_smm;
++	unsigned char is_smm;
+ 
+ 	/*
+ 	 * If version of two pages in different nodes are the same, the contents
+@@ -139,10 +139,10 @@
+ 
+ 	retry_cnt = 0;
+ 	if (req->req_type == DSM_REQ_INVALIDATE) {
+-		ret = network_ops.receive(*conn_sock, data, 0, &tx_add);
++		ret = network_ops.receive(*conn_sock, data, sizeof(u8), 0, &tx_add);
+ 	} else {
+ retry:
+-		ret = network_ops.receive(*conn_sock, data, SOCK_NONBLOCK,
++		ret = network_ops.receive(*conn_sock, data, PAGE_SIZE, SOCK_NONBLOCK,
+ 					  &tx_add);
+ 		if (ret == -EAGAIN) {
+ 			retry_cnt++;
+@@ -166,11 +166,6 @@
+ 		"dsm: kvm[%d] received response[0x%x] from kvm[%d] req_type[%s] gfn[0x%llx,%d], ret=%d",
+ 		kvm->arch.dsm_id, tx_add.txid, dest_id, req_desc[req->req_type],
+ 		req->gfn, req->is_smm, ret);
+-	const u8 *data_u8 = data;
+-
+-	pr_devel("dsm: data content: %02x %02x %02x %02x %02x %02x %02x %02x\n",
+-		 data_u8[0], data_u8[1], data_u8[2], data_u8[3], data_u8[4],
+-		 data_u8[5], data_u8[6], data_u8[7]);
+ 	return ret;
+ }
+ 
+@@ -224,7 +219,7 @@
+ 				     hfn_t vfn, char *page, tx_add_t *tx_add)
+ {
+ 	int ret = 0;
+-	char r;
++	char r = 0;
+ 
+ 	if (dsm_is_pinned(slot, vfn) && !kvm->arch.dsm_stopped) {
+ 		*retry = true;
+@@ -545,17 +540,20 @@
+ 			goto out;
+ 		}
+ 
+-		len = network_ops.receive(conn_sock, (char *)&req, 0, &tx_add);
+-		if (WARN_ON_ONCE(len > 0 && len != sizeof(struct dsm_request)))
+-			return -EINVAL;
+-
+-		if (len <= 0) {
++		len = network_ops.receive(conn_sock, (char *)&req, sizeof(req),
++					  0, &tx_add);
++		if (len < 0) {
+ 			ret = len;
+ 			goto out;
+ 		}
+-
+-		if (WARN_ON_ONCE(req.requester == kvm->arch.dsm_id))
+-			continue;
++		/* 完整帧也可能携带无效请求；在索引数组和获取 SRCU 前验证。 */
++		if (len != sizeof(req) || req.req_type >= ARRAY_SIZE(req_desc) ||
++		    req.is_smm > 1 || req.requester >= kvm->arch.cluster_iplist_len ||
++		    req.msg_sender >= kvm->arch.cluster_iplist_len ||
++		    req.requester == kvm->arch.dsm_id) {
++			ret = -EPROTO;
++			goto out;
++		}
+ 
+ retry_handle_req:
+ 		/* 缺失内存槽或页面状态重试也必须响应根线程发出的取消。 */
+@@ -598,8 +596,10 @@
+ 			dsm_get_version(slot, vfn));
+ 
+ 		if (WARN_ON_ONCE(dsm_is_initial(slot, vfn) &&
+-				 dsm_get_prob_owner(slot, vfn) != 0))
+-			continue;
++				 dsm_get_prob_owner(slot, vfn) != 0)) {
++			ret = -EINVAL;
++			goto out_srcu;
++		}
+ 		/*
+ 		 * All #PF transactions begin with acquiring owner's (global visble)
+ 		 * dsm_lock. Since only owner can issue DSM_REQ_INVALIDATE, there's no
+@@ -608,8 +608,16 @@
+ 		 * If the thread waits for the lock for too long, just buffer the
+ 		 * request and finds whether there's some more requests.
+ 		 */
+-		if (req.req_type != DSM_REQ_INVALIDATE)
+-			dsm_lock(kvm, slot, vfn, NULL);
++		if (req.req_type != DSM_REQ_INVALIDATE) {
++			ret = dsm_lock_killable(slot, vfn);
++			if (ret)
++				goto out_srcu;
++			/* 取消与获得锁可能竞态，成功取锁后也不再发起新事务。 */
++			if (kthread_should_stop() || fatal_signal_pending(current)) {
++				ret = -EINTR;
++				goto out_unlock;
++			}
++		}
+ 
+ 		switch (req.req_type) {
+ 		case DSM_REQ_INVALIDATE:
+@@ -638,8 +646,9 @@
+ 			break;
+ 
+ 		default:
+-			if (WARN_ON_ONCE(1))
+-				return -EINVAL;
++			WARN_ON_ONCE(1);
++			ret = -EINVAL;
++			goto out_unlock;
+ 		}
+ 
+ 		/* Once a request has been completed, this node isn't owner then. */
+@@ -660,22 +669,20 @@
+ out_unlock:
+ 	if (req.req_type != DSM_REQ_INVALIDATE)
+ 		dsm_unlock(kvm, slot, vfn, NULL);
++out_srcu:
+ 	srcu_read_unlock(&kvm->srcu, idx);
+ out:
+ 	kfree(page);
+-	/* return zero since we quit voluntarily */
+-	if (kvm->arch.dsm_stopped) {
++	/* 只将本地主动停止产生的取消归为正常退出，协议错误不能被关机掩盖。 */
++	if (kvm->arch.dsm_stopped && (ret == -EINTR || ret == -EPIPE)) {
+ 		ret = 0;
+-	} else {
++	}
++	if (ret) {
+ 		get_task_comm(comm, current);
+-		dsm_debug("kvm[%d] %s exited server loop, error %d\n",
+-			  kvm->arch.dsm_id, comm, ret);
+-	}
+-
+-	while (!kthread_should_stop()) {
+-		set_current_state(TASK_INTERRUPTIBLE);
+-		schedule();
+-	}
++		pr_err("kvm[%d] %s exited server loop, error %d\n",
++		       kvm->arch.dsm_id, comm, ret);
++	}
++	/* 根线程已在启动前持有 task 引用，允许错误线程先退出、稍后再 join。 */
+ 	return ret;
+ }
+ 

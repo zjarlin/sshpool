@@ -33,6 +33,12 @@ jobs:
           request_status=0
           "$RUNNER_TEMP/probe-dsm-request" kernel-must-not-match || request_status=$?
           test "$request_status" -eq 2
+          safety_status=0
+          python3 scripts/ssi-lab/probe-request-safety.py --worker "$RUNNER_TEMP/probe-dsm-request" \
+            --require-kernel kernel-must-not-match --mode malformed \
+            --output "$RUNNER_TEMP/safety-must-not-exist.json" || safety_status=$?
+          test "$safety_status" -eq 2
+          test ! -e "$RUNNER_TEMP/safety-must-not-exist.json"
           startup_status=0
           "$RUNNER_TEMP/probe-dsm-startup" kernel-must-not-match occupied || startup_status=$?
           test "$startup_status" -eq 2

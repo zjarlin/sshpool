@@ -38,12 +38,32 @@ Feature: SSI 传输等待与启动资源生命周期
     And 未取消的对照在延迟注册后返回相同事务号和完整正确页面
     And 两台节点上的事件计数完整且没有跟踪丢失
 
+  # evidence: docs/evidence/ssi-request-safety-20261106.json
+  @verified @p0
+  Scenario: 请求接收在复制前检查容量并拒绝无效字段
+    Given 独占实验 VM 接收十五种长度类型与节点字段异常的完整帧
+    When 超过二十四字节容量或请求字段非法
+    Then 返回 EMSGSIZE 或 EPROTO 且不获取 KVM SRCU 与页面锁
+    And 每个处理器的临时页面分配和释放均有配对的真实跟踪事件
+    And 同一 VM 仍能注册内存并返回正确页面和已清零的失效确认帧
+    And 两台节点的全部线程退出且临时跟踪和防火墙规则恢复
+
+  # evidence: docs/evidence/ssi-request-safety-20261106.json
+  @verified @p0
+  Scenario: 同页锁等待者可在持锁者等待远端响应时单独取消
+    Given 真实处理器持有页面锁并等待受控对端的响应
+    And 第二个处理器进入同一页面锁但尚未获得锁
+    When 仅向第二个处理器定向发送取消信号
+    Then 等待者在五百毫秒内返回 EINTR 并释放 SRCU 和临时页面
+    And 等待者没有解锁自己未持有的锁且先于持锁者释放完成退出
+    And 随后释放对端响应时持锁者仍返回完整正确页面
+
   @research @p0
-  Scenario: 页面锁和异常请求分支也能安全回收
-    Given 页面锁被其他请求持有或收到长度和类型异常的完整报文
+  Scenario: 更多异常事务与内部不变量分支也能安全回收
+    Given 事务缓存中的超长响应或超长失效确认或内部页面状态不一致
     When 请求被取消或协议校验失败
-    Then 页面锁等待应能中断且所有 SRCU 和页面锁均被释放
-    And 报文复制不能越过请求缓冲区且临时页面必须被回收
+    Then 独立故障注入应证明所有 SRCU 和页面锁均被释放
+    And 响应复制不能越过实际目标缓冲区且临时页面必须被回收
     And 错误保留给调用者而不伪装为成功
 
   # evidence: docs/evidence/ssi-teardown-20261106.json
