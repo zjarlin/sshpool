@@ -1,0 +1,194 @@
+--- a/arch/x86/kvm/dsm-util.h
++++ b/arch/x86/kvm/dsm-util.h
+@@ -54,6 +54,11 @@
+ 	struct kvm *kvm;
+ 	kconnection_t *sock;
+ 	struct task_struct *threads[NDSM_CONN_THREADS];
++	/* 接收与登记必须原子排序；在途计数直到响应及页锁/SRCU 释放后才减少。 */
++	struct mutex dispatch_lock;
++	atomic_t active_requests;
++	wait_queue_head_t drain_wait;
++	bool drain_seen;
+ };
+ 
+ /* mmu.c */
+--- a/arch/x86/kvm/dsm.c
++++ b/arch/x86/kvm/dsm.c
+@@ -518,6 +518,9 @@
+ 		}
+ 		conn->kvm = kvm;
+ 		conn->sock = accept_sock;
++		mutex_init(&conn->dispatch_lock);
++		atomic_set(&conn->active_requests, 0);
++		init_waitqueue_head(&conn->drain_wait);
+ 		/* 提前登记，部分线程创建失败也走相同的停止与回收路径。 */
+ 		list_add_tail(&conn->link, &conn_list);
+ 		for (i = 0; i < NDSM_CONN_THREADS; i++) {
+--- a/arch/x86/kvm/ivy.c
++++ b/arch/x86/kvm/ivy.c
+@@ -40,6 +40,7 @@
+ 	DSM_REQ_INVALIDATE,
+ 	DSM_REQ_READ,
+ 	DSM_REQ_WRITE,
++	DSM_REQ_DRAIN,
+ };
+ 
+ static char *req_desc[3] = { "INV", "READ", "WRITE" };
+@@ -521,6 +522,104 @@
+ 	return ret;
+ }
+ 
++/* 此确认只证明当前入站流已排空；全 VM 关闭仍需停止外部入口并协调反向连接。 */
++#define DSM_DRAIN_VERSION 1
++#define DSM_DRAIN_ACK_MAGIC 0x44534d44
++#define DSM_DRAIN_TIMEOUT (5 * HZ)
++
++struct dsm_drain_ack {
++	__le32 magic;
++	__le32 version;
++	__le16 sender;
++	__le16 target;
++	__le32 reserved;
++	__le64 generation;
++};
++
++static void dsm_request_done(struct dsm_conn *conn)
++{
++	atomic_dec(&conn->active_requests);
++	wake_up_all(&conn->drain_wait);
++}
++
++/* 持有 dispatch_lock 阻止后续帧越过屏障，但不占用页锁或 SRCU。 */
++static int dsm_drain_request(struct dsm_conn *conn,
++			     const struct dsm_request *req, tx_add_t *tx_add)
++{
++	struct kvm *kvm = conn->kvm;
++	struct dsm_drain_ack ack = {
++		.magic = cpu_to_le32(DSM_DRAIN_ACK_MAGIC),
++		.version = cpu_to_le32(DSM_DRAIN_VERSION),
++		.sender = cpu_to_le16(kvm->arch.dsm_id),
++		.target = cpu_to_le16(req->requester),
++		.generation = cpu_to_le64(req->gfn),
++	};
++	long waited;
++	int ret;
++
++	if (req->version != DSM_DRAIN_VERSION || !req->gfn || req->is_smm ||
++	    req->msg_sender != req->requester || tx_add->txid == 0xff)
++		return -EPROTO;
++
++	conn->drain_seen = true;
++	pr_info("DSM_DRAIN_BEGIN node=%d peer=%u generation=%llu active=%d\n",
++		kvm->arch.dsm_id, req->requester, req->gfn,
++		atomic_read(&conn->active_requests));
++	waited = wait_event_killable_timeout(conn->drain_wait,
++		!atomic_read(&conn->active_requests) ||
++		READ_ONCE(kvm->arch.dsm_error) || READ_ONCE(kvm->arch.dsm_stopped),
++		DSM_DRAIN_TIMEOUT);
++	ret = READ_ONCE(kvm->arch.dsm_error);
++	if (ret)
++		return ret;
++	if (waited < 0 || READ_ONCE(kvm->arch.dsm_stopped))
++		return -EINTR;
++	if (!waited)
++		return -ETIMEDOUT;
++
++	/* 不沿用请求携带的页版本和副本集合；确认体只有本连接的关联信息。 */
++	tx_add->inv_copyset = 0;
++	tx_add->version = 0;
++	ret = network_ops.send(conn->sock, (const char *)&ack, sizeof(ack), 0, tx_add);
++	if (ret < 0)
++		return ret;
++	pr_info("DSM_DRAIN_ACK node=%d peer=%u generation=%llu active=%d\n",
++		kvm->arch.dsm_id, req->requester, req->gfn,
++		atomic_read(&conn->active_requests));
++	return 0;
++}
++
++/* 正数交给页面处理器，零表示屏障已确认，负数保留故障语义。 */
++static int dsm_receive_request(struct dsm_conn *conn, struct dsm_request *req,
++			       tx_add_t *tx_add)
++{
++	struct kvm *kvm = conn->kvm;
++	int ret;
++
++	if (mutex_lock_killable(&conn->dispatch_lock))
++		return -EINTR;
++	ret = network_ops.receive(conn->sock, (char *)req, sizeof(*req), 0, tx_add);
++	if (ret < 0)
++		goto out;
++	/* 屏障后不接受页面请求或第二个标记；EOF 也仍由传输层报告故障。 */
++	if (conn->drain_seen || ret != sizeof(*req) ||
++	    req->req_type > DSM_REQ_DRAIN || req->is_smm > 1 ||
++	    req->requester >= kvm->arch.cluster_iplist_len ||
++	    req->msg_sender >= kvm->arch.cluster_iplist_len ||
++	    req->requester == kvm->arch.dsm_id) {
++		ret = -EPROTO;
++		goto out;
++	}
++	if (req->req_type == DSM_REQ_DRAIN) {
++		ret = dsm_drain_request(conn, req, tx_add);
++		goto out;
++	}
++	atomic_inc(&conn->active_requests);
++out:
++	mutex_unlock(&conn->dispatch_lock);
++	return ret;
++}
++
+ int ivy_kvm_dsm_handle_req(void *data)
+ {
+ 	int ret = 0, idx;
+@@ -532,7 +631,7 @@
+ 	struct kvm_memory_slot *memslot;
+ 	struct kvm_dsm_memory_slot *slot;
+ 	struct dsm_request req;
+-	bool retry = false;
++	bool retry = false, active_request = false;
+ 	hfn_t vfn;
+ 	char comm[TASK_COMM_LEN];
+ 
+@@ -559,20 +658,14 @@
+ 			goto out;
+ 		}
+ 
+-		len = network_ops.receive(conn_sock, (char *)&req, sizeof(req),
+-					  0, &tx_add);
++		len = dsm_receive_request(conn, &req, &tx_add);
+ 		if (len < 0) {
+ 			ret = len;
+ 			goto out;
+ 		}
+-		/* 完整帧也可能携带无效请求；在索引数组和获取 SRCU 前验证。 */
+-		if (len != sizeof(req) || req.req_type >= ARRAY_SIZE(req_desc) ||
+-		    req.is_smm > 1 || req.requester >= kvm->arch.cluster_iplist_len ||
+-		    req.msg_sender >= kvm->arch.cluster_iplist_len ||
+-		    req.requester == kvm->arch.dsm_id) {
+-			ret = -EPROTO;
+-			goto out;
+-		}
++		if (!len)
++			continue;
++		active_request = true;
+ 
+ retry_handle_req:
+ 		/* 缺失内存槽或页面状态重试也必须响应根线程发出的取消。 */
+@@ -684,6 +777,8 @@
+ 			schedule();
+ 			goto retry_handle_req;
+ 		}
++		dsm_request_done(conn);
++		active_request = false;
+ 	}
+ out_unlock:
+ 	if (req.req_type != DSM_REQ_INVALIDATE)
+@@ -702,6 +797,9 @@
+ 		pr_err("kvm[%d] %s exited server loop, error %d\n",
+ 		       kvm->arch.dsm_id, comm, ret);
+ 	}
++	/* 错误必须先锁存，避免最后一个失败请求释放计数后屏障误报成功。 */
++	if (active_request)
++		dsm_request_done(conn);
+ 	/* 根线程已在启动前持有 task 引用，允许错误线程先退出、稍后再 join。 */
+ 	return ret;
+ }

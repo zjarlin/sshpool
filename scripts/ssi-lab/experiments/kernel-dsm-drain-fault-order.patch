@@ -1,0 +1,13 @@
+--- a/arch/x86/kvm/ivy.c
++++ b/arch/x86/kvm/ivy.c
+@@ -616,6 +616,10 @@
+ 	}
+ 	atomic_inc(&conn->active_requests);
+ out:
++	/* 先锁存流内错误再允许下一读者进入，避免后续屏障越过已识别的故障。 */
++	if (ret < 0 && !(READ_ONCE(kvm->arch.dsm_stopped) &&
++			 (ret == -EINTR || ret == -EPIPE)))
++		kvm_dsm_fail(kvm, ret);
+ 	mutex_unlock(&conn->dispatch_lock);
+ 	return ret;
+ }
