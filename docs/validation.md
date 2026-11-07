@@ -61,6 +61,25 @@ scripts/check-ssh-parity.sh 2222 2223      # 入口端口、直连端口；输�
 
 从统一 SSH 工作台执行 `cargo build --offline --release`，通过项目配置和 Cargo shim 提交 ARM64 Rust Alpine 镜像。任务以 UID 65534 执行，在容器内完成编译。通过 `fetch` 在全新目录回取可执行文件并实际运行，输出目标架构 aarch64。
 
+2026-11-07 把这条链路写成可复跑的 `#[ignore]` 测试（`tests/shim_live.rs`）。它走真实二进制 `CARGO_BIN_EXE_sshpool shim cargo -- build --release --offline`，不直接调用 `runner`：
+
+| 断言 | 实测（`sshpool-anchor`，linux/arm64，rust:1.93-alpine） |
+| --- | --- |
+| shim 退出码与任务终态 | 0 / `succeeded`，`exit_code=0` |
+| 原命令逐字下发 | `build.command == [cargo, build, --release, --offline]`，没有重写 |
+| 非 root 执行 | 构建脚本在容器内读到 `id -u` = 65534 |
+| 架构 | 容器内 `uname -m` 映射后等于请求平台 |
+| 真实产物 | `target/release/demo` 的 ELF `e_machine` = 0xb7（aarch64）/ 0x3e（amd64） |
+| 回取后可执行 | 把回取的二进制重新上传到 Worker 执行，输出 `sshpool-demo`、退出码 0 |
+| 清理 | `cleanup_confirmed=true`，按任务标签查询容器数为 0 |
+| 不劫持普通命令 | 在无项目目录执行 `cargo --version` 成功且不产生新任务 |
+
+这轮还修掉一个真实缺陷：`shim` 回退到本机工具时先 `canonicalize` 了 `~/.sshpool/bin`，**从未执行过 `install-shims` 的用户没有这个目录**，于是 `cargo --version` 之类的普通调用直接报 `No such file or directory`，而不是落到本机工具。现在目录缺失时只按原样路径比较，不再报错。
+
+证据文件：[evidence/shim-20261107.json](evidence/shim-20261107.json)。
+
+边界：`okm182-lan` 上没有 Rust 工具链镜像，测试在该节点显式 `skipped` 而不是失败——缺镜像不等于 shim 有缺陷。x86_64 架构的 ELF 断言目前只在物理 Worker 的手工验收里（见 `physical-host-and-build-proof`）出现过，`shim_live` 尚未在 x86 节点实跑。
+
 ## jobs
 
 ARM64 的 shell 任务已完成日志、退出码、产物导出与清理闭环。x86_64 shell 命令已实际执行并输出正确架构；曾发生远端 Docker 清理超时，控制面记录 interrupted、禁止重试并隔离节点。之后独立确认该任务容器已不存在。

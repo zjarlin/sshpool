@@ -71,11 +71,19 @@ pub fn route(cwd: &Path, tool: &str, arguments: &[String]) -> Result<Route> {
 /// 从 `PATH` 找到第一个不在 shim 目录里的同名工具。
 ///
 /// 必须跳过 shim 目录本身，否则 `install-shims` 后的 `PATH` 会让 shim 递归 exec 自己。
+/// `shims` 允许不存在：从未执行过 `install-shims` 的用户也会走到本机回退，
+/// 此时对空目录做 canonicalize 会直接报错，把「本机 cargo 跑不了」变成整个 shim 失败。
 pub fn local_binary(tool: &str, path: &OsStr, shims: &Path) -> Option<PathBuf> {
+    let shims = canonical_or_self(shims);
     std::env::split_paths(path)
-        .filter(|directory| directory.canonicalize().ok().as_deref() != Some(shims))
+        .filter(|directory| canonical_or_self(directory) != shims)
         .map(|directory| directory.join(tool))
         .find(|binary| binary.is_file())
+}
+
+/// 目录存在时取真实路径，不存在时用原样路径；只用于比较，不创建任何东西。
+fn canonical_or_self(path: &Path) -> PathBuf {
+    path.canonicalize().unwrap_or_else(|_| path.to_path_buf())
 }
 
 #[cfg(test)]
@@ -230,12 +238,17 @@ mod tests {
         fs::create_dir(&real)?;
         fs::write(real.join("make"), "#!/bin/sh\n")?;
         let path = std::env::join_paths([shims.as_path(), real.as_path()])?;
-        let found = local_binary("make", &path, &shims.canonicalize()?)
-            .expect("the real tool must be found");
+        let found = local_binary("make", &path, &shims).expect("the real tool must be found");
         assert_eq!(found, real.join("make"));
         // 只存在 shim 时必须判定「本机没有工具」，交给上层报错而不是递归。
         let only_shims = OsString::from(shims.as_os_str());
-        assert!(local_binary("make", &only_shims, &shims.canonicalize()?).is_none());
+        assert!(local_binary("make", &only_shims, &shims).is_none());
+        // 从未 install-shims 的用户：bin 目录不存在也必须能继续回退，而不是报错。
+        let missing = home.path().join("no-such-bin");
+        assert!(
+            local_binary("make", &path, &missing).is_some(),
+            "a missing shim directory must not break the local fallback"
+        );
         Ok(())
     }
 }

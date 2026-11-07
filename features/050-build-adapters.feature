@@ -1,8 +1,8 @@
 Feature: 常用构建命令接入统一工作台
   项目必须显式加入，普通 shell 命令仍在工作台运行。
 
-  # evidence: docs/validation.md#rust
-  @verified @manual @p0
+  # evidence: tests/shim_live.rs::the_cargo_shim_runs_an_isolated_build_and_returns_real_artifacts
+  @verified @automated @p0
   Scenario: 原命令触发隔离 Rust 构建
     Given 项目配置与 Cargo shim 已安装
     When 从统一 SSH 会话执行 cargo build

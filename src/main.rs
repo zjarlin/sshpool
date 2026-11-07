@@ -665,7 +665,7 @@ async fn shim(cli: &Cli, home: &std::path::Path, tool: &str, arguments: &[String
     }
     let path = std::env::var_os("PATH").context("PATH is missing")?;
     // shim 目录必须排除：否则 install-shims 之后 shim 会无限递归 exec 自己。
-    let shims = home.join("bin").canonicalize()?;
+    let shims = home.join("bin");
     let binary = sshpool::shim::local_binary(tool, &path, &shims)
         .with_context(|| format!("no local {tool} found outside sshpool shims"))?;
     let status = tokio::process::Command::new(binary)
