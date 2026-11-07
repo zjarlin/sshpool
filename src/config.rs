@@ -102,7 +102,39 @@ pub struct Node {
     pub max_load_per_cpu: f64,
     #[serde(default)]
     pub priority: i32,
+    /// 宿主业务预算：超预算时这台节点暂停接单。
+    ///
+    /// 默认全部关闭，保持既有部署的调度行为不变；显式打开后缺测量一律按
+    /// 「超预算」处理 —— 没测过不等于健康。
+    #[serde(default)]
+    pub slo: Slo,
 }
+
+/// 宿主业务的资源预算。每一项都是「最多允许到达多少」，不是「还剩多少」。
+///
+/// `None` 表示不设这项门槛。设置之后若探测拿不到对应数字（老内核没有 PSI、
+/// 平台不提供 swap），调度按超预算拒绝，而不是当成 0 放行。
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct Slo {
+    /// 已用 swap 的上限（MiB）。swap 被大量占用意味着内存已经在换页，
+    /// 再加构建负载会把业务拖进更深的抖动。
+    pub max_swap_used_mib: Option<u64>,
+    /// 内存 PSI `some avg10` 的上限（百分比，0–100）。它衡量「有多少时间
+    /// 至少有一个任务在等内存」，比单点可用内存更能反映业务是否已在受挤压。
+    pub max_memory_pressure_percent: Option<f64>,
+    /// IO PSI `some avg10` 的上限（百分比，0–100）。
+    pub max_io_pressure_percent: Option<f64>,
+}
+
+impl Slo {
+    pub fn is_empty(&self) -> bool {
+        self.max_swap_used_mib.is_none()
+            && self.max_memory_pressure_percent.is_none()
+            && self.max_io_pressure_percent.is_none()
+    }
+}
+
 fn yes() -> bool {
     true
 }
@@ -409,6 +441,22 @@ pub fn validate_node(node: &Node) -> Result<()> {
         node.max_load_per_cpu.is_finite() && node.max_load_per_cpu > 0.0,
         "invalid max_load_per_cpu"
     );
+    for (label, value) in [
+        (
+            "max_memory_pressure_percent",
+            node.slo.max_memory_pressure_percent,
+        ),
+        ("max_io_pressure_percent", node.slo.max_io_pressure_percent),
+    ] {
+        if let Some(value) = value {
+            // PSI 的 avg10 本来就是 0–100 的百分比；写出 100 以上只会让人以为
+            // 门槛被放宽了，实际永远不会触发。
+            ensure!(
+                value.is_finite() && (0.0..=100.0).contains(&value),
+                "invalid {label}: must be 0..=100"
+            );
+        }
+    }
     Ok(())
 }
 pub fn atomic_write(path: &Path, bytes: &[u8]) -> Result<()> {

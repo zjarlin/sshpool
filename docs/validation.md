@@ -243,7 +243,40 @@ SSHPOOL_LIVE_NODE=okm182-lan \
 
 这轮实测发现并修复了一个真实缺陷：**Docker 对 `--tmpfs` 默认追加 `noexec`**，即使显式给了其他选项也照样加。此前 `/work` 因此不可执行，编译出的二进制和测试程序会直接 `Permission denied`（实测 exit 126）。现在 `/work` 显式带 `exec`（编译产物必须在里面跑），`/tmp` 保持 `noexec`，两者都由校验强制。
 
-资源过滤测试覆盖平台、内存、磁盘、CPU 负载、并发槽位和未知清理隔离。业务 SLO 压力矩阵仍未完成：并发构建对业务延迟、swap、磁盘水位的影响需要在业务主机上实测，不能据此承诺所有业务峰值下的 SLO。
+资源过滤测试覆盖平台、内存、磁盘、CPU 负载、并发槽位和未知清理隔离。
+
+## isolation-slo {#isolation-slo}
+
+业务 SLO 这一节只回答一个问题：**这台机器现在还该不该再接一单**。因此只做「可测量 + 可强制」的三项，其余明确不算实现。
+
+| 指标 | 来源 | 门槛字段 | 缺读数时 |
+| --- | --- | --- | --- |
+| 已用 swap | `/proc/meminfo` 的 `SwapTotal − SwapFree` | `slo.max_swap_used_mib` | `swap usage was not measured` → 拒单 |
+| 内存压力 | `/proc/pressure/memory` 的 `some avg10` | `slo.max_memory_pressure_percent` | `was not measured (no PSI support?)` → 拒单 |
+| IO 压力 | `/proc/pressure/io` 的 `some avg10` | `slo.max_io_pressure_percent` | 同上 → 拒单 |
+
+三条约定决定了它是「预算」而不是「建议」：
+
+1. **缺测量 ≠ 健康。** 探测拿不到数字时写 `null`，`Health::failed` 三项全是 `None`。配了门槛却读不到，直接拒绝接单，而不是按 0 放行——否则没开 PSI 的老内核等于绕过整个预算。
+2. **预算是硬过滤，不是排序分。** `business_budget_allows` 在 `scheduler::score` 末尾、平台检查之后调用；实测最快、`priority` 最高的机器如果超预算，照样出局（`an_over_budget_node_is_excluded_by_the_hard_filter_not_outranked`）。
+3. **默认全空。** 没配任何门槛时 `Slo::is_empty()` 直接 `Ok(())`，既有部署的调度行为一个字节都不变。
+
+拒绝文案会带上具体数字，例如 `live: business budget: swap used 32765 MiB exceeds 32764 MiB`，出现在任务的 `no eligible worker` 与 `/v1/status` 的对照里；指标侧另有 `sshpool_node_business_budget`（1/0），与 `sshpool_node_ready` 故意分开——前者答「还能不能再接一单」，后者答「探测成功且被启用」，合并会让「在线但已过载」显示成「掉线」。
+
+离线侧 `tests/boundaries.rs` 10 条覆盖边界值放行 / 超一单位拒绝、缺测量拒绝、老载荷反序列化、失败探测零测量、旧 `machine()` 无预算时行为不变、单台超预算不拖垮整池、百分比越界（101 / -0.1 / NaN）被 `validate_node` 拒绝。`tests/metrics.rs` 另有一条 `a_measured_but_over_budget_node_stays_ready_and_loses_business_budget` 固定「ready=1 且 business_budget=0」。
+
+真实链路 `tests/scheduling_live.rs::an_over_budget_host_stops_taking_work_before_any_container_exists`（`#[ignore]`）在 `okm182` 上把**实测值本身**当门槛基准，做双向对照：
+
+| 对照 | 门槛 | 结果 |
+| --- | --- | --- |
+| 低于实测 1 MiB | `32764` MiB | `Failed`，`attempts` 为空，消息含 `business budget: swap used 32765 MiB exceeds 32764 MiB`，本次任务创建容器数 = 0 |
+| 等于实测 | `32765` MiB | `Succeeded`，`exit_code=0`，`cleanup_confirmed=true` |
+
+两侧都验才算证据：只验拒绝无法排除「一律拒绝」，只验放行无法证明门槛真的读了读数。跑完 `docker ps -a` 里 sshpool 容器数为 0。读数与全部断言见 [evidence/isolation-slo-20261108.json](evidence/isolation-slo-20261108.json)。
+
+`okm182` 当次实测：`SwapTotal 33554428 KiB`、`SwapFree 2644 KiB` → **已用 32765 MiB，几乎耗尽**；内存 PSI `some avg10=0.00`；IO PSI `some avg10=0.17`；内核 `6.8.0-147-generic`（PSI 可用）。这三者并不矛盾，它们回答不同问题：swap 记的是历史堆积，PSI 记的是**此刻**有多少时间在等资源。所以「swap 快满了但内存 PSI 仍是 0」是正常状态——如果只配 swap 门槛，这台机器几乎永远拒单；真正想表达「业务被挤压就停」应配 memory / io PSI。
+
+边界：**业务延迟与错误率没有实现**，那需要业务侧埋点或入口侧观测，本仓库没有定义业务流量，写一个「延迟预算」只会是自欺。磁盘水位仍只有既有的 `min_free_disk_mib` 一类硬过滤，没有独立的按业务水位配置的门槛。探测只读采样，不会为了判断预算去制造峰值负载，所以它也不能证明「所有业务峰值下 SLO 达标」——它只保证超预算时不再加码。macOS 没有 PSI 也没有等价 swap 读数，配了门槛就是拒单（这是期望行为，不是缺陷）。
 
 ## deployment
 
@@ -392,13 +425,15 @@ Prometheus 抓取走**独立的** `metrics_listen`（`config.toml`），默认�
 | `sshpool_job_queue_seconds{result}` | histogram | 提交到**第一次**被领取；从未领取不出样本 |
 | `sshpool_job_duration_seconds{result}` | histogram | 最后一次领取到终态（含远端清理） |
 | `sshpool_node_ready{node}` / `node_cpus` / `node_memory_available_mib` / `node_disk_available_mib` / `node_load` / `node_reserve_memory_mib` | gauge | 当前健康快照 |
+| `sshpool_node_swap_used_mib` / `node_memory_pressure_percent` / `node_io_pressure_percent` | gauge | 业务预算三项测量；**未测量时不出样本**（报 0 会被读成「很健康」） |
+| `sshpool_node_business_budget{node}` | gauge | 1=按当前预算允许接单，0=超预算或未测量；与 `node_ready` 故意分开 |
 | `sshpool_access_log_bytes{generation}` | gauge | 访问审计各代字节数；不存在的代次不出现 |
 
 失败分类**只看结构化字段**（`phase` + `exit_code`），不解析 `job.message` 的文案：`failed-before-exit` 是容器没给出退出码（调度、SSH、启动或超时未确认），`failed-exit-nonzero` 是跑完但退出码非零，`failed-after-exit` 是以 0 退出后失败（产物、清理、复制）。改提示文案不会改变任何分类。
 
 直方图是**累计桶** `5/30/120/600/1800/7200` 秒再加 `+Inf`，每个 `result` 分类都有完整的 `_bucket`/`_sum`/`_count` 三条，`+Inf` 恒等于 `_count`。没有样本的分类照报 0 桶，抓取端不用判断"这个分类存不存在"。
 
-节点探测失败（SSH 不可达、未探测过）时 `node_ready=0`，且 `node_cpus` / `memory_available_mib` / `disk_available_mib` / `node_load` 一律报 **0**，不沿用上一次快照 —— 旧数字会被误读成当前水位。`node_reserve_memory_mib` 是配置事实，探测失败照报。节点名按 Prometheus 规则转义 `\`、`"` 与换行：一个带引号的节点名不该能让整份 exposition 解析失败。
+节点探测失败（SSH 不可达、未探测过）时 `node_ready=0`，且 `node_cpus` / `memory_available_mib` / `disk_available_mib` / `node_load` 一律报 **0**，不沿用上一次快照 —— 旧数字会被误读成当前水位。`node_reserve_memory_mib` 是配置事实，探测失败照报。业务预算的三项测量反过来：探测失败或主机不提供该读数时**一条样本都不出**，因为 0 会被仪表盘读成「健康」；同一时刻 `node_business_budget` 是 0。`node_ready` 与 `node_business_budget` 回答不同问题 —— 一台探测正常但已过预算的机器是 `ready=1`、`business_budget=0`，合并会让「在线但过载」显示成「掉线」。节点名按 Prometheus 规则转义 `\`、`"` 与换行：一个带引号的节点名不该能让整份 exposition 解析失败。
 
 端点行为：
 

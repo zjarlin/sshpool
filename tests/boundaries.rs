@@ -134,6 +134,7 @@ fn node_and_health() -> (Node, Health) {
             reserve_disk_mib: 10240,
             max_load_per_cpu: 0.8,
             priority: 0,
+            slo: Default::default(),
         },
         Health {
             name: "worker".into(),
@@ -146,6 +147,9 @@ fn node_and_health() -> (Node, Health) {
             load: 1.0,
             runtime_memory_mib: 16000,
             runtime_arch: "x86_64".into(),
+            swap_used_mib: Some(0),
+            memory_pressure_percent: Some(0.0),
+            io_pressure_percent: Some(0.0),
             error: None,
         },
     )
@@ -548,6 +552,7 @@ fn worker(name: &str, priority: i32) -> Node {
         reserve_disk_mib: 0,
         max_load_per_cpu: 0.8,
         priority,
+        slo: Default::default(),
     }
 }
 
@@ -563,6 +568,9 @@ fn machine(name: &str, cpus: u32, load: f64) -> Health {
         load,
         runtime_memory_mib: 16000,
         runtime_arch: "x86_64".into(),
+        swap_used_mib: Some(0),
+        memory_pressure_percent: Some(0.0),
+        io_pressure_percent: Some(0.0),
         error: None,
     }
 }
@@ -895,4 +903,190 @@ fn one_pass_evidence_matches_per_node_lookup() {
             scheduler::expected_seconds(&jobs, &node.name, &build).as_ref()
         );
     }
+}
+
+// ---------------------------------------------------------------------------
+// 业务预算（060-isolation「业务 SLO 实测」）
+//
+// 判据是「还接不接单」，不是「数字好不好看」。这里刻意不测聚合指标，
+// 只看 `business_budget_allows` 与它让 `score` 给出的拒绝理由。
+// ---------------------------------------------------------------------------
+
+/// 给测试节点装上预算；`None` 的项保持不设门槛。
+fn budgeted(
+    max_swap_used_mib: Option<u64>,
+    memory: Option<f64>,
+    io: Option<f64>,
+) -> sshpool::config::Slo {
+    sshpool::config::Slo {
+        max_swap_used_mib,
+        max_memory_pressure_percent: memory,
+        max_io_pressure_percent: io,
+    }
+}
+
+/// 默认的 `node_and_health` 没有被任何预算约束：不设门槛就不能凭空拒绝。
+#[test]
+fn a_node_without_a_budget_keeps_taking_work() {
+    let (node, health) = node_and_health();
+    assert!(node.slo.is_empty());
+    assert_eq!(scheduler::business_budget_allows(&node, &health), Ok(()));
+    // 探测报出很差的数字也一样：没打开预算就不该改变现有调度行为。
+    let mut bad = health.clone();
+    bad.swap_used_mib = Some(30_000);
+    bad.memory_pressure_percent = Some(95.0);
+    bad.io_pressure_percent = Some(95.0);
+    assert_eq!(scheduler::business_budget_allows(&node, &bad), Ok(()));
+}
+
+/// 预算内放行，超出后拒绝，理由里两个数字都要出现。
+#[test]
+fn swap_usage_above_the_budget_stops_new_work() {
+    let (mut node, mut health) = node_and_health();
+    node.slo = budgeted(Some(512), None, None);
+    health.swap_used_mib = Some(512);
+    assert!(scheduler::business_budget_allows(&node, &health).is_ok());
+    health.swap_used_mib = Some(513);
+    let reason = scheduler::business_budget_allows(&node, &health).unwrap_err();
+    assert!(reason.contains("513"), "{reason}");
+    assert!(reason.contains("512"), "{reason}");
+}
+
+/// 没测到 swap 不等于「用了 0」：配了门槛就必须拒绝。
+#[test]
+fn an_unmeasured_swap_reading_cannot_prove_the_budget_is_fine() {
+    let (mut node, mut health) = node_and_health();
+    node.slo = budgeted(Some(4096), None, None);
+    health.swap_used_mib = None;
+    let reason = scheduler::business_budget_allows(&node, &health).unwrap_err();
+    assert!(reason.contains("not measured"), "{reason}");
+}
+
+/// PSI 是百分比：刚好卡在门槛上放行，超过一点就拒绝。
+#[test]
+fn pressure_at_the_budget_passes_and_above_it_refuses() {
+    let (mut node, mut health) = node_and_health();
+    node.slo = budgeted(None, Some(10.0), Some(20.0));
+    health.memory_pressure_percent = Some(10.0);
+    health.io_pressure_percent = Some(20.0);
+    assert!(scheduler::business_budget_allows(&node, &health).is_ok());
+
+    health.memory_pressure_percent = Some(10.01);
+    let reason = scheduler::business_budget_allows(&node, &health).unwrap_err();
+    assert!(reason.contains("memory pressure"), "{reason}");
+
+    health.memory_pressure_percent = Some(1.0);
+    health.io_pressure_percent = Some(20.5);
+    let reason = scheduler::business_budget_allows(&node, &health).unwrap_err();
+    assert!(reason.contains("io pressure"), "{reason}");
+}
+
+/// 老内核没有 PSI：配了门槛就没有证据，必须按拒绝处理而不是「默认 0」。
+#[test]
+fn a_kernel_without_psi_cannot_satisfy_a_pressure_budget() {
+    let (mut node, mut health) = node_and_health();
+    node.slo = budgeted(None, Some(5.0), None);
+    health.memory_pressure_percent = None;
+    let reason = scheduler::business_budget_allows(&node, &health).unwrap_err();
+    assert!(reason.contains("no PSI support"), "{reason}");
+}
+
+/// 预算失败必须是从 `score` 出来的硬过滤的同一类结果：
+/// 排序再快也不能越过它，而且不会被算成「另一台更快」。
+#[test]
+fn an_over_budget_node_is_excluded_by_the_hard_filter_not_outranked() {
+    let (mut node, mut health) = node_and_health();
+    let build = Build {
+        platform: "linux/amd64".into(),
+        ..Build::default()
+    };
+    node.slo = budgeted(Some(1024), None, None);
+    health.swap_used_mib = Some(1024 * 4);
+    let reason = scheduler::score(&node, &health, &build, &[]).unwrap_err();
+    assert!(
+        reason.contains("business budget"),
+        "the hard filter must say why: {reason}"
+    );
+    // 有实测也必须出局：预算是过滤条件，不是排序分。
+    let jobs = history("worker", &build, 5, 1);
+    let evidence = scheduler::Evidence::collect(&jobs, &build);
+    assert!(scheduler::rank(&node, &health, &build, &jobs, &evidence).is_err());
+}
+
+/// 预算只影响这台节点，不能把整池都停掉：另一台没超预算的仍可接单。
+#[test]
+fn one_over_budget_worker_does_not_take_the_pool_down() {
+    let build = Build {
+        platform: "linux/amd64".into(),
+        ..Build::default()
+    };
+    let mut healthy = worker("healthy", 0);
+    healthy.slo = budgeted(Some(4096), None, None);
+    let mut tight = worker("tight", 0);
+    tight.slo = budgeted(Some(4096), None, None);
+    let mut tight_health = machine("tight", 8, 1.0);
+    tight_health.swap_used_mib = Some(9000);
+    let health = vec![machine("healthy", 8, 1.0), tight_health];
+    let nodes = vec![healthy, tight];
+    assert_eq!(chosen(&nodes, &health, &build, &[]), "healthy");
+    let refused = scheduler::rank(
+        &nodes[1],
+        &health[1],
+        &build,
+        &[],
+        &scheduler::Evidence::collect(&[], &build),
+    )
+    .unwrap_err();
+    assert!(refused.contains("business budget"), "{refused}");
+}
+
+/// 探测失败时所有测量都是 `None`：预算之门默认关闭，绝不因为读不到就放行。
+#[test]
+fn a_failed_probe_reports_no_measurements_at_all() {
+    let health = Health::failed("dead", "ssh: connect timeout".into());
+    assert!(health.swap_used_mib.is_none());
+    assert!(health.memory_pressure_percent.is_none());
+    assert!(health.io_pressure_percent.is_none());
+    let (mut node, _) = node_and_health();
+    node.slo = budgeted(Some(1), Some(1.0), Some(1.0));
+    assert!(scheduler::business_budget_allows(&node, &health).is_err());
+}
+
+/// 缺字段的旧探测结果仍能反序列化：三项测量一律是 `None`（没测过），不是 0。
+#[test]
+fn an_old_probe_payload_loads_with_unmeasured_pressure() -> Result<()> {
+    let health: Health = serde_json::from_value(serde_json::json!({
+        "name": "worker",
+        "os": "linux",
+        "arch": "x86_64",
+        "cpus": 8,
+        "memory_available_mib": 8192,
+        "disk_available_mib": 40000,
+        "load": 0.5,
+        "runtime_memory_mib": 16000,
+        "runtime_arch": "x86_64",
+        "error": null
+    }))?;
+    assert!(health.swap_used_mib.is_none());
+    assert!(health.memory_pressure_percent.is_none());
+    assert!(health.io_pressure_percent.is_none());
+    // 老载荷 + 已配预算 = 拒绝，而不是因为缺字段被当成健康。
+    let (mut node, _) = node_and_health();
+    node.slo = budgeted(Some(0), None, None);
+    assert!(scheduler::business_budget_allows(&node, &health).is_err());
+    Ok(())
+}
+
+/// 预算数值本身要校验：百分比写 101 只会变成一个永远不触发的门槛。
+#[test]
+fn a_budget_outside_the_percentage_range_is_rejected() {
+    let (mut node, _) = node_and_health();
+    node.slo = budgeted(None, Some(101.0), None);
+    assert!(sshpool::config::validate_node(&node).is_err());
+    node.slo = budgeted(None, Some(-0.1), None);
+    assert!(sshpool::config::validate_node(&node).is_err());
+    node.slo = budgeted(None, None, Some(f64::NAN));
+    assert!(sshpool::config::validate_node(&node).is_err());
+    node.slo = budgeted(Some(0), Some(100.0), Some(100.0));
+    assert!(sshpool::config::validate_node(&node).is_ok());
 }

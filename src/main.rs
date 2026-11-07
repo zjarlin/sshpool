@@ -222,6 +222,15 @@ enum NodeAction {
         max_jobs: usize,
         #[arg(long, default_value_t = 0)]
         priority: i32,
+        /// 已用 swap 上限（MiB）；超出后该节点暂停接单。省略则不设门槛。
+        #[arg(long)]
+        max_swap_used_mib: Option<u64>,
+        /// 内存 PSI `some avg10` 上限（百分比，0–100）。
+        #[arg(long)]
+        max_memory_pressure_percent: Option<f64>,
+        /// IO PSI `some avg10` 上限（百分比，0–100）。
+        #[arg(long)]
+        max_io_pressure_percent: Option<f64>,
     },
     List,
     /// 在线恢复节点接单；不重启控制面。
@@ -792,6 +801,9 @@ async fn node_command(cli: &Cli, home: &std::path::Path, command: &NodeAction) -
             max_load_per_cpu,
             max_jobs,
             priority,
+            max_swap_used_mib,
+            max_memory_pressure_percent,
+            max_io_pressure_percent,
         } => {
             ensure!(
                 !config.nodes.iter().any(|node| node.name == *name),
@@ -808,6 +820,11 @@ async fn node_command(cli: &Cli, home: &std::path::Path, command: &NodeAction) -
                 reserve_disk_mib: *reserve_disk_mib,
                 max_load_per_cpu: *max_load_per_cpu,
                 priority: *priority,
+                slo: sshpool::config::Slo {
+                    max_swap_used_mib: *max_swap_used_mib,
+                    max_memory_pressure_percent: *max_memory_pressure_percent,
+                    max_io_pressure_percent: *max_io_pressure_percent,
+                },
             };
             config::validate_node(&node)?;
             config.nodes.push(node);

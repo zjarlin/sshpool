@@ -170,6 +170,7 @@ async fn wipe(target: &str, namespace: &str) -> Result<()> {
         reserve_disk_mib: 0,
         max_load_per_cpu: 1.0,
         priority: 0,
+        slo: Default::default(),
     };
     let source = format!(
         r#"import os,shutil

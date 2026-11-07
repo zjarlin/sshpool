@@ -16,6 +16,15 @@ pub struct Health {
     pub load: f64,
     pub runtime_memory_mib: u64,
     pub runtime_arch: String,
+    /// 已用 swap（MiB）。`None` = 这台主机没测到，不是「用了 0」。
+    #[serde(default)]
+    pub swap_used_mib: Option<u64>,
+    /// 内存 PSI `some avg10`（百分比）。内核没开 PSI 时为 `None`。
+    #[serde(default)]
+    pub memory_pressure_percent: Option<f64>,
+    /// IO PSI `some avg10`（百分比）。
+    #[serde(default)]
+    pub io_pressure_percent: Option<f64>,
     pub error: Option<String>,
 }
 impl Health {
@@ -31,6 +40,10 @@ impl Health {
             load: 0.0,
             runtime_memory_mib: 0,
             runtime_arch: String::new(),
+            // 探测失败一律「没测到」：`None` 会让任何已配置的 SLO 门槛拒绝接单。
+            swap_used_mib: None,
+            memory_pressure_percent: None,
+            io_pressure_percent: None,
             error: Some(error),
         }
     }

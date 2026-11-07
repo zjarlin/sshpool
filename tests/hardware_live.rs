@@ -55,6 +55,7 @@ fn node(name: &str, ssh: String, priority: i32) -> Node {
         reserve_disk_mib: 0,
         max_load_per_cpu: 100.0,
         priority,
+        slo: Default::default(),
     }
 }
 

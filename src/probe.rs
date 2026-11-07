@@ -18,7 +18,31 @@ info=json.loads(subprocess.check_output(['docker','info','--format','{{json .}}'
 if not all(info.get(flag) for flag in ['MemoryLimit','CpuCfsQuota','PidsLimit']): raise RuntimeError('container engine cannot enforce required cgroup limits')
 root=info.get('DockerRootDir') or os.path.expanduser('~')
 if not os.path.isdir(root): root=os.path.expanduser('~')
-print(json.dumps(dict(name='',os=system.lower(),arch=platform.machine(),cpus=min(os.cpu_count() or 1,info.get('NCPU',1)),memory_available_mib=available,disk_available_mib=shutil.disk_usage(root).free//1048576,load=os.getloadavg()[0],runtime_memory_mib=info['MemTotal']//1048576,runtime_arch=info['Architecture'],error=None)))
+
+# 业务预算的三项测量。没测到就是 None，绝不用 0 冒充「很健康」：
+# 调度一旦为某项配了门槛，None 会被判成超预算并暂停接单。
+def psi(resource, metric):
+    try:
+        for line in open('/proc/pressure/' + resource):
+            if line.startswith(metric + ' '):
+                for field in line.split():
+                    if field.startswith('avg10='):
+                        return float(field.split('=', 1)[1])
+    except OSError:
+        return None
+    return None
+
+swap_used = None
+if system == 'Linux':
+    try:
+        values = {l.split(':')[0]: int(l.split()[1])
+                  for l in open('/proc/meminfo') if ':' in l}
+        if 'SwapTotal' in values and 'SwapFree' in values:
+            swap_used = (values['SwapTotal'] - values['SwapFree']) // 1024
+    except OSError:
+        swap_used = None
+
+print(json.dumps(dict(name='',os=system.lower(),arch=platform.machine(),cpus=min(os.cpu_count() or 1,info.get('NCPU',1)),memory_available_mib=available,disk_available_mib=shutil.disk_usage(root).free//1048576,load=os.getloadavg()[0],runtime_memory_mib=info['MemTotal']//1048576,runtime_arch=info['Architecture'],swap_used_mib=swap_used,memory_pressure_percent=psi('memory','some'),io_pressure_percent=psi('io','some'),error=None)))
 PY"#;
 pub async fn node(node: &Node) -> Health {
     let result = async {

@@ -69,7 +69,57 @@ pub fn score(node: &Node, health: &Health, build: &Build, active: &[Job]) -> Res
     if build.platform != format!("linux/{}", platform_arch(&health.runtime_arch)) {
         return Err("platform mismatch (emulation is not selected automatically)".into());
     }
+    business_budget_allows(node, health)?;
     Ok(f64::from(node.priority) * 100.0 + f64::from(health.cpus) - health.load - cpus_reserved)
+}
+
+/// 业务预算的硬过滤。配置了门槛、却拿不到测量值，同样按拒绝处理。
+///
+/// 这里刻意把「没测到」和「超了」分开报，但两种都拒绝：把缺测量当成健康，
+/// 等于让没装 PSI 的老内核绕过整个预算；把缺测量当成 0 则会谎报资源充足。
+pub fn business_budget_allows(node: &Node, health: &Health) -> Result<(), String> {
+    if node.slo.is_empty() {
+        return Ok(());
+    }
+    if let Some(limit) = node.slo.max_swap_used_mib {
+        match health.swap_used_mib {
+            Some(used) if used <= limit => {}
+            Some(used) => {
+                return Err(format!(
+                    "business budget: swap used {used} MiB exceeds {limit} MiB"
+                ));
+            }
+            None => return Err("business budget: swap usage was not measured".into()),
+        }
+    }
+    for (label, limit, measured) in [
+        (
+            "memory pressure",
+            node.slo.max_memory_pressure_percent,
+            health.memory_pressure_percent,
+        ),
+        (
+            "io pressure",
+            node.slo.max_io_pressure_percent,
+            health.io_pressure_percent,
+        ),
+    ] {
+        let Some(limit) = limit else { continue };
+        match measured {
+            Some(value) if value <= limit => {}
+            Some(value) => {
+                return Err(format!(
+                    "business budget: {label} {value:.2}% exceeds {limit:.2}%"
+                ));
+            }
+            None => {
+                return Err(format!(
+                    "business budget: {label} was not measured (no PSI support?)"
+                ));
+            }
+        }
+    }
+    Ok(())
 }
 
 /// 一类任务：镜像、命令、平台和资源申请都相同。

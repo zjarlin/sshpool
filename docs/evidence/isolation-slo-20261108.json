@@ -1,0 +1,130 @@
+{
+  "checked_at": "2026-11-08T04:42:32+08:00",
+  "scope": "060 业务 SLO 实测：把「业务是否已经被压垮」变成调度可强制的判据。只做可测量且可强制的三项，业务延迟与错误率明确未实现。",
+  "entry": {
+    "offline": {
+      "tests": "tests/boundaries.rs",
+      "command": "cargo test --locked --test boundaries",
+      "why": "预算是纯函数 + 硬过滤，直接在 fixture 上断言「还接不接单」，不依赖 Docker",
+      "selected": [
+        "a_node_without_a_budget_keeps_taking_work",
+        "swap_usage_above_the_budget_stops_new_work",
+        "an_unmeasured_swap_reading_cannot_prove_the_budget_is_fine",
+        "pressure_at_the_budget_passes_and_above_it_refuses",
+        "a_kernel_without_psi_cannot_satisfy_a_pressure_budget",
+        "an_over_budget_node_is_excluded_by_the_hard_filter_not_outranked",
+        "one_over_budget_worker_does_not_take_the_pool_down",
+        "a_failed_probe_reports_no_measurements_at_all",
+        "an_old_probe_payload_loads_with_unmeasured_pressure",
+        "a_budget_outside_the_percentage_range_is_rejected"
+      ]
+    },
+    "metrics": {
+      "tests": "src/metrics.rs",
+      "command": "cargo test --locked --lib metrics",
+      "why": "证明 ready 与 business_budget 是两个不同的 gauge，且未测量时不出样本",
+      "selected": [
+        "gauges_report_queue_cleanup_and_resource_levels",
+        "a_measured_but_over_budget_node_stays_ready_and_loses_business_budget"
+      ]
+    },
+    "live": {
+      "test": "tests/scheduling_live.rs::an_over_budget_host_stops_taking_work_before_any_container_exists",
+      "command": "SSHPOOL_LIVE_NODE=okm182 cargo test --locked --test scheduling_live -- --ignored --nocapture --test-threads=1 an_over_budget",
+      "result": "1 passed in 36.17s",
+      "why": "真实主机上取它自己的 swap 读数当门槛基准，两侧各跑一次：低 1 MiB 必须拒单且远端 0 容器，等于实测值必须真跑完并清理"
+    }
+  },
+  "worker": {
+    "alias": "okm182",
+    "os": "linux",
+    "arch": "x86_64",
+    "cpus": 32,
+    "runtime_memory_mib": 100679,
+    "kernel": "6.8.0-147-generic",
+    "docker": "29.1.3"
+  },
+  "measurement_rule": {
+    "swap_used_mib": "/proc/meminfo 的 SwapTotal - SwapFree，向下取整到 MiB",
+    "memory_pressure_percent": "/proc/pressure/memory 的 some avg10",
+    "io_pressure_percent": "/proc/pressure/io 的 some avg10",
+    "missing_reading": "null，不是 0",
+    "fail_closed": "配了门槛却拿不到读数 → 拒绝接单（`was not measured`），不按 0 放行",
+    "where": "scheduler::score 末尾的硬过滤（business_budget_allows），排在平台检查之后、排序之前"
+  },
+  "refusal_reasons": [
+    "business budget: swap used {used} MiB exceeds {limit} MiB",
+    "business budget: swap usage was not measured",
+    "business budget: {label} {value:.2}% exceeds {limit:.2}%",
+    "business budget: {label} was not measured (no PSI support?)"
+  ],
+  "config_surface": {
+    "cli": [
+      "sshpool node add <name> --max-swap-used-mib <MIB>",
+      "sshpool node add <name> --max-memory-pressure-percent <0..=100>",
+      "sshpool node add <name> --max-io-pressure-percent <0..=100>"
+    ],
+    "toml": "[[nodes]] slo.max_swap_used_mib / slo.max_memory_pressure_percent / slo.max_io_pressure_percent",
+    "default": "全空 = 不设门槛 = 既有部署行为完全不变",
+    "validation": "百分比必须有限且在 0..=100，NaN 与 101 都被拒绝（否则门槛永远不触发）"
+  },
+  "metrics_exposed": {
+    "sshpool_node_swap_used_mib": "gauge；未测量时不出样本",
+    "sshpool_node_memory_pressure_percent": "gauge；未测量时不出样本",
+    "sshpool_node_io_pressure_percent": "gauge；未测量时不出样本",
+    "sshpool_node_business_budget": "gauge，1=允许接单 / 0=超预算或未测量",
+    "why_separate_from_ready": "ready 回答「探测成功且被启用」，business_budget 回答「现在还能不能再接一单」。合并会让「在线但已过载」看起来像「掉线」"
+  },
+  "okm182_observed": {
+    "swap_total_kib": 33554428,
+    "swap_free_kib": 2644,
+    "swap_used_mib": 32765,
+    "swap_used_fraction_of_total": 0.9999,
+    "memory_pressure_some_avg10": 0.0,
+    "io_pressure_some_avg10": 0.17,
+    "reading": "这台机器 swap 已基本耗尽（32 GiB 里只剩 2.6 MiB），但内存 PSI 仍是 0：说明当下没有任务在等内存。两者不矛盾——swap 记的是历史堆积，PSI 记的是此刻的等待。",
+    "consequence": "只配 swap 门槛时这台机器几乎永远拒单；真正想要「业务被挤压就停」应配 memory/io PSI。证据里保留这个读数就是为了说明三个指标各自回答什么。"
+  },
+  "live_bilateral": {
+    "refused": {
+      "budget_swap_used_mib": 32764,
+      "measured_swap_used_mib": 32765,
+      "phase": "Failed",
+      "attempts": 0,
+      "message": "no eligible worker: live: business budget: swap used 32765 MiB exceeds 32764 MiB",
+      "containers_created": 0
+    },
+    "accepted": {
+      "budget_swap_used_mib": 32765,
+      "phase": "Succeeded",
+      "exit_code": 0,
+      "cleanup_confirmed": true
+    },
+    "container_leak_check": "docker ps -a --format '{{.Names}}' | grep -c sshpool == 0"
+  },
+  "assertions": {
+    "budget_is_a_hard_filter_not_a_ranking_term": true,
+    "a_measured_fast_worker_cannot_outrank_its_own_budget": true,
+    "missing_measurement_is_refused_not_treated_as_zero": true,
+    "a_failed_probe_yields_no_measurements": true,
+    "legacy_probe_payloads_still_deserialize_as_unmeasured": true,
+    "an_unconfigured_budget_changes_nothing": true,
+    "one_over_budget_worker_does_not_stop_the_pool": true,
+    "boundary_value_passes_and_one_unit_above_refuses": true,
+    "percentage_limits_outside_0_100_are_rejected": true,
+    "over_budget_refusal_creates_no_container": true,
+    "within_budget_host_still_runs_the_same_job": true,
+    "ready_and_business_budget_are_independent_gauges": true,
+    "unmeasured_series_are_absent_not_zero": true
+  },
+  "assertions_total": 13,
+  "not_implemented": [
+    "业务延迟（需要业务侧埋点或入口侧观测，本仓库没有业务流量的定义）",
+    "业务错误率（同上）",
+    "磁盘水位的独立预算（仍有 min_free_disk_mib 一类硬过滤，但没有按业务水位配置的门槛）",
+    "主动压测：探测只读采样，不会为了判断预算去制造峰值负载",
+    "PSI 之外的 cgroup v2 细分（memory.high / io.latency 等业务侧限流）",
+    "非 Linux 主机（Darwin 没有 PSI，也没有 swap 的等价读数；配了门槛就是拒单）"
+  ],
+  "failed_assertions": []
+}

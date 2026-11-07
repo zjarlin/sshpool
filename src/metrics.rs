@@ -210,7 +210,11 @@ pub fn render(snapshot: &Snapshot<'_>) -> String {
          # HELP sshpool_node_memory_available_mib 节点可用内存（MiB）\n# TYPE sshpool_node_memory_available_mib gauge\n\
          # HELP sshpool_node_disk_available_mib 容器运行时所在文件系统的可用磁盘（MiB）\n# TYPE sshpool_node_disk_available_mib gauge\n\
          # HELP sshpool_node_load 节点一分钟负载\n# TYPE sshpool_node_load gauge\n\
-         # HELP sshpool_node_reserve_memory_mib 调度为宿主业务预留的内存（MiB）\n# TYPE sshpool_node_reserve_memory_mib gauge"
+         # HELP sshpool_node_reserve_memory_mib 调度为宿主业务预留的内存（MiB）\n# TYPE sshpool_node_reserve_memory_mib gauge\n\
+         # HELP sshpool_node_swap_used_mib 已用 swap（MiB）；未测量时不出现该样本\n# TYPE sshpool_node_swap_used_mib gauge\n\
+         # HELP sshpool_node_memory_pressure_percent 内存 PSI some avg10（百分比）；未测量时不出现该样本\n# TYPE sshpool_node_memory_pressure_percent gauge\n\
+         # HELP sshpool_node_io_pressure_percent IO PSI some avg10（百分比）；未测量时不出现该样本\n# TYPE sshpool_node_io_pressure_percent gauge\n\
+         # HELP sshpool_node_business_budget 1=业务预算允许接单；0=超预算或未测量\n# TYPE sshpool_node_business_budget gauge"
     );
     for (node, health) in snapshot.nodes.iter().zip(snapshot.health) {
         let name = escape(&node.name);
@@ -241,6 +245,35 @@ pub fn render(snapshot: &Snapshot<'_>) -> String {
             out,
             "sshpool_node_reserve_memory_mib{{node=\"{name}\"}} {}",
             node.reserve_memory_mib
+        );
+        // 业务预算的三项测量：没测到就不出现样本，而不是报 0。
+        // 报 0 会让仪表盘显示"健康"，但调度其实已经因为缺测量拒绝接单。
+        if let (None, Some(value)) = (health.error.as_ref(), health.swap_used_mib) {
+            let _ = writeln!(out, "sshpool_node_swap_used_mib{{node=\"{name}\"}} {value}");
+        }
+        if let (None, Some(value)) = (health.error.as_ref(), health.memory_pressure_percent) {
+            let _ = writeln!(
+                out,
+                "sshpool_node_memory_pressure_percent{{node=\"{name}\"}} {value}"
+            );
+        }
+        if let (None, Some(value)) = (health.error.as_ref(), health.io_pressure_percent) {
+            let _ = writeln!(
+                out,
+                "sshpool_node_io_pressure_percent{{node=\"{name}\"}} {value}"
+            );
+        }
+        // 业务预算超限是"现在还能不能接单"，与 ready 的"探测/启停状态"分开：
+        // 一台探测正常但已超预算的机器，ready=1、business_budget=0。
+        // 具体原因不进标签（会把节点数乘以原因数），只在 `sshpool doctor` 与
+        // 任务的 `no eligible worker` 里按文本给出。
+        let budget = u8::from(
+            health.error.is_none()
+                && crate::scheduler::business_budget_allows(node, health).is_ok(),
+        );
+        let _ = writeln!(
+            out,
+            "sshpool_node_business_budget{{node=\"{name}\"}} {budget}"
         );
     }
 
@@ -556,6 +589,9 @@ mod tests {
             load: 1.5,
             runtime_memory_mib: 4096,
             runtime_arch: "amd64".into(),
+            swap_used_mib: Some(0),
+            memory_pressure_percent: Some(0.0),
+            io_pressure_percent: Some(0.0),
             error: error.map(str::to_string),
         }
     }
@@ -572,6 +608,7 @@ mod tests {
             reserve_disk_mib: 0,
             max_load_per_cpu: 1.0,
             priority: 0,
+            slo: Default::default(),
         }
     }
 
@@ -706,6 +743,32 @@ mod tests {
             text.contains(r#"sshpool_node_memory_available_mib{node="dead"} 0"#),
             "{text}"
         );
+        // 测量值存在时才出样本；预算允许（默认未设门槛）时 business_budget=1。
+        assert!(
+            text.contains(r#"sshpool_node_swap_used_mib{node="worker"} 0"#),
+            "{text}"
+        );
+        assert!(
+            text.contains(r#"sshpool_node_memory_pressure_percent{node="worker"} 0"#),
+            "{text}"
+        );
+        assert!(
+            text.contains(r#"sshpool_node_business_budget{node="worker"} 1"#),
+            "{text}"
+        );
+        // 探测失败：测量值一个都不出现（报 0 会被读成「健康」），预算也不允许。
+        assert!(
+            !text.contains(r#"sshpool_node_swap_used_mib{node="dead"}"#),
+            "{text}"
+        );
+        assert!(
+            !text.contains(r#"sshpool_node_memory_pressure_percent{node="dead"}"#),
+            "{text}"
+        );
+        assert!(
+            text.contains(r#"sshpool_node_business_budget{node="dead"} 0"#),
+            "{text}"
+        );
         assert!(
             text.contains(r#"sshpool_access_log_bytes{generation="0"} 512"#),
             "{text}"
@@ -738,6 +801,63 @@ mod tests {
             "{text}"
         );
         assert!(!text.contains('\r'), "exposition must use LF only");
+    }
+
+    /// 业务预算：测到了就出样本；超预算时 business_budget=0，而 ready 仍是 1。
+    ///
+    /// 这两个 gauge 回答的是不同问题：`ready` 是「探测成功且被启用」，
+    /// `business_budget` 是「现在允许再接一单」。把后者并进前者会让
+    /// 「机器在线但已过载」看起来像「机器掉线」。
+    #[test]
+    fn a_measured_but_over_budget_node_stays_ready_and_loses_business_budget() {
+        let nodes = vec![Node {
+            slo: sshpool_config_slo(Some(1024), Some(5.0), Some(5.0)),
+            ..node("tight")
+        }];
+        let mut tight = health("tight", None);
+        tight.swap_used_mib = Some(9_000);
+        tight.memory_pressure_percent = Some(42.5);
+        tight.io_pressure_percent = Some(1.0);
+        let healths = vec![tight];
+        let text = render(&Snapshot {
+            jobs: &[],
+            health: &healths,
+            nodes: &nodes,
+            now: 0,
+            access: &[],
+        });
+        assert!(
+            text.contains(r#"sshpool_node_ready{node="tight"} 1"#),
+            "{text}"
+        );
+        assert!(
+            text.contains(r#"sshpool_node_business_budget{node="tight"} 0"#),
+            "{text}"
+        );
+        assert!(
+            text.contains(r#"sshpool_node_swap_used_mib{node="tight"} 9000"#),
+            "{text}"
+        );
+        assert!(
+            text.contains(r#"sshpool_node_memory_pressure_percent{node="tight"} 42.5"#),
+            "{text}"
+        );
+        assert!(
+            text.contains(r#"sshpool_node_io_pressure_percent{node="tight"} 1"#),
+            "{text}"
+        );
+    }
+
+    fn sshpool_config_slo(
+        swap: Option<u64>,
+        memory: Option<f64>,
+        io: Option<f64>,
+    ) -> crate::config::Slo {
+        crate::config::Slo {
+            max_swap_used_mib: swap,
+            max_memory_pressure_percent: memory,
+            max_io_pressure_percent: io,
+        }
     }
 
     /// 渲染不依赖状态锁之外的东西：同一份输入永远得到同一份输出（抓取可重复）。

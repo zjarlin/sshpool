@@ -294,6 +294,7 @@ pub async fn probe(ssh: &str, ssh_config: Option<&Path>) -> Result<Probe> {
         reserve_disk_mib: 0,
         max_load_per_cpu: 1.0,
         priority: 0,
+        slo: Default::default(),
     };
     config::validate_node(&node)?;
     let output = transport::checked(&node, PROBE_SCRIPT, 45).await?;

@@ -160,6 +160,7 @@ pub async fn preflight(targets: &[String], ssh_config: Option<&Path>) -> Result<
             reserve_disk_mib: 0,
             max_load_per_cpu: 1.0,
             priority: 0,
+            slo: Default::default(),
         };
         config::validate_node(&node)?;
         nodes.push(node);

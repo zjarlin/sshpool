@@ -25,6 +25,7 @@ fn node() -> Result<Node> {
         reserve_disk_mib: 0,
         max_load_per_cpu: 100.0,
         priority: 0,
+        slo: Default::default(),
     })
 }
 

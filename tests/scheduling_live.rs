@@ -30,6 +30,7 @@ fn live_node() -> Result<Node> {
         reserve_disk_mib: 0,
         max_load_per_cpu: 100.0,
         priority: 0,
+        slo: Default::default(),
     })
 }
 
@@ -46,6 +47,7 @@ fn blackhole_node() -> Node {
         reserve_disk_mib: 0,
         max_load_per_cpu: 100.0,
         priority: 100,
+        slo: Default::default(),
     }
 }
 
@@ -268,5 +270,109 @@ async fn measured_runs_become_the_next_expectation() -> Result<()> {
         }
         println!("round {round} basis: {basis}");
     }
+    Ok(())
+}
+
+/// 业务预算在真实主机上的判据只有一条：**还会不会创建容器**。
+///
+/// 这里先探测这台机器的真实 swap 用量，再把它自己的读数当作门槛基准：
+/// 门槛低于实测 → 必须拒单，且远端不能出现任何容器；门槛等于实测 →
+/// 必须真的跑起来。两边都验，才不是「一律拒绝」或「一律放行」的假证据。
+#[tokio::test]
+#[ignore = "requires a reachable SSH worker with Docker"]
+async fn an_over_budget_host_stops_taking_work_before_any_container_exists() -> Result<()> {
+    let mut live = live_node()?;
+    let health = sshpool::probe::node(&live).await;
+    ensure!(
+        health.error.is_none(),
+        "the worker must probe cleanly before this test means anything: {:?}",
+        health.error
+    );
+    let measured = health
+        .swap_used_mib
+        .context("this host reported no swap reading, so a swap budget cannot be exercised")?;
+    println!(
+        "measured swap {} MiB, memory PSI {:?}, io PSI {:?}",
+        measured, health.memory_pressure_percent, health.io_pressure_percent
+    );
+
+    // 门槛取实测值本身：这是边界，必须放行；低 1 MiB 就必须拒绝。
+    live.slo = sshpool::config::Slo {
+        max_swap_used_mib: Some(measured.saturating_sub(1)),
+        ..Default::default()
+    };
+    let (root, _state, client) = harness(vec![live.clone()]).await?;
+    let build = Build {
+        platform: platform(&live).await?,
+        command: vec!["sh".into(), "build.sh".into()],
+        memory_mib: 256,
+        scratch_mib: 64,
+        cpus: 0.5,
+        timeout_secs: 120,
+        ..Build::default()
+    };
+    let refused_project = project(root.path())?;
+    let code = client.run(&refused_project, build.clone()).await?;
+    ensure!(code != 0, "an over-budget host must not succeed: {code}");
+    let jobs: Vec<Job> = serde_json::from_value(client.get("/v1/jobs").await?)?;
+    let job = jobs.last().context("the rejected job was never recorded")?;
+    ensure!(
+        job.phase == Phase::Failed,
+        "unexpected phase {:?}: {:?}",
+        job.phase,
+        job.message
+    );
+    ensure!(
+        job.attempts.is_empty(),
+        "an over-budget host must be refused before an attempt exists: {:?}",
+        job.attempts
+    );
+    let message = job.message.as_deref().unwrap_or_default();
+    ensure!(
+        message.contains("business budget") && message.contains("swap used"),
+        "the refusal must name the budget and the reading: {message}"
+    );
+    println!("refused with: {message}");
+    // 拒单发生在创建容器之前：远端不能留下任何本次任务的东西。
+    let survivors = sshpool::transport::checked(
+        &live,
+        &format!(
+            "docker ps -a --filter {} --format {{.Names}} | wc -l",
+            sshpool::transport::quote(&format!("label=io.sshpool.job={}", job.id))
+        ),
+        20,
+    )
+    .await?;
+    let count: usize = String::from_utf8_lossy(&survivors).trim().parse()?;
+    ensure!(
+        count == 0,
+        "a refused job must not create a container, found {count}"
+    );
+    println!("containers created by the refused job: {count}");
+
+    // 反向对照：门槛抬到实测值，同一台机器必须真的接单并跑完。
+    let mut allowed = live.clone();
+    allowed.slo = sshpool::config::Slo {
+        max_swap_used_mib: Some(measured),
+        ..Default::default()
+    };
+    let (root, _state, client) = harness(vec![allowed.clone()]).await?;
+    let accepted_project = project(root.path())?;
+    let code = client.run(&accepted_project, build).await?;
+    ensure!(code == 0, "a host within its budget must still run: {code}");
+    let jobs: Vec<Job> = serde_json::from_value(client.get("/v1/jobs").await?)?;
+    let job = jobs.last().context("the accepted job was never recorded")?;
+    ensure!(
+        job.phase == Phase::Succeeded,
+        "unexpected phase {:?}: {:?}",
+        job.phase,
+        job.message
+    );
+    ensure!(
+        !job.attempts.is_empty() && job.cleanup_confirmed,
+        "the accepted job must run and clean up: {:?}",
+        job.message
+    );
+    println!("budget of {measured} MiB accepted the same job");
     Ok(())
 }
