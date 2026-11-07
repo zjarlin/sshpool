@@ -1,8 +1,8 @@
 Feature: 显式登记异构 SSH 节点
   节点 SSH 凭据保留在控制面，构建容器不接触它们。
 
-  # evidence: docs/validation.md#nodes
-  @verified @manual @p0
+  # evidence: tests/nodes_live.rs::existing_aliases_are_reported_per_host_and_failures_stay_isolated
+  @verified @automated @p0
   Scenario: 使用现有别名接入多台主机
     Given 管理员有可用的 SSH 别名和主机校验
     When 执行 node add 和 doctor

@@ -18,6 +18,18 @@ scripts/check-ssh-parity.sh 2222 2223      # 入口端口、直连端口；输�
 
 实际只读探测了 Linux ARM64、Linux x86_64 和 macOS ARM64 三类节点，返回独立资源快照。资源不足的 macOS Worker 被候选过滤，未通过降低预留强行执行构建。WSL2 尚无实机测试。
 
+2026-11-07 这条链路写成了可复跑的 `#[ignore]` 测试 `tests/nodes_live.rs`，走真实 CLI（`node add` → `doctor` → `node list`），不直接调用 `probe::all`：
+
+| 断言 | 实测 |
+| --- | --- |
+| 每台已登记主机独立报告 | `linux/aarch64`（4 CPU、5285 MiB）、`linux/x86_64`（32 CPU、27112 MiB）、`darwin/arm64`（10 CPU、2703 MiB） |
+| 单节点失败不吞掉其他结果 | 额外登记 `192.0.2.1` 后，`doctor` 仍返回 4 条记录，可路由节点无 error，黑洞节点带 error |
+| 名字与能力一一对应 | 输出里没有重复名字，OS/arch/runtime_arch 非空 |
+| 重复名字被拒绝 | `node add node-0` 失败，`node list` 里的节点条目数不变 |
+| 别名不允许 shell 语法 | `host; rm -rf /`、`-oProxyCommand=evil`、`host\`id\``、空串都被 CLI 拒绝且不落盘 |
+
+`macmini-lan` 的可用内存（2703 MiB）仍低于业务预留，所以它只在这条「报告」场景里出现，没有参与构建调度——报告能力与允许执行是两件事。
+
 2026-11-07 增加了在线 `node enable` / `node disable`。控制面在不重启时更新调度状态并原子保存配置；仍有活动任务的节点拒绝禁用。API 测试覆盖鉴权、未知节点、活动任务保护、连续切换两个节点以及重载后保留全部选择。远程探测缺少控制面 `enabled` 字段时仍可解析，避免状态查询因协议扩展失败。
 
 ### 探测在调度锁外，快照有 TTL

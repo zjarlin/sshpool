@@ -1,0 +1,48 @@
+{
+  "checked_at": "2026-11-07T22:10:00+08:00",
+  "scope": "用现有 SSH 别名登记多台异构主机，doctor 分节点报告且单节点故障隔离",
+  "entry": {
+    "test": "tests/nodes_live.rs",
+    "command": "SSHPOOL_LIVE_NODES=sshpool-anchor,okm182-lan,macmini-lan cargo test --test nodes_live -- --ignored --test-threads=1",
+    "why": "走真实二进制与真实 CLI，不直接调用 probe::all；证明管理员按 alias 登记后的实际可观察结果"
+  },
+  "observed": {
+    "sshpool-anchor": {
+      "os": "linux",
+      "arch": "aarch64",
+      "cpus": 4,
+      "memory_available_mib": 5285,
+      "runtime_arch": "aarch64"
+    },
+    "okm182-lan": {
+      "os": "linux",
+      "arch": "x86_64",
+      "cpus": 32,
+      "memory_available_mib": 27112,
+      "runtime_arch": "x86_64"
+    },
+    "macmini-lan": {
+      "os": "darwin",
+      "arch": "arm64",
+      "cpus": 10,
+      "memory_available_mib": 2703,
+      "runtime_arch": "aarch64"
+    },
+    "blackhole (192.0.2.1)": {
+      "error": "ssh connect timed out"
+    }
+  },
+  "asserted": [
+    "doctor 返回的条目数等于已登记节点数（含不可达节点）",
+    "每台可路由节点的 error 为 None，且 cpus/memory/os/arch/runtime_arch 均非空",
+    "不可达节点带 error 出现在结果里，而不是被丢弃",
+    "输出中没有重复节点名",
+    "重复名字的 node add 被拒绝，且 node list 条目数不变",
+    "带 shell 语法的别名被 CLI 拒绝且不落盘"
+  ],
+  "boundaries": [
+    "macmini-lan 的可用内存低于业务预留，因此只用于报告场景，不参与构建调度",
+    "WSL2 节点仍未实机验证",
+    "本测试不覆盖 'node prepare' 的镜像准备与授权"
+  ]
+}
