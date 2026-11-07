@@ -21,25 +21,64 @@ use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 use tokio_util::io::ReaderStream;
 use uuid::Uuid;
 
-pub struct ApiError(anyhow::Error);
-impl From<anyhow::Error> for ApiError {
-    fn from(error: anyhow::Error) -> Self {
-        Self(error)
+pub struct ApiError {
+    status: StatusCode,
+    error: anyhow::Error,
+}
+
+impl ApiError {
+    fn new(status: StatusCode, error: anyhow::Error) -> Self {
+        Self { status, error }
     }
 }
+
+impl From<anyhow::Error> for ApiError {
+    fn from(error: anyhow::Error) -> Self {
+        // 默认 400：其余状态码必须显式声明，避免实现里随便一个错误就变成 401/403。
+        Self::new(StatusCode::BAD_REQUEST, error)
+    }
+}
+impl ApiError {
+    fn unauthorized() -> Self {
+        Self::new(StatusCode::UNAUTHORIZED, anyhow::anyhow!("unauthorized"))
+    }
+
+    /// 审计不可用时拒绝执行：宁可这次请求失败，也不要产生没有访问记录的动作。
+    fn audit_unavailable() -> Self {
+        Self::new(
+            StatusCode::SERVICE_UNAVAILABLE,
+            anyhow::anyhow!("access audit is not writable"),
+        )
+    }
+}
+
 impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
-        // 只认 `unauthorized` 这一个字面量，其余一律 400：鉴权失败不区分原因，
-        // 避免通过状态码或正文探测「凭据库坏了」「标识存在但摘要不匹配」这类差异。
-        let status = if self.0.to_string() == "unauthorized" {
-            StatusCode::UNAUTHORIZED
-        } else {
-            StatusCode::BAD_REQUEST
-        };
-        (status, format!("{:#}", self.0)).into_response()
+        (self.status, format!("{:#}", self.error)).into_response()
     }
 }
 type ApiResult<T> = Result<T, ApiError>;
+
+/// 鉴权失败时只回 401，并带一个仅供审计的原因。
+///
+/// 原因区分「缺 token」「不认识」「凭据库坏了」是为了运维能定位问题；
+/// 它只进审计日志，响应体永远是同一个 `unauthorized`。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Denial {
+    Missing,
+    Unknown,
+    StoreUnusable,
+}
+
+impl Denial {
+    fn reason(self) -> &'static str {
+        match self {
+            Self::Missing => "missing-token",
+            Self::Unknown => "unknown-token",
+            Self::StoreUnusable => "store-unusable",
+        }
+    }
+}
 
 /// 请求主体：根 token 用于控制面运维，短期凭据用于借出的工作台或一次性脚本。
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -56,23 +95,57 @@ impl Principal {
             Self::Credential(grant) => &grant.subject,
         }
     }
+
+    /// 身份来源：写进审计，便于把「谁用根 token 运维」与「谁借了短期凭据」分开。
+    pub fn kind(&self) -> &'static str {
+        match self {
+            Self::Root => "root",
+            Self::Credential(_) => "credential",
+        }
+    }
+
+    fn credential(&self) -> Option<String> {
+        match self {
+            Self::Root => None,
+            Self::Credential(grant) => Some(grant.id.to_string()),
+        }
+    }
+}
+
+/// 中间件已经把鉴权结果放进 extensions；处理器只能取到「已经允许」的主体。
+impl axum::extract::FromRequestParts<Arc<State>> for Principal {
+    type Rejection = ApiError;
+
+    async fn from_request_parts(
+        parts: &mut axum::http::request::Parts,
+        _state: &Arc<State>,
+    ) -> std::result::Result<Self, Self::Rejection> {
+        parts
+            .extensions
+            .get::<Self>()
+            .cloned()
+            .ok_or_else(ApiError::unauthorized)
+    }
 }
 
 /// 鉴权：先比根 token（恒时比较），不匹配再查短期凭据库。
 ///
 /// 凭据库损坏必须拒绝（fail-closed），错误写到 stderr 供运维发现；
 /// 对客户端只回 401，不泄露存储状态。
-fn authorized(headers: &HeaderMap, state: &State) -> ApiResult<Principal> {
+fn authenticate(headers: &HeaderMap, state: &State) -> std::result::Result<Principal, Denial> {
     let actual = headers
         .get("authorization")
-        .and_then(|v| v.to_str().ok())
+        .and_then(|value| value.to_str().ok())
         .unwrap_or("");
+    if actual.is_empty() {
+        return Err(Denial::Missing);
+    }
     let expected = format!("Bearer {}", state.token);
     let root_match = actual.len() == expected.len()
         && actual
             .bytes()
             .zip(expected.bytes())
-            .fold(0_u8, |v, (a, b)| v | (a ^ b))
+            .fold(0_u8, |value, (a, b)| value | (a ^ b))
             == 0;
     if root_match {
         return Ok(Principal::Root);
@@ -80,10 +153,10 @@ fn authorized(headers: &HeaderMap, state: &State) -> ApiResult<Principal> {
     let token = actual.strip_prefix("Bearer ").unwrap_or("");
     match crate::credentials::verify(&state.home, token, crate::model::now()) {
         Ok(Some(grant)) => Ok(Principal::Credential(grant)),
-        Ok(None) => Err(anyhow::anyhow!("unauthorized").into()),
+        Ok(None) => Err(Denial::Unknown),
         Err(error) => {
             eprintln!("sshpool: credential store unusable, rejecting request: {error:#}");
-            Err(anyhow::anyhow!("unauthorized").into())
+            Err(Denial::StoreUnusable)
         }
     }
 }
@@ -100,65 +173,225 @@ pub fn routes(state: Arc<State>) -> Router {
         .route("/v1/jobs/{id}/log", get(log))
         .route("/v1/jobs/{id}/events", get(events))
         .route("/v1/jobs/{id}/artifacts", get(artifacts))
+        .route("/v1/access", get(access))
+        // 一边鉴权一边记审计：处理器不再各自重复鉴权，也就不会出现「某个接口忘了记」。
+        // 用 `layer` 而不是 `route_layer`：未命中路由的探测请求同样要留痕。
+        .layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            audit_access,
+        ))
         .with_state(state)
+}
+
+/// 审计查询本身也是被审计的访问，所以它同样走中间件；这里只负责过滤与返回。
+async fn access(
+    AppState(state): AppState<Arc<State>>,
+    // 中间件已经拦过未鉴权请求；这里再取一次，保证处理器本身也要求主体。
+    _principal: Principal,
+    axum::extract::Query(query): axum::extract::Query<std::collections::HashMap<String, String>>,
+) -> ApiResult<impl IntoResponse> {
+    let filter = crate::access::Filter {
+        subject: query.get("subject").cloned(),
+        decision: query.get("decision").cloned(),
+        since: query
+            .get("since")
+            .map(|value| value.parse::<u64>())
+            .transpose()
+            .map_err(anyhow::Error::from)?,
+        limit: query
+            .get("limit")
+            .map(|value| value.parse::<usize>())
+            .transpose()
+            .map_err(anyhow::Error::from)?
+            .unwrap_or(crate::access::DEFAULT_LIMIT),
+    };
+    Ok(axum::Json(crate::access::read(&state.home, &filter)?))
+}
+
+/// 一次请求的审计字段，先收集再在响应后落盘。
+struct AccessRecord {
+    request: String,
+    subject: String,
+    kind: String,
+    credential: Option<String>,
+    reason: String,
+    method: String,
+    route: String,
+    job: Option<String>,
+}
+
+/// 每个请求的访问审计：鉴权 → 记录 → 执行 → 记录状态码。
+///
+/// 写副作用请求前先确认审计可写，写不进去就拒绝执行 —— 审计不了的动作不做。
+/// 记录里不会有 token、请求头或正文：`AccessRecord` 的字段就是全部内容。
+async fn audit_access(
+    AppState(state): AppState<Arc<State>>,
+    request: Request,
+    next: axum::middleware::Next,
+) -> Response {
+    let method = request.method().as_str().to_owned();
+    let route = request
+        .extensions()
+        .get::<axum::extract::MatchedPath>()
+        .map(|path| path.as_str().to_owned())
+        .unwrap_or_else(|| "unmatched".into());
+    let job = request_id_from_path(request.uri().path());
+    let mut record = AccessRecord {
+        request: request_id(request.headers()),
+        subject: String::new(),
+        kind: "anonymous".into(),
+        credential: None,
+        reason: String::new(),
+        method: method.clone(),
+        route: route.clone(),
+        job: job.map(|id| id.to_string()),
+    };
+
+    let (principal, denial) = match authenticate(request.headers(), &state) {
+        Ok(principal) => (Some(principal), None),
+        Err(denial) => (None, Some(denial)),
+    };
+    match (&principal, denial) {
+        (Some(principal), _) => {
+            record.subject = principal.subject().into();
+            record.kind = principal.kind().into();
+            record.credential = principal.credential();
+            record.reason = if principal == &Principal::Root {
+                "root-token".into()
+            } else {
+                "credential".into()
+            };
+        }
+        (None, Some(denial)) => {
+            record.reason = denial.reason().into();
+            // 拒绝也要有记录：否则「有人一直在试 token」在日志里完全看不见。
+            write_access(&state, &record, StatusCode::UNAUTHORIZED).await;
+            return ApiError::unauthorized().into_response();
+        }
+        (None, None) => unreachable!("authenticate returns one of the two"),
+    }
+
+    // 副作用请求先确认审计可写；只读请求不为此多付一次系统调用。
+    if !matches!(method.as_str(), "GET" | "HEAD" | "OPTIONS")
+        && let Err(error) = crate::access::ensure_writable(&state.home)
+    {
+        eprintln!(
+            "sshpool: refusing {} {} without a writable access log: {error:#}",
+            method, route
+        );
+        return ApiError::audit_unavailable().into_response();
+    }
+
+    let (mut parts, body) = request.into_parts();
+    if let Some(principal) = principal {
+        parts.extensions.insert(principal);
+    }
+    let response = next.run(Request::from_parts(parts, body)).await;
+    write_access(&state, &record, response.status()).await;
+    response
+}
+
+async fn write_access(state: &State, record: &AccessRecord, status: StatusCode) {
+    let entry = crate::access::Entry {
+        schema: crate::access::SCHEMA,
+        time: now(),
+        request: record.request.clone(),
+        subject: record.subject.clone(),
+        kind: record.kind.clone(),
+        credential: record.credential.clone(),
+        decision: if status == StatusCode::UNAUTHORIZED {
+            "denied".into()
+        } else {
+            "allowed".into()
+        },
+        reason: record.reason.clone(),
+        method: record.method.clone(),
+        route: record.route.clone(),
+        job: record.job.clone(),
+        status: status.as_u16(),
+    };
+    let _guard = state.access.lock().await;
+    if let Err(error) = crate::access::append(&state.home, &entry) {
+        // 记录写不进去是控制面故障：必须在 stderr 留痕，且不能把响应改成失败。
+        eprintln!("sshpool: cannot write access audit: {error:#}");
+    }
+}
+
+/// 客户端可用 `x-request-id` 提供关联标识；服务端只接受安全字符，否则换一个。
+fn request_id(headers: &HeaderMap) -> String {
+    let supplied = headers
+        .get("x-request-id")
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or("");
+    let acceptable = !supplied.is_empty()
+        && supplied.len() <= 128
+        && supplied
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || b"-_.:/".contains(&byte));
+    if acceptable {
+        supplied.to_owned()
+    } else {
+        Uuid::new_v4().to_string()
+    }
+}
+
+/// 路由模板里的任务标识；只有规范 UUID 才作为一行结构化字段记录。
+fn request_id_from_path(path: &str) -> Option<Uuid> {
+    path.split('/')
+        .filter_map(|segment| Uuid::parse_str(segment).ok())
+        .next()
 }
 async fn status(
     AppState(state): AppState<Arc<State>>,
-    headers: HeaderMap,
+    _principal: Principal,
 ) -> ApiResult<impl IntoResponse> {
-    let _principal = authorized(&headers, &state)?;
     let nodes = state.nodes().await;
     // 状态查询本身就是一次探测：它不在调度锁内，可以让调度复用同一份新鲜快照。
     Ok(axum::Json(state.refresh_health(&nodes).await))
 }
 async fn enable_node(
     AppState(state): AppState<Arc<State>>,
-    headers: HeaderMap,
+    _principal: Principal,
     Path(name): Path<String>,
 ) -> ApiResult<impl IntoResponse> {
-    set_node_enabled(state, headers, name, true).await
+    set_node_enabled(state, name, true).await
 }
 async fn disable_node(
     AppState(state): AppState<Arc<State>>,
-    headers: HeaderMap,
+    _principal: Principal,
     Path(name): Path<String>,
 ) -> ApiResult<impl IntoResponse> {
-    set_node_enabled(state, headers, name, false).await
+    set_node_enabled(state, name, false).await
 }
 async fn set_node_enabled(
     state: Arc<State>,
-    headers: HeaderMap,
     name: String,
     enabled: bool,
 ) -> ApiResult<axum::Json<crate::config::Node>> {
-    let _principal = authorized(&headers, &state)?;
     let node = state.set_node_enabled(&name, enabled).await?;
     Ok(axum::Json(node))
 }
 /// 只核对指定节点的未确认清理，并用远端看门狗证据解除隔离。
 async fn reconcile_node(
     AppState(state): AppState<Arc<State>>,
-    headers: HeaderMap,
+    _principal: Principal,
     Path(name): Path<String>,
 ) -> ApiResult<axum::Json<crate::reconcile::Report>> {
-    let _principal = authorized(&headers, &state)?;
     Ok(axum::Json(
         crate::reconcile::reconcile(&state, Some(&name)).await?,
     ))
 }
 async fn reconcile_all(
     AppState(state): AppState<Arc<State>>,
-    headers: HeaderMap,
+    _principal: Principal,
 ) -> ApiResult<axum::Json<crate::reconcile::Report>> {
-    let _principal = authorized(&headers, &state)?;
     Ok(axum::Json(crate::reconcile::reconcile(&state, None).await?))
 }
 
 async fn jobs(
     AppState(state): AppState<Arc<State>>,
-    headers: HeaderMap,
+    _principal: Principal,
 ) -> ApiResult<impl IntoResponse> {
-    let _principal = authorized(&headers, &state)?;
     let mut jobs = state
         .jobs
         .lock()
@@ -171,10 +404,9 @@ async fn jobs(
 }
 async fn job(
     AppState(state): AppState<Arc<State>>,
-    headers: HeaderMap,
+    _principal: Principal,
     Path(id): Path<Uuid>,
 ) -> ApiResult<impl IntoResponse> {
-    let _principal = authorized(&headers, &state)?;
     let job = state
         .jobs
         .lock()
@@ -186,10 +418,9 @@ async fn job(
 }
 async fn cancel(
     AppState(state): AppState<Arc<State>>,
-    headers: HeaderMap,
+    _principal: Principal,
     Path(id): Path<Uuid>,
 ) -> ApiResult<impl IntoResponse> {
-    let _principal = authorized(&headers, &state)?;
     // 与首次领取任务共用调度锁，避免取消和进入 Running 的窄竞态。
     let _scheduling = state.scheduling.lock().await;
     let _transition = state.transitions.lock().await;
@@ -208,9 +439,9 @@ async fn cancel(
 }
 async fn submit(
     AppState(state): AppState<Arc<State>>,
+    _principal: Principal,
     request: Request,
 ) -> ApiResult<impl IntoResponse> {
-    let _principal = authorized(request.headers(), &state)?;
     let encoded = request
         .headers()
         .get("x-sshpool-build")
@@ -334,11 +565,10 @@ fn ensure_disk(state: &State) -> Result<()> {
 }
 async fn log(
     AppState(state): AppState<Arc<State>>,
-    headers: HeaderMap,
+    _principal: Principal,
     Path(id): Path<Uuid>,
     axum::extract::Query(query): axum::extract::Query<std::collections::HashMap<String, String>>,
 ) -> ApiResult<Response> {
-    let _principal = authorized(&headers, &state)?;
     ensure_job(&state, id).await?;
     let offset = query
         .get("offset")
@@ -374,10 +604,9 @@ async fn ensure_job(state: &State, id: Uuid) -> Result<Job> {
 }
 async fn artifacts(
     AppState(state): AppState<Arc<State>>,
-    headers: HeaderMap,
+    _principal: Principal,
     Path(id): Path<Uuid>,
 ) -> ApiResult<Response> {
-    let _principal = authorized(&headers, &state)?;
     if !ensure_job(&state, id).await?.artifacts {
         return Err(anyhow::anyhow!("no artifacts available").into());
     }
@@ -393,10 +622,9 @@ async fn artifacts(
 
 async fn events(
     AppState(state): AppState<Arc<State>>,
-    headers: HeaderMap,
+    _principal: Principal,
     Path(id): Path<Uuid>,
 ) -> ApiResult<impl IntoResponse> {
-    let _principal = authorized(&headers, &state)?;
     ensure_job(&state, id).await?;
     let path = state.dir(id).join("events.jsonl");
     // 和追加事件共用锁，避免读取到尚未写完的 JSON 行。

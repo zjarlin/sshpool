@@ -235,7 +235,53 @@ _（本节标题锚点为 `access-network`。）_
 
 抓到的两个真实缺陷：`axum` 未启用 `http2` feature 时，ALPN 协商成 `h2` 但服务端只会说 HTTP/1.1，curl 报 `Error in the HTTP2 framing layer` —— 打开 `features = ["http2"]` 后三种协商全部正常。握手最初串行执行，被"只连不说"的客户端卡住整个控制面；改成每连接独立任务 + 64 并发上限 + 10 秒超时后，该测试与真实链路都恢复正常。
 
-尚未覆盖：证书轮换/热重载（换证书需重启控制面）、客户端证书（mTLS，当前只做服务端证书校验）、凭据分级授权（短期凭据与根 token 权限相同，都能提交和取消任务，`Principal` 只为后续审计预留）、跨公网真实 RTT、CA 文件轮换与吊销列表。
+尚未覆盖：证书轮换/热重载（换证书需重启控制面）、客户端证书（mTLS，当前只做服务端证书校验）、凭据分级授权（短期凭据与根 token 权限相同，都能提交和取消任务，`Principal` 只用于识别主体与写审计）、跨公网真实 RTT、CA 文件轮换与吊销列表。
+
+### 可查询的用户访问审计 {#access-audit}
+
+_（本节标题锚点为 `access-audit`。）_
+
+控制面用同一个中间件给**每个**请求留痕：先鉴权，再执行，最后按真实状态码落一行 JSON 到 `home/access.jsonl`。审计与鉴权分离（处理器用 `Principal` 提取器，不再各自比对 token），所以不会有"某个接口忘了记"，也不会出现两条鉴权路径判断不一致。
+
+| 字段 | 含义 |
+| --- | --- |
+| `schema` | 行格式版本（当前 `1`），只增不改 |
+| `time` | 落盘时刻（Unix 秒） |
+| `request` | 客户端 `x-request-id`，或服务端生成的 UUID |
+| `subject` | 主体名；根 token 固定 `root`，匿名请求为空串 |
+| `kind` | `root` / `credential` / `anonymous` |
+| `credential` | 短期凭据的 grant id；根 token 与匿名请求为 `null` |
+| `decision` | `allowed` 或 `denied` |
+| `reason` | `root-token` / `credential` / `missing-token` / `unknown-token` / `store-unusable` |
+| `method`、`route` | 方法与**路由模板**（如 `/v1/jobs/{id}`）；未命中任何路由为 `unmatched` |
+| `job` | 路径中的规范 UUID（不是就不记） |
+| `status` | 实际返回的状态码 |
+
+日志里**只有**上面这些字段：写入口只接受已经脱敏的值，没有把原始请求塞进去的通道。实测日志中不含根 token、凭据 secret，也没有 `authorization` 字样；请求正文、查询串与环境变量一律不落盘。未命中路由刻意只记 `unmatched` 而不记原始路径 —— 路径可能被塞进被误当成 URL 的凭据，记下来等于把秘密写进日志。
+
+主体三态：根 token（`kind=root`，无凭据 id）、短期凭据（`kind=credential`，带 grant id，`subject` 是签发时给的名字）、匿名（`subject` 为空串）。拒绝同样记录，否则"有人一直在试 token"在日志里完全看不见；三种拒绝原因只进日志，**响应体永远是同一个 `unauthorized`**，不向探测者泄露"token 存在但过期"还是"凭据库坏了"。
+
+请求标识：客户端给 `x-request-id` 且只含 `alnum` 与 `- _ . : /`、长度不超过 128 时原样沿用（可用于把 CLI 一次操作与服务端记录对上），否则服务端生成 UUID；这是为了避免调用方把换行或超长内容塞进日志行。
+
+查询：`GET /v1/access?subject=&decision=&since=&limit=`，`limit` 默认 200、硬上限 5000，返回按时间倒序；`sshpool access` 是它的 CLI 包装。**查询本身也被审计** —— 匿名的 `/v1/access` 得到 401，而且这条拒绝会作为 `route == "/v1/access"`、`decision == "denied"` 的记录出现在下一次查询里。
+
+有界：单文件 4 MiB，保留当前文件与 `.1`/`.2` 两代，磁盘上限 12 MiB。写满就滚动，**从不清空** —— 清空会让"审计突然变空"看起来像没有访问。滚动时先丢最老一代，再从旧往新搬，最后由 `current → .1`。
+
+fail-closed 的两处边界：
+
+| 情形 | 行为 | 自动化 |
+| --- | --- | --- |
+| 当前文件末行是崩溃留下的半行 | 读时容忍并告警；**下一条 append 先把它切掉**，不会变成中间行 | `newest_generation_is_readable_and_a_torn_tail_does_not_hide_history`、`a_torn_tail_is_dropped_before_the_next_append` |
+| 中间行损坏（含 schema 不符、未知字段） | 整次查询 `Err`，不跳过、不猜 | `a_corrupt_middle_record_fails_closed` |
+| 滚动代存在但读不了（权限、I/O） | 报错，不静默少读一段历史；只有「不存在」才跳过 | —（真实二进制：`access.jsonl.1` 置 000 后退出码 1） |
+| 审计文件不可写 | 副作用请求（非 GET/HEAD/OPTIONS）在**执行前**返回 503，动作不发生；只读请求仍可用 | `a_non_writable_access_log_blocks_side_effect_requests` |
+| 行太大 / 磁盘满 / sync 失败 | 不吞错误：响应结束后的写失败只记 stderr（不能把已完成的响应改成失败） | — |
+
+`decision` 当前只区分 401 与"非 401"，这是一个**已知口径**：400（例如 `unknown job`、非法 `limit`）也会记成 `allowed`，`status` 才是准确的结论；要看真正的授权边界请用 `reason` + `status`。
+
+真实二进制（macOS ARM64 release，临时 home、回环端口）实测：7 个矩阵请求加上 1 次就绪探测共留下 8 行，根 token 带 `x-request-id: cli-run-1` 时该字符串原样出现在 `request` 字段；凭据请求记成 `subject=workbench-ü`、`kind=credential`、带 grant id；匿名与伪造 token 都是 `401 / denied`（`missing-token` 与 `unknown-token`）；凭据打不存在的路由得到 `404`，日志里 `route=unmatched` 且不含 `/v1/does-not-exist`；`/v1/jobs/<uuid>` 的 UUID 进 `job` 字段。把 `access.jsonl` 换成一个同名目录后，`GET /v1/status` 仍 200，`POST /v1/nodes/test-node/disable` 返回 503。往末尾写半行后查询仍能读到 13 条；随后下一次请求返回 200，半行被清掉（`torn_line_still_present=false`、`new_record_found=true`），16 行全部可读。把第 2 行改成 `{not json}` 后 `sshpool access` 退出码 1，报 `malformed access record at …/access.jsonl:2: key must be a string`；把 `access.jsonl.1` 的权限设成 `000` 后同样退出码 1，报 `cannot read …/access.jsonl.1: Permission denied`。证据见 [evidence/access-audit-20261107.json](evidence/access-audit-20261107.json)。
+
+尚未覆盖：跨主机汇集与远程日志后端（只写本机 `home/`）、防篡改（能写 home 的人可以改写或删除记录，没有签名链或只追加存储）、按主体分权（所有凭据权限相同，审计只记录不约束）、超过 12 MiB 的历史归档、按 IP/地理位置归因。
 
 ## hardware-proof
 

@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use axum::{
     body::Body,
     http::{Request, StatusCode},
@@ -731,5 +731,224 @@ async fn reconcile_requires_authentication() -> Result<()> {
         .oneshot(Request::post("/v1/nodes/reconcile").body(Body::empty())?)
         .await?;
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    Ok(())
+}
+
+/// 每个请求都留一条访问记录：主体、身份来源、决定、理由、请求标识与路由模板。
+#[tokio::test]
+async fn every_request_is_audited_with_subject_decision_and_request_id() -> Result<()> {
+    let (_root, state) = state()?;
+    let app = sshpool::api::routes(state.clone());
+    let (summary, token) = sshpool::credentials::issue(&state.home, "workbench-ü", 3_600, now())?;
+
+    // 1) 根 token 的只读请求：主体 root、来源 root-token、命中路由模板。
+    let response = app
+        .clone()
+        .oneshot(
+            Request::get("/v1/status")
+                .header("authorization", format!("Bearer {}", state.token))
+                .header("x-request-id", "cli-run-1")
+                .body(Body::empty())?,
+        )
+        .await?;
+    assert_eq!(response.status(), StatusCode::OK);
+
+    // 2) 短期凭据的请求：主体是签发时的名字，凭据标识单独成列。
+    let response = app
+        .clone()
+        .oneshot(
+            Request::get("/v1/status")
+                .header("authorization", format!("Bearer {token}"))
+                .body(Body::empty())?,
+        )
+        .await?;
+    assert_eq!(response.status(), StatusCode::OK);
+
+    // 3) 无 token：401 也必须留痕，否则「有人在猜 token」永远看不见。
+    let response = app
+        .clone()
+        .oneshot(Request::get("/v1/jobs").body(Body::empty())?)
+        .await?;
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    // 4) 伪造凭据：同样拒绝，理由与「没带 token」不同。
+    let response = app
+        .clone()
+        .oneshot(
+            Request::get("/v1/jobs")
+                .header("authorization", "Bearer spt_not-a-real-token")
+                .body(Body::empty())?,
+        )
+        .await?;
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    // 5) 未命中路由：仍然记录，且路由写成 unmatched（不落原始路径）。
+    let response = app
+        .clone()
+        .oneshot(
+            Request::get("/v1/does-not-exist")
+                .header("authorization", format!("Bearer {}", state.token))
+                .body(Body::empty())?,
+        )
+        .await?;
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+
+    let entries = sshpool::access::read(&state.home, &sshpool::access::Filter::default())?;
+    assert_eq!(entries.len(), 5, "{entries:#?}");
+
+    let root = entries
+        .iter()
+        .find(|entry| entry.request == "cli-run-1")
+        .context("the supplied request id must survive into the audit")?;
+    assert_eq!(root.subject, "root");
+    assert_eq!(root.kind, "root");
+    assert_eq!(root.reason, "root-token");
+    assert_eq!(root.decision, "allowed");
+    assert_eq!(root.status, 200);
+    assert_eq!(root.route, "/v1/status");
+    assert_eq!(root.method, "GET");
+    assert_eq!(root.credential, None);
+
+    let cred = entries
+        .iter()
+        .find(|entry| entry.kind == "credential")
+        .context("a credential request must be attributed")?;
+    assert_eq!(cred.subject, "workbench-ü");
+    assert_eq!(
+        cred.credential.as_deref(),
+        Some(summary.id.to_string().as_str())
+    );
+    assert_eq!(cred.reason, "credential");
+    assert!(
+        !cred.request.is_empty(),
+        "a server-generated request id is required"
+    );
+
+    let missing = entries
+        .iter()
+        .find(|entry| entry.reason == "missing-token")
+        .context("an anonymous probe must be recorded")?;
+    assert_eq!(missing.decision, "denied");
+    assert_eq!(missing.kind, "anonymous");
+    assert_eq!(missing.subject, "");
+    assert_eq!(missing.status, 401);
+
+    let forged = entries
+        .iter()
+        .find(|entry| entry.reason == "unknown-token")
+        .context("a forged token must be recorded")?;
+    assert_eq!(forged.decision, "denied");
+
+    let unmatched = entries
+        .iter()
+        .find(|entry| entry.method == "GET" && entry.status == 404)
+        .context("unrouted probes must still be audited")?;
+    assert_eq!(unmatched.route, "unmatched");
+
+    // 审计文件本身不能含任何 token 明文。
+    let raw = fs::read_to_string(sshpool::access::path(&state.home))?;
+    assert!(
+        !raw.contains(&state.token),
+        "the root token must never be logged"
+    );
+    assert!(
+        !raw.contains(&token),
+        "a credential secret must never be logged"
+    );
+    Ok(())
+}
+
+/// 拒绝也要计入，且查询接口自身同样受鉴权与审计约束。
+#[tokio::test]
+async fn the_access_endpoint_filters_and_is_itself_audited() -> Result<()> {
+    let (_root, state) = state()?;
+    let app = sshpool::api::routes(state.clone());
+    let (_summary, token) = sshpool::credentials::issue(&state.home, "workbench", 3_600, now())?;
+
+    let response = app
+        .clone()
+        .oneshot(
+            Request::get("/v1/access?limit=10")
+                .header("authorization", format!("Bearer {token}"))
+                .body(Body::empty())?,
+        )
+        .await?;
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let response = app
+        .clone()
+        .oneshot(
+            Request::get("/v1/access?decision=allowed&subject=workbench")
+                .header("authorization", format!("Bearer {token}"))
+                .body(Body::empty())?,
+        )
+        .await?;
+    assert_eq!(response.status(), StatusCode::OK);
+    let bytes = axum::body::to_bytes(response.into_body(), 65536).await?;
+    let listed: Vec<serde_json::Value> = serde_json::from_slice(&bytes)?;
+    assert!(
+        !listed.is_empty(),
+        "the query itself must have been recorded"
+    );
+    assert!(listed.iter().all(|entry| entry["subject"] == "workbench"));
+    assert!(listed.iter().all(|entry| entry["decision"] == "allowed"));
+
+    // 查询接口也受鉴权：无 token 时 401，并且这条拒绝同样进审计。
+    let denied = app
+        .clone()
+        .oneshot(Request::get("/v1/access").body(Body::empty())?)
+        .await?;
+    assert_eq!(denied.status(), StatusCode::UNAUTHORIZED);
+
+    let entries = sshpool::access::read(
+        &state.home,
+        &sshpool::access::Filter {
+            decision: Some("denied".into()),
+            ..sshpool::access::Filter::default()
+        },
+    )?;
+    assert!(
+        entries
+            .iter()
+            .any(|entry| entry.route == "/v1/access" && entry.decision == "denied"),
+        "a denied audit query must itself be audited: {entries:#?}"
+    );
+    Ok(())
+}
+
+/// 审计写不进去时拒绝副作用请求：审计不了的动作不做。
+#[tokio::test]
+async fn a_non_writable_access_log_blocks_side_effect_requests() -> Result<()> {
+    let (_root, state) = state()?;
+    // 把 access.jsonl 做成目录：打开追加必然失败，模拟只读/损坏的审计目标。
+    fs::create_dir(sshpool::access::path(&state.home))?;
+    let app = sshpool::api::routes(state.clone());
+
+    // 只读请求照常：审计失败不该让运维连状态都看不到。
+    let response = app
+        .clone()
+        .oneshot(
+            Request::get("/v1/status")
+                .header("authorization", format!("Bearer {}", state.token))
+                .body(Body::empty())?,
+        )
+        .await?;
+    assert_eq!(response.status(), StatusCode::OK);
+
+    // 副作用请求被拒：不能出现「执行了但没记录」。
+    let response = app
+        .oneshot(
+            Request::post("/v1/nodes/test-node/disable")
+                .header("authorization", format!("Bearer {}", state.token))
+                .body(Body::empty())?,
+        )
+        .await?;
+    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    // 节点状态未被修改。
+    assert!(
+        state
+            .nodes()
+            .await
+            .iter()
+            .any(|node| node.name == "test-node" && node.enabled)
+    );
     Ok(())
 }

@@ -1,0 +1,220 @@
+{
+  "checked_at": "2026-11-07T20:59:29+0800",
+  "scope": "080 可查询的用户访问审计：真实二进制 serve + CLI access，临时 home，不涉及生产状态目录",
+  "environment": {
+    "os": "Darwin arm64",
+    "binary": "target/release/sshpool（release 构建）",
+    "controller": "127.0.0.1:<随机端口>（明文回环 HTTP；审计与 TLS 无关，TLS 已由 070 证据覆盖）",
+    "home": "临时目录（一次性 token / credentials.json）"
+  },
+  "implementation": {
+    "modules": [
+      "src/access.rs（新建）",
+      "src/api.rs::audit_access（中间件）",
+      "src/api.rs::Principal 提取器",
+      "src/main.rs `sshpool access`"
+    ],
+    "file": "home/access.jsonl（0600）：单文件 4 MiB × 3 代 = 12 MiB 硬上限；达到上限滚动，不清空",
+    "fields": [
+      "schema",
+      "time",
+      "request",
+      "subject",
+      "kind",
+      "credential",
+      "decision",
+      "reason",
+      "method",
+      "route",
+      "job",
+      "status"
+    ],
+    "not_recorded": [
+      "token / Authorization 头",
+      "请求正文与查询串",
+      "环境变量与凭据 secret",
+      "未命中路由的原始路径"
+    ]
+  },
+  "request_matrix": {
+    "root_with_client_request_id": {
+      "status": 200,
+      "body": "[]"
+    },
+    "credential": {
+      "status": 200,
+      "body": "[]"
+    },
+    "anonymous": {
+      "status": 401,
+      "body": "unauthorized"
+    },
+    "forged_token": {
+      "status": 401,
+      "body": "unauthorized"
+    },
+    "unmatched_route_anonymous": {
+      "status": 401,
+      "body": "unauthorized"
+    },
+    "unmatched_route_credential": {
+      "status": 404,
+      "body": ""
+    },
+    "credential_job_path": {
+      "status": 400,
+      "body": "unknown job"
+    }
+  },
+  "log": {
+    "path": "home/access.jsonl",
+    "mode": "0o600",
+    "line_count": 8,
+    "fields_present": [
+      "credential",
+      "decision",
+      "job",
+      "kind",
+      "method",
+      "reason",
+      "request",
+      "route",
+      "schema",
+      "status",
+      "subject",
+      "time"
+    ],
+    "contains_root_token": false,
+    "contains_credential_secret": false,
+    "contains_authorization_header": false,
+    "unmatched_route_never_records_raw_path": true,
+    "unmatched_rows": [
+      {
+        "status": 401,
+        "decision": "denied",
+        "route": "unmatched",
+        "subject": ""
+      },
+      {
+        "status": 404,
+        "decision": "allowed",
+        "route": "unmatched",
+        "subject": "workbench-ü"
+      }
+    ],
+    "job_path_rows": [
+      {
+        "route": "/v1/jobs/{id}",
+        "job": "123e4567-e89b-12d3-a456-426614174000"
+      }
+    ]
+  },
+  "query": {
+    "limit_100_count": 8,
+    "denied_only": [
+      [
+        "",
+        "missing-token",
+        401
+      ],
+      [
+        "",
+        "unknown-token",
+        401
+      ],
+      [
+        "",
+        "missing-token",
+        401
+      ]
+    ],
+    "subject_filter": [
+      [
+        "workbench-ü",
+        "credential",
+        "d80d6d32-dffd-4e00-b3ba-498f516011d0",
+        "/v1/access"
+      ],
+      [
+        "workbench-ü",
+        "credential",
+        "d80d6d32-dffd-4e00-b3ba-498f516011d0",
+        "/v1/access"
+      ],
+      [
+        "workbench-ü",
+        "credential",
+        "d80d6d32-dffd-4e00-b3ba-498f516011d0",
+        "/v1/jobs/{id}"
+      ],
+      [
+        "workbench-ü",
+        "credential",
+        "d80d6d32-dffd-4e00-b3ba-498f516011d0",
+        "unmatched"
+      ],
+      [
+        "workbench-ü",
+        "credential",
+        "d80d6d32-dffd-4e00-b3ba-498f516011d0",
+        "/v1/jobs"
+      ]
+    ],
+    "limit_clamped": 11,
+    "since_future_is_empty": [],
+    "newest_first": true
+  },
+  "fail_closed": {
+    "read_only_still_works_with_unwritable_log": 200,
+    "side_effect_refused_when_unwritable": 503,
+    "truncated_final_line": {
+      "rows_still_readable": 13,
+      "stderr": ""
+    },
+    "torn_tail_then_new_request": {
+      "request_status": 200,
+      "rows_readable": 16,
+      "torn_line_still_present": false,
+      "new_record_found": true
+    },
+    "corrupt_middle_line": {
+      "exit": 1,
+      "stderr": "sshpool: controller: malformed access record at /var/folders/t2/3gk_bjr91ql_ft6nv89532lm0000gp/T/sshpool-audit-d3tthmwl/access.jsonl:2: key must be a string at line 1 column 2"
+    },
+    "unreadable_generation": {
+      "exit": 1,
+      "stderr": "sshpool: controller: cannot read /var/folders/t2/3gk_bjr91ql_ft6nv89532lm0000gp/T/sshpool-audit-d3tthmwl/access.jsonl.1: Permission denied (os error 13)"
+    }
+  },
+  "rotation": {
+    "covered_by": "src/access.rs::rotation_drops_the_oldest_generation_and_keeps_three_files",
+    "note": "真实二进制未做 4 MiB 填充；滚动逻辑由单测覆盖（4 MiB × 3 代硬上限）"
+  },
+  "automated": {
+    "suites": [
+      "src/access.rs（7 个单测）",
+      "tests/api.rs（3 个端到端测试）"
+    ],
+    "verified": [
+      "每条请求都留下主体 / 身份来源 / 决定 / 理由 / 状态码 / 路由模板",
+      "拒绝（缺 token、伪造 token）同样记录，且响应体不区分原因",
+      "未命中路由记为 `unmatched`，不落原始路径",
+      "路径里的规范 UUID 单独记为 `job` 字段",
+      "客户端 `x-request-id` 合法则沿用，否则服务端生成",
+      "日志里不含根 token、凭据 secret 与 Authorization 字样",
+      "/v1/access 自身被审计；按 subject / decision / since / limit 过滤，时间倒序",
+      "审计文件不可写时副作用请求 503 且不执行，只读请求仍 200",
+      "当前文件末行半行可读；下一条 append 会先切掉半行，不会把它夹成中间行",
+      "中间行损坏 fail-closed 报错，不静默跳过",
+      "滚动代存在但读不了时报错，不静默少读一段历史",
+      "4 MiB × 3 代有界滚动，最老一代被丢弃而不是清空整份日志"
+    ],
+    "known_gaps": [
+      "decision 只区分 401 与非 401：400（请求非法）也记成 allowed",
+      "没有跨主机汇集/远程日志后端，日志只在本机 home 下",
+      "不防篡改：能写 home 的人可以改写或删除记录，没有签名链",
+      "所有凭据权限相同，审计只记录不约束",
+      "超过 12 MiB 的历史被滚动丢弃，没有外部归档"
+    ]
+  }
+}

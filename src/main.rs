@@ -73,6 +73,20 @@ enum Action {
         #[command(subcommand)]
         command: CredentialAction,
     },
+    /// 查询控制面的访问审计（谁、以什么身份、访问了哪个接口、允许或拒绝）。
+    Access {
+        /// 只显示该主体的记录。
+        #[arg(long)]
+        subject: Option<String>,
+        /// 只看 `allowed` 或 `denied`。
+        #[arg(long)]
+        decision: Option<String>,
+        /// 只显示该时刻（Unix 秒）之后的记录。
+        #[arg(long)]
+        since: Option<u64>,
+        #[arg(long, default_value_t = sshpool::access::DEFAULT_LIMIT)]
+        limit: usize,
+    },
     /// 查看任务记录，或离线核对与清理任务库。
     Jobs {
         #[command(subcommand)]
@@ -325,6 +339,27 @@ async fn dispatch(cli: Cli) -> Result<i32> {
             });
         }
         Action::Credential { command } => return credential_command(&home, command),
+        Action::Access {
+            subject,
+            decision,
+            since,
+            limit,
+        } => {
+            let mut path = format!("/v1/access?limit={limit}");
+            if let Some(subject) = subject {
+                path.push_str(&format!("&subject={}", url_component(subject)));
+            }
+            if let Some(decision) = decision {
+                path.push_str(&format!("&decision={}", url_component(decision)));
+            }
+            if let Some(since) = since {
+                path.push_str(&format!("&since={since}"));
+            }
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&client(&cli, &home)?.get(&path).await?)?
+            );
+        }
         Action::Dr { command } => return dr_command(command),
         Action::Doctor => {
             println!(
@@ -488,6 +523,19 @@ fn credential_command(home: &std::path::Path, command: &CredentialAction) -> Res
     }
     Ok(0)
 }
+/// 查询参数的百分号编码：主体名来自人名或工作台名，可能带空格与中文。
+fn url_component(value: &str) -> String {
+    let mut encoded = String::new();
+    for byte in value.as_bytes() {
+        if byte.is_ascii_alphanumeric() || b"-_.~".contains(byte) {
+            encoded.push(*byte as char);
+        } else {
+            encoded.push_str(&format!("%{byte:02X}"));
+        }
+    }
+    encoded
+}
+
 fn dr_command(command: &DrAction) -> Result<i32> {
     match command {
         DrAction::Verify { archive, checksum } => {

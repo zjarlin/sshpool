@@ -40,6 +40,8 @@ pub struct State {
     /// 串行化所有需要跨主机确认的状态转换，避免两个候选复用同一版本。
     pub transitions: Mutex<()>,
     pub audit: Mutex<()>,
+    /// 串行化访问审计的追加与滚动，避免两行交错或滚动时丢记录。
+    pub access: Mutex<()>,
 }
 
 impl State {
@@ -78,6 +80,7 @@ impl State {
             probing: Mutex::new(()),
             transitions: Mutex::new(()),
             audit: Mutex::new(()),
+            access: Mutex::new(()),
         }))
     }
 

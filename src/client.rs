@@ -54,8 +54,10 @@ impl Client {
         })
     }
     fn request(&self, method: reqwest::Method, path: &str) -> reqwest::RequestBuilder {
+        // 每个请求带一个标识，控制面的访问审计据此把客户端动作与服务端记录对上。
         self.http
             .request(method, format!("{}{path}", self.endpoint))
+            .header("x-request-id", Uuid::new_v4().to_string())
             .bearer_auth(&self.token)
     }
     async fn response(response: reqwest::Response) -> Result<reqwest::Response> {

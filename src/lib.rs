@@ -1,4 +1,5 @@
 //! SSHPool 的控制面、SSH 透传与隔离构建执行器。
+pub mod access;
 pub mod api;
 pub mod archive;
 pub mod client;

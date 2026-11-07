@@ -198,6 +198,18 @@ sshpool credential prune --apply                                # 只清理已�
 
 明文 token 只在 `issue` 时打印一次，磁盘上只保存 SHA-256 摘要；有效期上限 90 天，到期是半开区间，撤销对之后发起的请求立即生效（已通过鉴权的进行中请求不会被中断）且可重复执行。根 token 仍然可用，并且是坏掉的 `credentials.json` 之外唯一的入口 —— 凭据库损坏时动态凭据一律 401，但根 token 不会因此被锁在门外。当前短期凭据与根 token 权限相同，都能提交和取消任务；按主体分级授权尚未实现。
 
+### 访问审计
+
+每个请求都留一行 JSON 到 `home/access.jsonl`（`0600`）：主体、身份来源（`root`/`credential`/`anonymous`）、凭据 id、决定（`allowed`/`denied`）、理由（`missing-token`、`unknown-token`、`store-unusable` 等）、方法、路由模板、任务 id、状态码，以及客户端 `x-request-id` 或服务端生成的 UUID。token、请求正文、查询串与环境变量都不进日志；未命中路由只记 `unmatched`，不记原始路径。
+
+```sh
+sshpool access                                  # 最近 200 条，时间倒序
+sshpool access --subject workbench --limit 50
+sshpool access --decision denied --since 1767225600
+```
+
+单文件 4 MiB、保留 3 代，磁盘上限 12 MiB，写满滚动而不清空。审计写不进去时副作用请求直接 503（动作不发生），只读请求照常；中间行损坏会报错而不是被跳过，只有当前文件末尾的崩溃半行会被容忍并在下一次写入前切掉。`/v1/access` 自身也走同一套审计。`decision` 只区分 401 与非 401，所以 400 会记成 `allowed`，看结论请结合 `status`。细节与验收证据见 [验证文档](docs/validation.md#access-audit)。
+
 ## 已知限制
 
 - 使用整个任务分派；尚未集成 sccache/Icecream 的编译单元拆分或远程缓存。原型借鉴 Slurm 的资源预约、OpenSSH 的连接面和容器运行时的隔离机制，不依赖这些项目的源码。
@@ -208,7 +220,8 @@ sshpool credential prune --apply                                # 只清理已�
 - 不保证入口 Mac 关机、休眠或重启时会话在线。任务状态副本能保存已确认记录，但入口 SSH 和控制器不会自动漂移；恢复机需要独立保存的配置、token 与 SSH 凭据。
 - 不提供 NAT 穿透；复用已有 SSH ProxyJump/ProxyCommand 或受控网络。没有新增路由、隧道或端口映射。
 - HTTPS 只做服务端证书校验，没有客户端证书（mTLS）。改证书必须重启控制面，没有热重载或轮换；信任的 CA 需要用 `--ca-file` 指定，没有吊销列表。
-- 短期凭据只解决"能撤销"，尚未按主体限制权限：拿到任一条有效凭据就能提交、取消任务和查询全部记录。逐主体的授权与审计见 [验证文档](docs/validation.md#access-network)。
+- 短期凭据只解决"能撤销"，尚未按主体限制权限：拿到任一条有效凭据就能提交、取消任务和查询全部记录。逐主体的授权见 [验证文档](docs/validation.md#access-network)。
+- 访问审计是本机 `home/access.jsonl` 上的普通追加文件，没有签名链或只追加存储：能写这个目录的人可以改写、删除或伪造记录。超过 12 MiB 的历史会被滚动丢弃，没有远程日志后端或归档；也没有按 IP/地理归因。
 
 ## 开发与验证
 

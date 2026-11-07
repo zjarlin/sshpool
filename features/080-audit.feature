@@ -9,7 +9,8 @@ Feature: 持久任务审计
     Then 事件记录包含提交分配创建导入执行导出清理和终态
     And CLI 可以按任务 ID 查询事件
 
-  @planned @p1
+  # evidence: docs/validation.md#access-audit
+  @verified @automated @p1
   Scenario: 可查询的用户访问审计
     Given 控制面支持多个授权用户
     When 用户访问状态或提交任务
