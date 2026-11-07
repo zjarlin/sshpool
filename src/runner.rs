@@ -1,6 +1,7 @@
 use crate::{
     archive,
     config::{Build, Node},
+    isolation,
     model::{Attempt, Job, Phase, now, queue_precedes},
     probe, scheduler,
     state::State,
@@ -17,57 +18,6 @@ use uuid::Uuid;
 fn docker(args: &[String]) -> String {
     format!("docker {}", transport::words(args))
 }
-/// 容器入口 PID1 是 `sleep timeout+租期`：SSH 掉线或控制面消失后，容器仍会自行停止。
-/// 这是唯一可以在「探测不到远端」时使用的终止证据，因此只按时间边界推断，不猜进程状态。
-/// 租期长度只在 `watchdog::LEASE_GRACE_SECS` 定义一次，创建与判定共用同一个值。
-fn container_args(id: Uuid, name: &str, build: &Build) -> Vec<String> {
-    let mut args = vec![
-        "create".into(),
-        "--name".into(),
-        name.into(),
-        "--label".into(),
-        format!("io.sshpool.job={id}"),
-        "--read-only".into(),
-        "--cap-drop=ALL".into(),
-        "--security-opt=no-new-privileges".into(),
-        "--user=65534:65534".into(),
-        "--init".into(),
-        format!("--memory={}m", build.memory_mib),
-        format!("--memory-swap={}m", build.memory_mib),
-        format!("--cpus={}", build.cpus),
-        format!("--pids-limit={}", build.pids),
-        "--ulimit=nofile=1024:1024".into(),
-        "--ulimit=core=0:0".into(),
-        "--restart=no".into(),
-        "--log-driver=none".into(),
-        format!("--platform={}", build.platform),
-        format!(
-            "--network={}",
-            if build.network { "bridge" } else { "none" }
-        ),
-        format!(
-            "--tmpfs=/work:rw,nosuid,nodev,size={}m,mode=1777",
-            build.scratch_mib
-        ),
-        "--tmpfs=/tmp:rw,nosuid,nodev,noexec,size=64m,mode=1777".into(),
-        "--workdir=/work".into(),
-        "--env=HOME=/work/.home".into(),
-        "--env=TMPDIR=/tmp".into(),
-        "--env=CARGO_HOME=/work/.cargo".into(),
-        "--env=GRADLE_USER_HOME=/work/.gradle".into(),
-        "--env=npm_config_cache=/work/.npm".into(),
-        "--entrypoint=/bin/sh".into(),
-        build.image.clone(),
-        "-c".into(),
-    ];
-    // 主容器有独立的最长寿命；控制面掉线时，任务也不会无限运行。
-    args.push(format!(
-        "sleep {}",
-        build.timeout_secs + watchdog::LEASE_GRACE_SECS
-    ));
-    args
-}
-
 /// 清理确认、幂等和禁网同时成立时，才允许在另一台 Worker 上重新执行。
 fn failover_allowed(
     execution_failed: bool,
@@ -248,7 +198,11 @@ async fn attempt(
         "images declaring VOLUME are not allowed: use a build image without persistent volumes"
     );
     state.event(id, "container_create", &node.name).await?;
-    transport::checked(node, &docker(&container_args(id, container, build)), 20).await?;
+    let args = isolation::container_args(id, container, build);
+    transport::checked(node, &docker(&args), 20).await?;
+    // 命令行声明可能被 Docker 改写（例如 tmpfs 默认 noexec）；启动前按真实配置复核，
+    // 任何一项不满足就停在 Created 状态，由调用方的清理路径删除。
+    isolation::verify_created(node, container, id, build).await?;
     transport::checked(
         node,
         &format!("docker start {}", transport::quote(container)),

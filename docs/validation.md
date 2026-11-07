@@ -42,7 +42,11 @@ ARM64 的 shell 任务已完成日志、退出码、产物导出与清理闭环�
 
 实际任务输出 UID 65534，工作台与容器均未挂载宿主 home。文件边界测试覆盖外部符号链接、tar 穿越/软硬链接/特殊文件、未声明产物、已有输出不覆盖、畸形/超量上传与相邻文件保护。
 
-资源过滤测试覆盖平台、内存、磁盘、CPU 负载、并发槽位和未知清理隔离。cgroup、tmpfs、网络与日志上限的完整压力矩阵尚需补充，不能据此承诺所有业务峰值下的 SLO。
+2026-11-07 起，隔离不再只是命令行声明：`docker create` 之后、`docker start` 之前，控制面用 `docker inspect` 的真实 HostConfig 复核，任何一项不符就停在 `Created` 状态（随后按任务标签删除），不会启动。校验项与实测值见 [evidence/isolation-runtime-20261107.json](evidence/isolation-runtime-20261107.json)，覆盖只读根文件系统、空 capability、`no-new-privileges`、非 root、无 bind mount / volumes-from / 设备 / 宿主命名空间、禁网、不发布端口、`--restart=no`、`--log-driver=none`、init 进程，以及内存/CPU/PID/ulimit/tmpfs 上限与请求一致。
+
+这轮实测发现并修复了一个真实缺陷：**Docker 对 `--tmpfs` 默认追加 `noexec`**，即使显式给了其他选项也照样加。此前 `/work` 因此不可执行，编译出的二进制和测试程序会直接 `Permission denied`（实测 exit 126）。现在 `/work` 显式带 `exec`（编译产物必须在里面跑），`/tmp` 保持 `noexec`，两者都由校验强制。
+
+资源过滤测试覆盖平台、内存、磁盘、CPU 负载、并发槽位和未知清理隔离。业务 SLO 压力矩阵仍未完成：并发构建对业务延迟、swap、磁盘水位的影响需要在业务主机上实测，不能据此承诺所有业务峰值下的 SLO。
 
 ## deployment
 
