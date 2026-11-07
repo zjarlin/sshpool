@@ -231,6 +231,13 @@ _（本节标题锚点为 `access-network`。）_
 | 默认最小权限 | 不写 `--scope` 只签发 `read`；`read` 是必需项，缺它的库整份拒绝加载（fail-closed） | `a_read_only_credential_can_read_but_cannot_change_node_state`、`credentials_without_a_scope_field_are_downgraded_to_read_only` |
 | 越权是 403 不是 401 | 处理器入口 `Principal::require`，错误体只写缺哪一项权限 | `a_read_only_credential_is_refused_on_every_write_route` |
 | 旧记录降级只读 | 没有 `scopes` 字段的记录按 `legacy_scopes()` 处理，不兼容成「全部权限」 | `credentials_without_a_scope_field_are_downgraded_to_read_only` |
+| 属主由服务端写入 | `submit` 用鉴权结果里的主体写 `Job.owner`，请求头无法指定属主 | `a_credential_sees_and_manages_only_the_jobs_it_submitted`、`a_credential_sees_only_its_own_jobs_over_tls` |
+| 列表只含自己的任务 | `GET /v1/jobs` 用 `Principal::owns` 过滤，别人的任务不进列表 | 同上 |
+| 越权读是 403 不是 404 | 读接口统一经 `readable_job`；404 只留给真正不存在的任务 | `a_job_without_an_owner_is_only_visible_to_operators`、`a_credential_sees_only_its_own_jobs_over_tls` |
+| 越权取消不改状态 | 属主检查在写 `cancel_requested` 之前 | `a_credential_sees_and_manages_only_the_jobs_it_submitted` |
+| 归属按主体名而非凭据 id | 同一主体换发新凭据仍看得到旧任务 | `jobs_of_the_same_subject_share_the_same_identity`、证据里的轮换实测 |
+| `root` 是保留主体名 | 签发与加载都拒绝 `subject == "root"`（fail-closed） | `the_root_subject_name_cannot_be_issued_or_loaded` |
+| 未知属主 fail-closed | `owner == None` 只有根 token 与 `admin` 凭据能读，且不进普通凭据的列表 | `a_job_without_an_owner_is_only_visible_to_operators` |
 
 真实二进制（macOS ARM64 release，rustls 0.23/ring，TLS1.2+1.3，openssl 4.1.0 自建 CA → `CA:FALSE` 叶证书）在 `127.0.0.1:18877` 的实测矩阵：`curl --cacert` 三种协商全部 `200`（auto/h2、强制 `--http1.1`、强制 `--http2`）；不带 CA 时 curl 退出码 60、`unable to get local issuer certificate`、状态 `000`；向 TLS 端口发明文 HTTP 退出码 1、`Received HTTP/0.9 when not allowed`。CLI 带 `--ca-file` 访问 `https://` 成功返回 `[]`，不带 CA 报 `invalid peer certificate: UnknownIssuer`。
 
@@ -240,7 +247,11 @@ _（本节标题锚点为 `access-network`。）_
 
 抓到的两个真实缺陷：`axum` 未启用 `http2` feature 时，ALPN 协商成 `h2` 但服务端只会说 HTTP/1.1，curl 报 `Error in the HTTP2 framing layer` —— 打开 `features = ["http2"]` 后三种协商全部正常。握手最初串行执行，被"只连不说"的客户端卡住整个控制面；改成每连接独立任务 + 64 并发上限 + 10 秒超时后，该测试与真实链路都恢复正常。
 
-尚未覆盖：证书轮换/热重载（换证书需重启控制面）、客户端证书（mTLS，当前只做服务端证书校验）、权限的主体范围（现在只有 `read`/`submit`/`cancel`/`admin` 四项动作白名单，没有「只能取消自己提交的任务」或按节点、按项目分权；权限在签发时固定，改权限要重新签发）、跨公网真实 RTT、CA 文件轮换与吊销列表。
+主体范围在真实链路上的实测（同一份 27 条断言，证据见 [evidence/credential-ownership-20261107.json](evidence/credential-ownership-20261107.json)）：`alice` 与 `bob` 都签了 `read`/`submit`/`cancel`，各自提交一个任务后 `owner` 分别是自己和对方自己（客户端伪造属主的尝试同样只得到自己的名字）；根 token 与 `read`+`admin` 的 `operator` 列表里两条都在，`alice` 只看到一条。对方任务的详情、日志、事件、产物四个读接口全部 403 且响应体都是同一句 `credential does not own this job`（不含任何主体名），未知 UUID 仍是 400 `unknown job`，说明 403 不是「路由不存在」的副作用。`bob` 取消 `alice` 的任务得到 403，随后 `job.json` 里的 `cancel_requested` 仍是 `false`；`alice` 自己取消得到 200。产物接口的判定顺序是「先属主、后存在性」：属主读一个没有产物的任务得到 400 `no artifacts available`，非属主同一请求得到 403。同一主体重新签发一把凭据后仍能读到旧任务（归属按主体名，不按凭据 id）。`--subject root` 被拒（`subject "root" is reserved for the root token`）且不写库。把一条任务的 `owner` 字段从 `job.json` 删掉并重启后：根 token 与 `admin` 凭据读到 200，`alice` 得到 403，连原本的属主 `bob` 也得到 403 —— 归属未知不放宽。重启后 `owner` 从 `job.json` 恢复为 `alice`，服务日志里没有出现根 token 或任何凭据明文。
+
+混跑旧版本二进制时，旧版给任务落盘会丢掉不认识的 `owner` 字段（`Job` 不是 `deny_unknown_fields`），任务随即退化成「归属未知」：只有运维主体能读，属于收紧而非放宽，但会让原属主看不到自己的任务。升级应一次性替换控制面与副本上的二进制。
+
+尚未覆盖：证书轮换/热重载（换证书需重启控制面）、客户端证书（mTLS，当前只做服务端证书校验）、更细的分权（没有按节点、按项目分权；`admin` 仍是越过属主边界的唯一凭据，权限在签发时固定，改权限要重新签发）、跨公网真实 RTT、CA 文件轮换与吊销列表。
 
 ### 可查询的用户访问审计 {#access-audit}
 

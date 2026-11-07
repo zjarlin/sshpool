@@ -51,6 +51,15 @@ impl ApiError {
         )
     }
 
+    /// 有权限、但这条任务不属于该主体。错误体同样不含属主名，避免一个凭据
+    /// 通过错误文本枚举出别人的主体名。
+    fn not_owner() -> Self {
+        Self::new(
+            StatusCode::FORBIDDEN,
+            anyhow::anyhow!("credential does not own this job"),
+        )
+    }
+
     /// 审计不可用时拒绝执行：宁可这次请求失败，也不要产生没有访问记录的动作。
     fn audit_unavailable() -> Self {
         Self::new(
@@ -124,6 +133,40 @@ impl Principal {
         match self {
             Self::Root => crate::credentials::Scope::ALL.to_vec(),
             Self::Credential(grant) => grant.scopes.clone(),
+        }
+    }
+
+    /// 是否为运维主体：根 token，或持有 `admin` 的凭据。
+    ///
+    /// 运维主体能越过任务属主边界；这也解释为什么 `admin` 不能随手借出去。
+    pub fn is_operator(&self) -> bool {
+        match self {
+            Self::Root => true,
+            Self::Credential(grant) => grant.allows(crate::credentials::Scope::Admin),
+        }
+    }
+
+    /// 任务属主检查。属主边界与动作权限是**两道独立**的判断：
+    /// 有 `read` 只能读自己的任务，有 `cancel` 只能取消自己的任务。
+    ///
+    /// 属主未知（旧记录 `owner = None`）一律拒绝非运维主体 —— 无法证明归属时
+    /// 宁可让旧任务只有根 token 能看，也不能把它默认成「大家的」。
+    pub fn owns(&self, job: &Job) -> bool {
+        if self.is_operator() {
+            return true;
+        }
+        match job.owner.as_deref() {
+            Some(owner) => owner == self.subject(),
+            None => false,
+        }
+    }
+
+    /// 属主检查的请求入口；不通过就是 403（不是 404，避免与「任务不存在」混淆）。
+    pub fn require_owner(&self, job: &Job) -> ApiResult<()> {
+        if self.owns(job) {
+            Ok(())
+        } else {
+            Err(ApiError::not_owner())
         }
     }
 
@@ -431,6 +474,7 @@ async fn jobs(
         .lock()
         .await
         .values()
+        .filter(|job| principal.owns(job))
         .cloned()
         .collect::<Vec<_>>();
     jobs.sort_by_key(|job| std::cmp::Reverse(job.created_at));
@@ -442,13 +486,7 @@ async fn job(
     Path(id): Path<Uuid>,
 ) -> ApiResult<impl IntoResponse> {
     principal.require(crate::credentials::Scope::Read)?;
-    let job = state
-        .jobs
-        .lock()
-        .await
-        .get(&id)
-        .cloned()
-        .context("unknown job")?;
+    let job = readable_job(&state, &principal, id).await?;
     Ok(axum::Json(job))
 }
 async fn cancel(
@@ -463,6 +501,8 @@ async fn cancel(
     let candidate = {
         let jobs = state.jobs.lock().await;
         let mut candidate = jobs.get(&id).cloned().context("unknown job")?;
+        // 属主检查放在改写之前：不能先标记 cancel 再发现没有权限。
+        principal.require_owner(&candidate)?;
         if !candidate.phase.terminal() {
             candidate.cancel_requested = true;
         }
@@ -569,6 +609,7 @@ async fn submit(
         cleanup_confirmed: false,
         queue_deadline,
         source_sha256: Some(source_sha256.clone()),
+        owner: Some(principal.subject().to_string()),
     };
     // 首个必须成功的 checkpoint 同时包含提交事件，避免事件只留在本机。
     state
@@ -607,7 +648,7 @@ async fn log(
     axum::extract::Query(query): axum::extract::Query<std::collections::HashMap<String, String>>,
 ) -> ApiResult<Response> {
     principal.require(crate::credentials::Scope::Read)?;
-    ensure_job(&state, id).await?;
+    readable_job(&state, &principal, id).await?;
     let offset = query
         .get("offset")
         .map(|v| v.parse::<u64>())
@@ -640,13 +681,23 @@ async fn ensure_job(state: &State, id: Uuid) -> Result<Job> {
         .cloned()
         .context("unknown job")
 }
+
+/// 读取一条任务并做属主检查；读接口统一走这里，避免某个路由漏掉边界。
+///
+/// 顺序是先查存在性（不存在 → 400 `unknown job`），再做属主（不属于自己 → 403）。
+/// 也就是说，知道 UUID 的凭据能区分「不存在」与「不属于我」，但拿不到任何内容。
+async fn readable_job(state: &State, principal: &Principal, id: Uuid) -> ApiResult<Job> {
+    let job = ensure_job(state, id).await?;
+    principal.require_owner(&job)?;
+    Ok(job)
+}
 async fn artifacts(
     AppState(state): AppState<Arc<State>>,
     principal: Principal,
     Path(id): Path<Uuid>,
 ) -> ApiResult<Response> {
     principal.require(crate::credentials::Scope::Read)?;
-    if !ensure_job(&state, id).await?.artifacts {
+    if !readable_job(&state, &principal, id).await?.artifacts {
         return Err(anyhow::anyhow!("no artifacts available").into());
     }
     let file = tokio::fs::File::open(state.dir(id).join("artifacts.tar"))
@@ -665,7 +716,7 @@ async fn events(
     Path(id): Path<Uuid>,
 ) -> ApiResult<impl IntoResponse> {
     principal.require(crate::credentials::Scope::Read)?;
-    ensure_job(&state, id).await?;
+    readable_job(&state, &principal, id).await?;
     let path = state.dir(id).join("events.jsonl");
     // 和追加事件共用锁，避免读取到尚未写完的 JSON 行。
     let _guard = state.audit.lock().await;

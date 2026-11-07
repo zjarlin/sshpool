@@ -34,6 +34,7 @@ fn job(phase: Phase, finished_at: Option<u64>, cleanup: Option<bool>) -> Job {
         cleanup_confirmed: cleanup == Some(true),
         queue_deadline: None,
         source_sha256: None,
+        owner: None,
     }
 }
 

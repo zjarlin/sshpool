@@ -26,6 +26,8 @@ pub const SCHEMA: u32 = 1;
 pub const PREFIX: &str = "spt";
 /// 上限 90 天：足够一次迭代或一台借用机器，又不至于变成第二把长期密钥。
 pub const MAX_TTL_SECS: u64 = 90 * 86_400;
+/// 根 token 在任务属主里写作 `root`；凭据不能用这个名字，否则两者无法区分。
+pub const RESERVED_SUBJECT: &str = "root";
 
 /// 一条短期凭据被允许做的事。权限只按白名单授予，不认识的字符串一律拒绝。
 ///
@@ -290,6 +292,12 @@ fn validate_subject(subject: &str) -> Result<()> {
             && !subject.chars().any(char::is_control),
         "subject must be 1..128 printable characters"
     );
+    // `root` 是根 token 的任务属主名。允许凭据占用它，等于让一份借出的只读凭据
+    // 被当成运维提交的任务的所有者，所以这里是硬冲突而不是命名建议。
+    ensure!(
+        subject != RESERVED_SUBJECT,
+        "subject {RESERVED_SUBJECT:?} is reserved for the root token; choose another name"
+    );
     Ok(())
 }
 
@@ -462,6 +470,39 @@ mod tests {
         // 到期的瞬间就拒绝（半开区间），不留 1 秒的灰区。
         assert_eq!(verify(root.path(), &token, 4_599).unwrap().unwrap(), grant);
         assert_eq!(verify(root.path(), &token, 4_600).unwrap(), None);
+    }
+
+    #[test]
+    fn the_root_subject_name_cannot_be_issued_or_loaded() {
+        let root = home();
+        let error = issue(root.path(), RESERVED_SUBJECT, &Scope::ALL, 3600, 1_000).unwrap_err();
+        assert!(
+            format!("{error:#}").contains("reserved"),
+            "unexpected error: {error:#}"
+        );
+        // 手写进文件也不行：加载时同样拒绝整个库（fail-closed）。
+        let (_, token) = issue(root.path(), "workbench", &Scope::ALL, 3600, 1_000).unwrap();
+        let mut store: serde_json::Value =
+            serde_json::from_slice(&fs::read(path(root.path())).unwrap()).unwrap();
+        store["credentials"][0]["subject"] = serde_json::json!(RESERVED_SUBJECT);
+        fs::write(
+            path(root.path()),
+            serde_json::to_vec_pretty(&store).unwrap(),
+        )
+        .unwrap();
+        assert!(load(root.path()).is_err());
+        assert!(verify(root.path(), &token, 1_000).is_err());
+    }
+
+    #[test]
+    fn jobs_of_the_same_subject_share_the_same_identity() {
+        // 同一主体签两次（例如例行轮换）视为同一个人：任务归属按主体名比较，
+        // 不按凭据 id，否则换一把 token 就看不到自己昨天提交的任务。
+        let root = home();
+        let (first, _) = issue(root.path(), "workbench", &Scope::ALL, 3600, 1_000).unwrap();
+        let (second, _) = issue(root.path(), "workbench", &Scope::ALL, 3600, 2_000).unwrap();
+        assert_ne!(first.id, second.id);
+        assert_eq!(first.subject, second.subject);
     }
 
     #[test]

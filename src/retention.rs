@@ -755,6 +755,7 @@ mod tests {
             cleanup_confirmed: true,
             queue_deadline: None,
             source_sha256: None,
+            owner: None,
         }
     }
 

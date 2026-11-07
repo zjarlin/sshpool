@@ -253,6 +253,7 @@ mod tests {
             cleanup_confirmed: confirmed,
             queue_deadline: None,
             source_sha256: None,
+            owner: None,
         }
     }
 

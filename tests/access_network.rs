@@ -4,6 +4,7 @@
 //! 然后用真实 CLI 与 HTTP 客户端访问它。不用 `routes(state).oneshot(...)`，
 //! 因为要证明的正是「线上链路会校验证书、撤销会立刻生效」，而不是处理器能被调用。
 use anyhow::{Context, Result, ensure};
+use base64::Engine;
 use serde_json::Value;
 use std::{fs, net::SocketAddr, path::Path, process::Stdio, time::Duration};
 
@@ -434,6 +435,118 @@ async fn a_read_only_credential_can_read_but_cannot_change_node_state() -> Resul
         response.status(),
         400,
         "an admin credential must reach the handler and fail on the unknown node instead"
+    );
+    Ok(())
+}
+
+/// 任务属主边界在真实 TLS 链路上成立：两个主体都有 read/submit/cancel，
+/// 差别只在「谁提交的」，并且根 token 仍然越过属主边界。
+#[tokio::test]
+async fn a_credential_sees_only_its_own_jobs_over_tls() -> Result<()> {
+    let controller = Controller::start().await?;
+    let token = controller.token()?;
+    let root_token_file = controller.token_file("root-token", &token)?;
+    let trusted = controller.http(Some(&controller.cert)).await?;
+
+    let issue = |subject: &str, scopes: &[&str]| -> Result<String> {
+        let mut args = vec!["credential", "issue", "--subject", subject];
+        for scope in scopes {
+            args.push("--scope");
+            args.push(scope);
+        }
+        let issued = controller.cli(&args, &root_token_file)?;
+        ensure!(
+            issued.status.success(),
+            "credential issue failed: {}",
+            String::from_utf8_lossy(&issued.stderr)
+        );
+        let issued: Value = serde_json::from_slice(&issued.stdout)?;
+        Ok(issued["token"]
+            .as_str()
+            .context("missing token")?
+            .to_string())
+    };
+    let alice = issue("alice", &["read", "submit", "cancel"])?;
+    let bob = issue("bob", &["read", "submit", "cancel"])?;
+    let alice_file = controller.token_file("alice-token", &alice)?;
+    let bob_file = controller.token_file("bob-token", &bob)?;
+
+    // 提交一个空的合法归档：控制面没有节点，任务会失败，但记录与属主是真的。
+    let archive = controller.root.path().join("source.tar");
+    {
+        let mut builder = tar::Builder::new(fs::File::create(&archive)?);
+        builder.finish()?;
+    }
+    let bytes = fs::read(&archive)?;
+    let digest = sshpool::archive::sha256_file(&archive)?;
+    let encoded = base64::engine::general_purpose::STANDARD
+        .encode(serde_json::to_vec(&sshpool::config::Build::default())?);
+    let response = trusted
+        .post(format!("{}/v1/jobs", controller.endpoint))
+        .bearer_auth(&alice)
+        .header("x-sshpool-build", encoded)
+        .header("x-sshpool-source-sha256", digest)
+        .body(bytes)
+        .send()
+        .await?;
+    ensure!(response.status() == 202, "submit failed: {response:?}");
+    let job: Value = response.json().await?;
+    let id = job["id"].as_str().context("missing job id")?.to_string();
+    assert_eq!(job["owner"], "alice", "the submitter must own the job");
+
+    // 属主看得到；别人既不在列表里，也不能按 id 读或取消。
+    let listed = controller.cli(&["jobs"], &alice_file)?;
+    ensure!(listed.status.success(), "alice must list her own job");
+    let mine: Value = serde_json::from_slice(&listed.stdout)?;
+    assert_eq!(mine.as_array().map(Vec::len), Some(1), "{mine}");
+
+    let listed = controller.cli(&["jobs"], &bob_file)?;
+    ensure!(listed.status.success(), "bob must still get a list");
+    let theirs: Value = serde_json::from_slice(&listed.stdout)?;
+    assert!(
+        theirs.as_array().is_some_and(Vec::is_empty),
+        "a foreign job must not leak into the list: {theirs}"
+    );
+
+    for path in [
+        format!("/v1/jobs/{id}"),
+        format!("/v1/jobs/{id}/log"),
+        format!("/v1/jobs/{id}/events"),
+    ] {
+        let response = trusted
+            .get(format!("{}{path}", controller.endpoint))
+            .bearer_auth(&bob)
+            .send()
+            .await?;
+        assert_eq!(response.status(), 403, "bob must not read {path}");
+        assert!(response.text().await?.contains("does not own"));
+    }
+    let response = trusted
+        .post(format!("{}/v1/jobs/{id}/cancel", controller.endpoint))
+        .bearer_auth(&bob)
+        .send()
+        .await?;
+    assert_eq!(response.status(), 403, "bob must not cancel");
+
+    // 根 token 越过属主边界。
+    let listed = controller.cli(&["jobs"], &root_token_file)?;
+    ensure!(listed.status.success(), "root must list every job");
+    let every: Value = serde_json::from_slice(&listed.stdout)?;
+    assert_eq!(every.as_array().map(Vec::len), Some(1));
+    let response = trusted
+        .get(format!("{}/v1/jobs/{id}", controller.endpoint))
+        .bearer_auth(&token)
+        .send()
+        .await?;
+    assert_eq!(response.status(), 200);
+
+    // 越权尝试进了访问审计，主体是 bob 且为 denied。
+    let log = fs::read_to_string(controller.root.path().join("access.jsonl"))?;
+    assert!(
+        log.lines().any(|line| line.contains("\"subject\":\"bob\"")
+            && line.contains("\"status\":403")
+            && line.contains("\"decision\":\"denied\"")),
+        "the refusal must be audited: {log}"
     );
     Ok(())
 }

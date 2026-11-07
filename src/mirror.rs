@@ -1697,6 +1697,7 @@ mod tests {
             cleanup_confirmed: false,
             queue_deadline: None,
             source_sha256: Some(crate::archive::sha256_file(&source)?),
+            owner: None,
         })
     }
 

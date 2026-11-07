@@ -76,6 +76,7 @@ fn queued_job() -> Job {
         cleanup_confirmed: false,
         queue_deadline: None,
         source_sha256: None,
+        owner: None,
     }
 }
 

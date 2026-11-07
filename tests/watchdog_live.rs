@@ -110,6 +110,7 @@ async fn stopped_remote_container_is_proven_and_removed() -> Result<()> {
         cleanup_confirmed: false,
         queue_deadline: None,
         source_sha256: None,
+        owner: None,
     };
     state.jobs.lock().await.insert(id, job);
     let report = sshpool::reconcile::reconcile(&state, Some("live")).await?;
@@ -218,6 +219,7 @@ async fn running_container_is_never_waved_through() -> Result<()> {
             cleanup_confirmed: false,
             queue_deadline: None,
             source_sha256: None,
+            owner: None,
         };
         state.jobs.lock().await.insert(id, job);
         let report = sshpool::reconcile::reconcile(&state, Some("live")).await?;

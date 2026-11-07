@@ -125,6 +125,7 @@ async fn publish_job(home: &std::path::Path, config: Config) -> Result<Job> {
         cleanup_confirmed: false,
         queue_deadline: None,
         source_sha256: Some(source_sha256),
+        owner: None,
     };
     fs::write(directory.join("job.json"), serde_json::to_vec(&job)?)?;
     let state = State::load(home.to_path_buf(), config)?;

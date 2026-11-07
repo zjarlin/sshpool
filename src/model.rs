@@ -110,6 +110,12 @@ pub struct Job {
     /// 客户端上传归档的 SHA-256；旧记录可能没有摘要，恢复时按谨慎语义处理。
     #[serde(default)]
     pub source_sha256: Option<String>,
+    /// 提交该任务的主体名；根 token 固定写成 `root`（保留名，不能签成凭据主体）。
+    ///
+    /// 旧记录没有这个字段，恢复成 `None` =「属主未知」。属主未知一律按最严处理：
+    /// 只有根 token 与带 `admin` 的运维凭据能看到，其他凭据既不列表也不可访问。
+    #[serde(default)]
+    pub owner: Option<String>,
 }
 
 /// 有限队列按优先级降序、提交时间升序和稳定任务标识排序。

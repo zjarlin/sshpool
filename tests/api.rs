@@ -77,6 +77,7 @@ fn active_job(node: &str) -> Job {
         cleanup_confirmed: false,
         queue_deadline: None,
         source_sha256: None,
+        owner: None,
     }
 }
 
@@ -99,6 +100,7 @@ fn queued_job(queue_timeout_secs: u64, queue_deadline: Option<u64>) -> Job {
         cleanup_confirmed: false,
         queue_deadline,
         source_sha256: None,
+        owner: None,
     }
 }
 
@@ -413,6 +415,7 @@ async fn default_zero_queue_timeout_keeps_immediate_failure_semantics() -> Resul
     let digest = source_sha256(&state, job.id)?;
     let job = Job {
         source_sha256: Some(digest),
+        owner: None,
         ..job
     };
     let mut stored = job.clone();
@@ -449,6 +452,7 @@ async fn restart_retains_only_a_valid_unexpired_queue_request() -> Result<()> {
     let digest = source_sha256(&state, job.id)?;
     let job = Job {
         source_sha256: Some(digest),
+        owner: None,
         ..job
     };
     let mut stored = job.clone();
@@ -501,6 +505,7 @@ async fn restart_interrupts_expired_or_missing_source_queue_requests() -> Result
             .transpose()?;
         let job = Job {
             source_sha256: digest,
+            owner: None,
             ..job
         };
         let mut stored = job.clone();
@@ -553,6 +558,7 @@ async fn restart_marks_queued_work_interrupted_without_replaying_it() -> Result<
         cleanup_confirmed: false,
         queue_deadline: None,
         source_sha256: None,
+        owner: None,
     };
     fs::create_dir(state.dir(job.id))?;
     let mut stored = job.clone();
@@ -587,6 +593,7 @@ async fn audit_events_survive_state_reload_without_credentials() -> Result<()> {
         cleanup_confirmed: true,
         queue_deadline: None,
         source_sha256: None,
+        owner: None,
     };
     let mut stored = job.clone();
     state.persist(&mut stored)?;
@@ -1126,5 +1133,202 @@ async fn credentials_without_a_scope_field_are_downgraded_to_read_only() -> Resu
         )
         .await?;
     assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    Ok(())
+}
+
+/// 提交一个合法的最小任务，返回任务记录；节点先禁用，让它不真的去连 SSH。
+async fn submit_job(app: &axum::Router, token: &str) -> Result<Job> {
+    let source = tempfile::NamedTempFile::new()?;
+    let mut archive = tar::Builder::new(fs::File::create(source.path())?);
+    archive.finish()?;
+    let encoded =
+        base64::engine::general_purpose::STANDARD.encode(serde_json::to_vec(&Build::default())?);
+    let digest = sshpool::archive::sha256_file(source.path())?;
+    let response = app
+        .clone()
+        .oneshot(
+            Request::post("/v1/jobs")
+                .header("authorization", format!("Bearer {token}"))
+                .header("x-sshpool-build", encoded)
+                .header("x-sshpool-source-sha256", digest)
+                .body(Body::from(fs::read(source.path())?))?,
+        )
+        .await?;
+    assert_eq!(response.status(), StatusCode::ACCEPTED);
+    let bytes = axum::body::to_bytes(response.into_body(), 1 << 20).await?;
+    Ok(serde_json::from_slice(&bytes)?)
+}
+
+/// 短期凭据只能看到、操作自己提交的任务；根 token 仍然全权。
+///
+/// 属主边界与动作权限是两道独立判断：这条测试里 A 与 B 都有
+/// `read`/`submit`/`cancel`，差别只在「谁提交的」。
+#[tokio::test]
+async fn a_credential_sees_and_manages_only_the_jobs_it_submitted() -> Result<()> {
+    use sshpool::credentials::{Scope, issue};
+
+    let (root, state) = state()?;
+    state.set_node_enabled("test-node", false).await?;
+    state.set_node_enabled("second-node", false).await?;
+    let app = sshpool::api::routes(state.clone());
+    let scopes = [Scope::Read, Scope::Submit, Scope::Cancel];
+    let (_, alice) = issue(&state.home, "alice", &scopes, 3_600, now())?;
+    let (_, bob) = issue(&state.home, "bob", &scopes, 3_600, now())?;
+
+    let job = submit_job(&app, &alice).await?;
+    assert_eq!(
+        job.owner.as_deref(),
+        Some("alice"),
+        "the submitter must be recorded as the owner"
+    );
+
+    let send = |method: &str, path: String, token: String| {
+        let app = app.clone();
+        let request = Request::builder()
+            .method(method)
+            .uri(path)
+            .header("authorization", format!("Bearer {token}"))
+            .body(Body::empty())
+            .expect("request builds");
+        async move { app.oneshot(request).await }
+    };
+    let list = |token: String| async move {
+        let response = send("GET", "/v1/jobs".into(), token).await?;
+        assert_eq!(response.status(), StatusCode::OK);
+        let bytes = axum::body::to_bytes(response.into_body(), 1 << 20).await?;
+        let jobs: Vec<Job> = serde_json::from_slice(&bytes)?;
+        Ok::<_, anyhow::Error>(jobs)
+    };
+
+    // 属主能看；列表里只有自己的一条。
+    let mine = list(alice.clone()).await?;
+    assert_eq!(mine.len(), 1);
+    assert_eq!(mine[0].id, job.id);
+    assert_eq!(
+        send("GET", format!("/v1/jobs/{}", job.id), alice.clone())
+            .await?
+            .status(),
+        StatusCode::OK
+    );
+
+    // 别人：列表为空，详情/日志/事件/产物/取消一律 403（不是 404，也不是 200）。
+    assert!(
+        list(bob.clone()).await?.is_empty(),
+        "another subject must not see the job in its list"
+    );
+    for path in [
+        format!("/v1/jobs/{}", job.id),
+        format!("/v1/jobs/{}/log", job.id),
+        format!("/v1/jobs/{}/events", job.id),
+        format!("/v1/jobs/{}/artifacts", job.id),
+    ] {
+        let response = send("GET", path.clone(), bob.clone()).await?;
+        assert_eq!(response.status(), StatusCode::FORBIDDEN, "GET {path}");
+        let body = String::from_utf8(
+            axum::body::to_bytes(response.into_body(), 4096)
+                .await?
+                .to_vec(),
+        )?;
+        assert!(
+            body.contains("does not own"),
+            "403 should name the ownership rule, got {body}"
+        );
+    }
+    assert_eq!(
+        send("POST", format!("/v1/jobs/{}/cancel", job.id), bob.clone())
+            .await?
+            .status(),
+        StatusCode::FORBIDDEN
+    );
+    assert!(
+        !state.jobs.lock().await[&job.id].cancel_requested,
+        "a refused cancel must not touch the job"
+    );
+
+    // 属主自己取消是允许的；这排除了「403 是因为取消永远失败」。
+    assert_eq!(
+        send("POST", format!("/v1/jobs/{}/cancel", job.id), alice.clone())
+            .await?
+            .status(),
+        StatusCode::OK
+    );
+
+    // 根 token 越过属主边界：它看得到两个主体的全部任务。
+    let all = list(state.token.clone()).await?;
+    assert_eq!(all.len(), 1);
+    assert_eq!(
+        send("GET", format!("/v1/jobs/{}", job.id), state.token.clone())
+            .await?
+            .status(),
+        StatusCode::OK
+    );
+
+    // 审计里留下这次越权尝试，且是 denied —— 边界不能只在响应体里成立。
+    let log = fs::read_to_string(root.path().join("access.jsonl"))?;
+    assert!(
+        log.lines().any(|line| line.contains("\"subject\":\"bob\"")
+            && line.contains("\"status\":403")
+            && line.contains("\"decision\":\"denied\"")),
+        "the refused access must be audited: {log}"
+    );
+    Ok(())
+}
+
+/// 旧任务没有 `owner` 字段：无法证明归属时只有运维主体能读，不能默认成「大家的」。
+#[tokio::test]
+async fn a_job_without_an_owner_is_only_visible_to_operators() -> Result<()> {
+    use sshpool::credentials::{Scope, issue};
+
+    let (_root, state) = state()?;
+    state.set_node_enabled("test-node", false).await?;
+    state.set_node_enabled("second-node", false).await?;
+    let app = sshpool::api::routes(state.clone());
+    let (_, alice) = issue(&state.home, "alice", &[Scope::Read], 3_600, now())?;
+    let (_, operator) = issue(
+        &state.home,
+        "operator",
+        &[Scope::Read, Scope::Admin],
+        3_600,
+        now(),
+    )?;
+
+    let mut job = active_job("test-node");
+    job.owner = None;
+    state.jobs.lock().await.insert(job.id, job.clone());
+
+    let send = |path: String, token: String| {
+        let app = app.clone();
+        async move {
+            app.oneshot(
+                Request::get(path)
+                    .header("authorization", format!("Bearer {token}"))
+                    .body(Body::empty())
+                    .expect("request builds"),
+            )
+            .await
+        }
+    };
+    assert_eq!(
+        send(format!("/v1/jobs/{}", job.id), alice.clone())
+            .await?
+            .status(),
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        send(format!("/v1/jobs/{}", job.id), operator.clone())
+            .await?
+            .status(),
+        StatusCode::OK
+    );
+    assert_eq!(
+        send(format!("/v1/jobs/{}", job.id), state.token.clone())
+            .await?
+            .status(),
+        StatusCode::OK
+    );
+    let response = send("/v1/jobs".into(), alice).await?;
+    let bytes = axum::body::to_bytes(response.into_body(), 1 << 20).await?;
+    let jobs: Vec<Job> = serde_json::from_slice(&bytes)?;
+    assert!(jobs.is_empty(), "an unknown owner must not be listed");
     Ok(())
 }

@@ -48,3 +48,17 @@ Feature: 身份与网络边界
     Then 读接口返回 200
     And 未被授予的权限返回 403 且写明缺哪一项
     And 没有 scopes 字段的旧记录降级为只读
+
+  # evidence: tests/api.rs::a_credential_sees_and_manages_only_the_jobs_it_submitted
+  # evidence: tests/access_network.rs::a_credential_sees_only_its_own_jobs_over_tls
+  # evidence: docs/validation.md#access-network
+  @verified @automated @p1
+  Scenario: 只能操作自己提交的任务
+    Given 两个主体都持有 read、submit 和 cancel 的短期凭据
+    When 其中一个提交任务，另一个尝试读取、列出、取消它
+    Then 提交者被记录为任务属主，客户端无法伪造属主
+    And 属主能看到详情、日志、事件与产物，列表里只有自己的任务
+    And 非属主按 id 访问一律 403，且被拒的取消不改动任务状态
+    And 根 token 与带 admin 的运维凭据仍能越过属主边界
+    And 归属未知的旧任务只对运维主体可见
+    And 同一主体换发新凭据后仍能看到自己的历史任务

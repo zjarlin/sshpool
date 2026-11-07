@@ -210,6 +210,7 @@ fn scheduler_protects_reserves_platform_and_concurrent_slots() {
         cleanup_confirmed: false,
         queue_deadline: None,
         source_sha256: None,
+        owner: None,
     };
     assert!(scheduler::score(&node, &health, &build, &[job]).is_err());
 }
@@ -260,6 +261,7 @@ fn limited_queue_orders_priority_then_submission_time_with_stable_ids() {
         cleanup_confirmed: false,
         queue_deadline: Some(created_at + 60),
         source_sha256: None,
+        owner: None,
     };
     let lower = make_job(0, 1);
     let earlier = make_job(1, 2);
@@ -343,6 +345,7 @@ fn uncertain_cleanup_quarantines_the_worker() {
         cleanup_confirmed: false,
         queue_deadline: None,
         source_sha256: None,
+        owner: None,
     };
     assert!(scheduler::score(&node, &health, &build, std::slice::from_ref(&job)).is_err());
     job.attempts[0].cleanup_confirmed = Some(true);
@@ -391,6 +394,7 @@ fn a_later_success_cannot_clear_an_older_worker_quarantine() {
         cleanup_confirmed: true,
         queue_deadline: None,
         source_sha256: None,
+        owner: None,
     };
     assert!(scheduler::score(&node, &health, &build, &[job]).is_err());
 }
