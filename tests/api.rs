@@ -165,7 +165,13 @@ async fn sequential_node_switches_preserve_earlier_choices_after_reload() -> Res
 async fn dynamic_credentials_authenticate_and_a_corrupt_store_still_denies() -> Result<()> {
     let (_root, state) = state()?;
     let app = sshpool::api::routes(state.clone());
-    let (_summary, token) = sshpool::credentials::issue(&state.home, "workbench", 3_600, now())?;
+    let (_summary, token) = sshpool::credentials::issue(
+        &state.home,
+        "workbench",
+        &sshpool::credentials::Scope::ALL,
+        3_600,
+        now(),
+    )?;
 
     let allowed = app
         .clone()
@@ -200,7 +206,13 @@ async fn dynamic_credentials_authenticate_and_a_corrupt_store_still_denies() -> 
 
     // 凭据库损坏：动态凭据一律拒绝，且是 401 而不是 500；
     // 根 token 不读该文件，所以仍然可用（控制面不会被一个坏文件锁在门外）。
-    let (second, second_token) = sshpool::credentials::issue(&state.home, "laptop", 3_600, now())?;
+    let (second, second_token) = sshpool::credentials::issue(
+        &state.home,
+        "laptop",
+        &sshpool::credentials::Scope::ALL,
+        3_600,
+        now(),
+    )?;
     let store = sshpool::credentials::path(&state.home);
     fs::write(&store, b"{ not json")?;
     let broken = app
@@ -739,7 +751,13 @@ async fn reconcile_requires_authentication() -> Result<()> {
 async fn every_request_is_audited_with_subject_decision_and_request_id() -> Result<()> {
     let (_root, state) = state()?;
     let app = sshpool::api::routes(state.clone());
-    let (summary, token) = sshpool::credentials::issue(&state.home, "workbench-ü", 3_600, now())?;
+    let (summary, token) = sshpool::credentials::issue(
+        &state.home,
+        "workbench-ü",
+        &sshpool::credentials::Scope::ALL,
+        3_600,
+        now(),
+    )?;
 
     // 1) 根 token 的只读请求：主体 root、来源 root-token、命中路由模板。
     let response = app
@@ -861,7 +879,13 @@ async fn every_request_is_audited_with_subject_decision_and_request_id() -> Resu
 async fn the_access_endpoint_filters_and_is_itself_audited() -> Result<()> {
     let (_root, state) = state()?;
     let app = sshpool::api::routes(state.clone());
-    let (_summary, token) = sshpool::credentials::issue(&state.home, "workbench", 3_600, now())?;
+    let (_summary, token) = sshpool::credentials::issue(
+        &state.home,
+        "workbench",
+        &sshpool::credentials::Scope::ALL,
+        3_600,
+        now(),
+    )?;
 
     let response = app
         .clone()
@@ -950,5 +974,157 @@ async fn a_non_writable_access_log_blocks_side_effect_requests() -> Result<()> {
             .iter()
             .any(|node| node.name == "test-node" && node.enabled)
     );
+    Ok(())
+}
+
+/// 权限分级：只读凭据能看，不能提交、取消、改节点或读别人的审计。
+///
+/// 这条测试覆盖的是「同一把 token 在不同路由上得到不同结论」，
+/// 所以四类权限两组凭据都走同一个 `routes()`。
+#[tokio::test]
+async fn a_read_only_credential_is_refused_on_every_write_route() -> Result<()> {
+    use sshpool::credentials::{Scope, issue};
+
+    let (_root, state) = state()?;
+    let app = sshpool::api::routes(state.clone());
+    let (_reader, reader) = issue(&state.home, "reader", &[Scope::Read], 3_600, now())?;
+    let (_writer, writer) = issue(
+        &state.home,
+        "writer",
+        &[Scope::Read, Scope::Submit, Scope::Cancel],
+        3_600,
+        now(),
+    )?;
+
+    let send = |method: &str, path: &str, token: String| {
+        let app = app.clone();
+        let request = Request::builder()
+            .method(method)
+            .uri(path)
+            .header("authorization", format!("Bearer {token}"))
+            .header("content-type", "application/octet-stream")
+            .body(Body::empty())
+            .expect("request builds");
+        async move { app.oneshot(request).await }
+    };
+
+    // 读：两种凭据都允许（没有 read 的凭据连列表都看不到，那不是权限，是坏凭据）。
+    for token in [&reader, &writer] {
+        let response = send("GET", "/v1/status", token.clone()).await?;
+        assert_eq!(response.status(), StatusCode::OK);
+        let response = send("GET", "/v1/jobs", token.clone()).await?;
+        assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    // 写：只读凭据是 403 而不是 401 —— 身份是成立的，缺的是权限。
+    let response = send("POST", "/v1/nodes/test-node/disable", reader.clone()).await?;
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    let body = String::from_utf8(
+        axum::body::to_bytes(response.into_body(), 4096)
+            .await?
+            .to_vec(),
+    )?;
+    assert!(
+        body.contains("`admin` scope"),
+        "403 should name the missing scope, got {body}"
+    );
+
+    let response = send("POST", "/v1/jobs", reader.clone()).await?;
+    assert_eq!(
+        response.status(),
+        StatusCode::FORBIDDEN,
+        "submit needs its own scope"
+    );
+
+    let id = uuid::Uuid::new_v4();
+    let response = send("POST", &format!("/v1/jobs/{id}/cancel"), reader.clone()).await?;
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+
+    // 读别人的审计同样要 admin：否则只读凭据能看全公司的访问时间线。
+    let response = send("GET", "/v1/access?limit=5", reader.clone()).await?;
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    let response = send("GET", "/v1/access?limit=5", writer.clone()).await?;
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+
+    // 有 cancel 没 admin：取消未知任务的报错是 400，说明它真的过了授权检查。
+    let response = send("POST", &format!("/v1/jobs/{id}/cancel"), writer.clone()).await?;
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+
+    // 越权也进审计，并且是 denied；allowed 的只读请求不能顶替它。
+    let entries = sshpool::access::read(&state.home, &sshpool::access::Filter::default())?;
+    let forbidden = entries
+        .iter()
+        .filter(|entry| entry.status == StatusCode::FORBIDDEN.as_u16())
+        .count();
+    assert!(forbidden >= 4, "every refusal must be audited: {forbidden}");
+    assert!(
+        entries
+            .iter()
+            .filter(|entry| entry.status == StatusCode::FORBIDDEN.as_u16())
+            .all(|entry| entry.decision == "denied"),
+        "403 must be recorded as denied, not allowed"
+    );
+    assert!(
+        entries
+            .iter()
+            .any(|entry| entry.status == 200 && entry.decision == "allowed"),
+        "an allowed read is still recorded as allowed"
+    );
+
+    // 根 token 不受影响：权限分级只收紧短期凭据。
+    let response = send("POST", "/v1/nodes/test-node/disable", state.token.clone()).await?;
+    assert_eq!(response.status(), StatusCode::OK);
+    Ok(())
+}
+
+/// 旧凭据文件（没有 scopes 字段）降级为只读，而不是继续拥有全部权限。
+#[tokio::test]
+async fn credentials_without_a_scope_field_are_downgraded_to_read_only() -> Result<()> {
+    use sshpool::credentials::{Scope, issue};
+
+    let (_root, state) = state()?;
+    let (summary, token) = issue(&state.home, "legacy", &Scope::ALL, 3_600, now())?;
+    // 模拟上一版签发的记录：删掉 scopes 再写回。
+    let path = sshpool::credentials::path(&state.home);
+    let mut store: serde_json::Value = serde_json::from_slice(&fs::read(&path)?)?;
+    let entries = store["credentials"].as_array_mut().context("credentials")?;
+    for credential in entries.iter_mut() {
+        credential
+            .as_object_mut()
+            .context("object")?
+            .remove("scopes");
+    }
+    fs::write(&path, serde_json::to_vec_pretty(&store)?)?;
+
+    let listed = sshpool::credentials::list(&state.home)?;
+    assert_eq!(listed[0].id, summary.id);
+    assert_eq!(
+        listed[0].scopes,
+        vec![Scope::Read],
+        "an old record must not keep write access"
+    );
+    let grant = sshpool::credentials::verify(&state.home, &token, now())?
+        .context("the old token still authenticates")?;
+    assert!(!grant.allows(Scope::Submit));
+    assert!(grant.allows(Scope::Read));
+
+    let app = sshpool::api::routes(state.clone());
+    let response = app
+        .clone()
+        .oneshot(
+            Request::get("/v1/status")
+                .header("authorization", format!("Bearer {token}"))
+                .body(Body::empty())?,
+        )
+        .await?;
+    assert_eq!(response.status(), StatusCode::OK);
+    let response = app
+        .oneshot(
+            Request::post("/v1/jobs")
+                .header("authorization", format!("Bearer {token}"))
+                .body(Body::empty())?,
+        )
+        .await?;
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
     Ok(())
 }

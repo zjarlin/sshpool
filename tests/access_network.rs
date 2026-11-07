@@ -328,6 +328,96 @@ async fn https_verifies_the_certificate_and_short_lived_credentials_can_be_revok
     Ok(())
 }
 
+/// 权限分级在真实 TLS 链路上也成立：默认签发的是只读凭据，
+/// 它对读接口 200、对写接口 403，且 403 不是 401（身份认得，权限不够）。
+#[tokio::test]
+async fn a_read_only_credential_can_read_but_cannot_change_node_state() -> Result<()> {
+    let controller = Controller::start().await?;
+    let token = controller.token()?;
+    let trusted = controller.http(Some(&controller.cert)).await?;
+    let root_token_file = controller.token_file("root-token", &token)?;
+
+    // 不写 --scope 时应当只拿到 read，而不是「全都给」。
+    let issued = controller.cli(
+        &["credential", "issue", "--subject", "observer"],
+        &root_token_file,
+    )?;
+    ensure!(
+        issued.status.success(),
+        "credential issue failed: {}",
+        String::from_utf8_lossy(&issued.stderr)
+    );
+    let issued: Value = serde_json::from_slice(&issued.stdout)?;
+    assert_eq!(
+        issued["scopes"],
+        serde_json::json!(["read"]),
+        "the default must be least privilege: {issued}"
+    );
+    let reader = issued["token"]
+        .as_str()
+        .context("missing token")?
+        .to_string();
+    let reader_file = controller.token_file("reader-token", &reader)?;
+
+    assert_eq!(status(&trusted, &controller.endpoint, &reader).await?, 200);
+    let listed = controller.cli(&["jobs"], &reader_file)?;
+    ensure!(
+        listed.status.success(),
+        "a read credential must list jobs: {}",
+        String::from_utf8_lossy(&listed.stderr)
+    );
+
+    // 写操作：403（不是 401），响应体只说明缺哪一项权限。
+    let denied = trusted
+        .post(format!("{}/v1/nodes/ghost/disable", controller.endpoint))
+        .bearer_auth(&reader)
+        .send()
+        .await?;
+    assert_eq!(denied.status(), 403);
+    let body = denied.text().await?;
+    assert!(body.contains("`admin` scope"), "unexpected body: {body}");
+
+    // CLI 也把 403 当失败，而不是打印空结果当成功。
+    let refused = controller.cli(&["node", "disable", "ghost"], &reader_file)?;
+    assert!(
+        !refused.status.success(),
+        "the CLI must fail on 403, stdout: {}",
+        String::from_utf8_lossy(&refused.stdout)
+    );
+
+    // 显式授予 admin 后就真的能改状态；这排除了「403 是因为节点不存在」。
+    let issued = controller.cli(
+        &[
+            "credential",
+            "issue",
+            "--subject",
+            "operator",
+            "--scope",
+            "read",
+            "--scope",
+            "admin",
+        ],
+        &root_token_file,
+    )?;
+    let issued: Value = serde_json::from_slice(&issued.stdout)?;
+    assert_eq!(issued["scopes"], serde_json::json!(["read", "admin"]));
+    let operator = issued["token"]
+        .as_str()
+        .context("missing token")?
+        .to_string();
+    let response = trusted
+        .post(format!("{}/v1/nodes/ghost/disable", controller.endpoint))
+        .bearer_auth(&operator)
+        .send()
+        .await?;
+    assert_eq!(
+        response.status(),
+        400,
+        "an admin credential must reach the handler and fail on the unknown node instead"
+    );
+    Ok(())
+}
+
 /// 未握手的连接不能阻塞后续请求：扫描器发垃圾字节或只连不说，
 /// 也只该丢掉那一个连接，而不是让 accept 循环卡住。
 #[tokio::test]

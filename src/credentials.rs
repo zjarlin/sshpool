@@ -1,10 +1,15 @@
-//! 短期访问凭据：签发、撤销与校验。
+//! 短期访问凭据：签发、撤销、校验，以及**按主体限制权限**。
 //!
 //! 主 token 仍是控制面的根凭据；这里的凭据只用于把工作台或一次性脚本接入，
 //! 必须能设置到期时间并即时撤销。为了撤销立即生效，校验时读取凭据文件，
 //! 不做进程内缓存；文件很小，请求频率也低（默认一次探测 15s）。
 //!
+//! 权限是显式授予的：不写 `scopes` 的凭据只能读，不能提交、取消或改节点状态。
+//! 旧版本签发的凭据没有 `scopes` 字段，按最小权限降级为只读 —— 这是权限收紧，
+//! 需要更大权限请重新签发；这里刻意不做「缺字段等于全部权限」的兼容。
+//!
 //! 失败关闭：凭据文件存在但无法解析时拒绝全部动态凭据，而不是退回「没有凭据」。
+
 use crate::{config, model::now};
 use anyhow::{Context, Result, ensure};
 use serde::{Deserialize, Serialize};
@@ -22,6 +27,50 @@ pub const PREFIX: &str = "spt";
 /// 上限 90 天：足够一次迭代或一台借用机器，又不至于变成第二把长期密钥。
 pub const MAX_TTL_SECS: u64 = 90 * 86_400;
 
+/// 一条短期凭据被允许做的事。权限只按白名单授予，不认识的字符串一律拒绝。
+///
+/// `read` 是任何凭据都有的：没有它连自己的任务列表都看不到，凭据就没有意义。
+/// `submit` 提交任务（会占用 Worker），`cancel` 请求停止任务，
+/// `admin` 改节点状态、在线核对隔离、查询他人访问审计。
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[serde(rename_all = "kebab-case")]
+pub enum Scope {
+    Read,
+    Submit,
+    Cancel,
+    Admin,
+}
+
+impl Scope {
+    pub const ALL: [Scope; 4] = [Scope::Read, Scope::Submit, Scope::Cancel, Scope::Admin];
+    /// 解析命令行/配置里的一词；大小写不敏感，其余拼写一律拒绝。
+    pub fn parse(word: &str) -> Result<Self> {
+        match word.trim().to_ascii_lowercase().as_str() {
+            "read" => Ok(Self::Read),
+            "submit" => Ok(Self::Submit),
+            "cancel" => Ok(Self::Cancel),
+            "admin" => Ok(Self::Admin),
+            _ => {
+                anyhow::bail!("unknown scope {word:?}; expected one of read, submit, cancel, admin")
+            }
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Read => "read",
+            Self::Submit => "submit",
+            Self::Cancel => "cancel",
+            Self::Admin => "admin",
+        }
+    }
+}
+
+/// 旧记录缺 `scopes` 时的权限：只读。权限收紧宁可让旧脚本报 403，也不能让它继续写。
+pub fn legacy_scopes() -> Vec<Scope> {
+    vec![Scope::Read]
+}
+
 /// 磁盘上的凭据记录；只保存摘要，明文永远不落盘。
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
@@ -30,6 +79,9 @@ pub struct Credential {
     /// 审计用的主体名；不参与鉴权判断。
     pub subject: String,
     pub token_sha256: String,
+    /// 签发时显式授予的权限；旧记录没有该字段时按 `legacy_scopes()` 降级为只读。
+    #[serde(default = "legacy_scopes")]
+    pub scopes: Vec<Scope>,
     pub created_at: u64,
     pub expires_at: u64,
     /// 撤销时间一经写入不会清除，避免「撤销后再恢复」被误当成新凭据。
@@ -52,6 +104,8 @@ impl Credential {
 pub struct Summary {
     pub id: Uuid,
     pub subject: String,
+    /// 授予的权限，按 `Scope` 的固定顺序排列，便于人读与脚本比较。
+    pub scopes: Vec<Scope>,
     pub created_at: u64,
     pub expires_at: u64,
     pub revoked_at: Option<u64>,
@@ -62,6 +116,7 @@ impl From<&Credential> for Summary {
         Self {
             id: credential.id,
             subject: credential.subject.clone(),
+            scopes: sorted_scopes(&credential.scopes),
             created_at: credential.created_at,
             expires_at: credential.expires_at,
             revoked_at: credential.revoked_at,
@@ -74,7 +129,15 @@ impl From<&Credential> for Summary {
 pub struct Grant {
     pub id: Uuid,
     pub subject: String,
+    /// 该凭据能做的事；`Principal` 用它做授权判断。
+    pub scopes: Vec<Scope>,
     pub expires_at: u64,
+}
+
+impl Grant {
+    pub fn allows(&self, scope: Scope) -> bool {
+        self.scopes.contains(&scope)
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -126,6 +189,12 @@ fn load(home: &Path) -> Result<Store> {
         );
         validate_subject(&credential.subject)
             .context("credential store contains an invalid subject")?;
+        // 权限是白名单枚举，serde 已拒绝未知值；这里拒绝「声明了但没 read」这种
+        // 自相矛盾的记录，而不是悄悄补一个权限进去。
+        ensure!(
+            credential.scopes.contains(&Scope::Read),
+            "credential store contains a credential without read access"
+        );
         ensure!(
             credential.expires_at > credential.created_at,
             "credential store contains an invalid lifetime"
@@ -142,6 +211,26 @@ fn load(home: &Path) -> Result<Store> {
         );
     }
     Ok(store)
+}
+
+/// 去重并按固定顺序排列，保证同一组权限的展示与比较稳定。
+fn sorted_scopes(scopes: &[Scope]) -> Vec<Scope> {
+    let mut values = scopes.to_vec();
+    values.sort();
+    values.dedup();
+    values
+}
+
+/// 权限列表的规范形式：`read` 必定存在，其余按固定顺序，空列表按旧记录降级。
+fn normalize_scopes(scopes: &[Scope]) -> Vec<Scope> {
+    let mut values = sorted_scopes(scopes);
+    if values.is_empty() {
+        return legacy_scopes();
+    }
+    if !values.contains(&Scope::Read) {
+        values.insert(0, Scope::Read);
+    }
+    values
 }
 
 fn save(home: &Path, store: &Store) -> Result<()> {
@@ -208,10 +297,15 @@ fn validate_subject(subject: &str) -> Result<()> {
 pub fn issue(
     home: &Path,
     subject: &str,
+    scopes: &[Scope],
     ttl_secs: u64,
     issued_at: u64,
 ) -> Result<(Summary, String)> {
     validate_subject(subject)?;
+    ensure!(
+        !scopes.is_empty(),
+        "a credential needs at least one scope; pass read explicitly"
+    );
     ensure!(ttl_secs > 0, "credential lifetime must be positive");
     ensure!(
         ttl_secs <= MAX_TTL_SECS,
@@ -227,6 +321,7 @@ pub fn issue(
         id,
         subject: subject.to_string(),
         token_sha256: digest(&token),
+        scopes: normalize_scopes(scopes),
         created_at: issued_at,
         expires_at: issued_at + ttl_secs,
         revoked_at: None,
@@ -310,6 +405,7 @@ pub fn verify(home: &Path, token: &str, at: u64) -> Result<Option<Grant>> {
     Ok(Some(Grant {
         id: credential.id,
         subject: credential.subject.clone(),
+        scopes: sorted_scopes(&credential.scopes),
         expires_at: credential.expires_at,
     }))
 }
@@ -351,7 +447,7 @@ mod tests {
     #[test]
     fn issued_tokens_verify_and_never_store_the_secret() {
         let root = home();
-        let (summary, token) = issue(root.path(), "workbench", 3600, 1_000).unwrap();
+        let (summary, token) = issue(root.path(), "workbench", &Scope::ALL, 3600, 1_000).unwrap();
         assert_eq!(summary.subject, "workbench");
         assert_eq!(summary.created_at, 1_000);
         assert_eq!(summary.expires_at, 4_600);
@@ -371,7 +467,7 @@ mod tests {
     #[test]
     fn revoke_takes_effect_immediately_and_is_idempotent() {
         let root = home();
-        let (summary, token) = issue(root.path(), "laptop", 3600, 1_000).unwrap();
+        let (summary, token) = issue(root.path(), "laptop", &Scope::ALL, 3600, 1_000).unwrap();
         assert!(verify(root.path(), &token, 1_000).unwrap().is_some());
         let revoked = revoke(root.path(), summary.id, 1_100).unwrap();
         assert_eq!(revoked.revoked_at, Some(1_100));
@@ -386,7 +482,7 @@ mod tests {
     #[test]
     fn foreign_and_forged_tokens_do_not_touch_the_store() {
         let root = home();
-        let (_summary, token) = issue(root.path(), "workbench", 3600, 1_000).unwrap();
+        let (_summary, token) = issue(root.path(), "workbench", &Scope::ALL, 3600, 1_000).unwrap();
         // 主 token 与任意伪造串都返回 None，绝不返回错误。
         assert_eq!(verify(root.path(), "some-root-token", 1_000).unwrap(), None);
         assert_eq!(
@@ -410,7 +506,7 @@ mod tests {
     #[test]
     fn a_corrupt_store_fails_closed() {
         let root = home();
-        let (_, token) = issue(root.path(), "workbench", 3600, 1_000).unwrap();
+        let (_, token) = issue(root.path(), "workbench", &Scope::ALL, 3600, 1_000).unwrap();
         let original = fs::read_to_string(path(root.path())).unwrap();
         for broken in [
             "not json".to_string(),
@@ -436,7 +532,7 @@ mod tests {
     #[test]
     fn duplicate_identifiers_and_bad_lifetimes_are_rejected() {
         let root = home();
-        let (_summary, _token) = issue(root.path(), "workbench", 3600, 1_000).unwrap();
+        let (_summary, _token) = issue(root.path(), "workbench", &Scope::ALL, 3600, 1_000).unwrap();
         let original: serde_json::Value =
             serde_json::from_str(&fs::read_to_string(path(root.path())).unwrap()).unwrap();
         let mut duplicated = original.clone();
@@ -471,21 +567,55 @@ mod tests {
     fn issue_bounds_and_subject_validation() {
         let root = home();
         for ttl in [0, MAX_TTL_SECS + 1] {
-            assert!(issue(root.path(), "workbench", ttl, 1_000).is_err());
+            assert!(issue(root.path(), "workbench", &Scope::ALL, ttl, 1_000).is_err());
         }
         for subject in ["", "   ", &"x".repeat(129), "a\u{7}b"] {
-            assert!(issue(root.path(), subject, 60, 1_000).is_err());
+            assert!(issue(root.path(), subject, &Scope::ALL, 60, 1_000).is_err());
         }
         assert!(!path(root.path()).exists(), "validation precedes any write");
-        issue(root.path(), &"x".repeat(128), MAX_TTL_SECS, 1_000).unwrap();
+        issue(
+            root.path(),
+            &"x".repeat(128),
+            &Scope::ALL,
+            MAX_TTL_SECS,
+            1_000,
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn scopes_are_whitelisted_normalized_and_read_is_mandatory() {
+        // 解析只认四个词，大小写不敏感，其余（含空串与近义词）一律拒绝。
+        assert_eq!(Scope::parse(" READ ").unwrap(), Scope::Read);
+        for word in ["root", "write", "readonly", ""] {
+            assert!(Scope::parse(word).is_err(), "{word:?} must not parse");
+        }
+        // 空权限列表没有意义；`admin` 会自动补上必需的 `read` 并去重排序。
+        let root = home();
+        assert!(issue(root.path(), "no-scopes", &[], 60, 1_000).is_err());
+        let (summary, _) = issue(
+            root.path(),
+            "operator",
+            &[Scope::Admin, Scope::Read, Scope::Admin],
+            60,
+            1_000,
+        )
+        .unwrap();
+        assert_eq!(summary.scopes, vec![Scope::Read, Scope::Admin]);
+        // 缺 `read` 的记录不是「只写凭据」，而是自相矛盾的坏记录：整库拒绝加载。
+        let mut store: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(path(root.path())).unwrap()).unwrap();
+        store["credentials"][0]["scopes"] = serde_json::json!(["admin"]);
+        fs::write(path(root.path()), serde_json::to_vec(&store).unwrap()).unwrap();
+        assert!(list(root.path()).is_err());
     }
 
     #[test]
     fn prune_only_drops_credentials_that_expired_after_revocation() {
         let root = home();
-        let (expired, _) = issue(root.path(), "expired", 60, 1_000).unwrap();
-        let (live, _) = issue(root.path(), "live", 3_600, 1_000).unwrap();
-        let (never, _) = issue(root.path(), "never-revoked", 60, 1_000).unwrap();
+        let (expired, _) = issue(root.path(), "expired", &Scope::ALL, 60, 1_000).unwrap();
+        let (live, _) = issue(root.path(), "live", &Scope::ALL, 3_600, 1_000).unwrap();
+        let (never, _) = issue(root.path(), "never-revoked", &Scope::ALL, 60, 1_000).unwrap();
         revoke(root.path(), expired.id, 1_010).unwrap();
         revoke(root.path(), live.id, 1_010).unwrap();
         let before = fs::read(path(root.path())).unwrap();
@@ -527,7 +657,9 @@ mod tests {
         let handles = (0..8)
             .map(|index| {
                 let root = root.clone();
-                std::thread::spawn(move || issue(&root, &format!("subject-{index}"), 600, 1_000))
+                std::thread::spawn(move || {
+                    issue(&root, &format!("subject-{index}"), &Scope::ALL, 600, 1_000)
+                })
             })
             .collect::<Vec<_>>();
         for handle in handles {
@@ -542,7 +674,7 @@ mod tests {
     #[test]
     fn summaries_never_carry_the_digest() {
         let root = home();
-        let (summary, _) = issue(root.path(), "workbench", 3600, 1_000).unwrap();
+        let (summary, _) = issue(root.path(), "workbench", &Scope::ALL, 3600, 1_000).unwrap();
         let json = serde_json::to_string(&summary).unwrap();
         assert!(!json.contains("token_sha256"));
         assert!(!json.contains("sha256"));

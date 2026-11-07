@@ -145,6 +145,9 @@ enum CredentialAction {
         /// 有效期（小时）；上限 90 天。
         #[arg(long, default_value_t = 12)]
         ttl_hours: u64,
+        /// 授予的权限，可重复：read / submit / cancel / admin。
+        #[arg(long = "scope", default_value = "read")]
+        scopes: Vec<String>,
     },
     /// 立即撤销一条凭据；撤销后新请求被拒绝（已通过鉴权的进行中请求不会被中断）。
     Revoke { id: uuid::Uuid },
@@ -483,18 +486,27 @@ async fn dispatch(cli: Cli) -> Result<i32> {
 fn credential_command(home: &std::path::Path, command: &CredentialAction) -> Result<i32> {
     use sshpool::credentials;
     match command {
-        CredentialAction::Issue { subject, ttl_hours } => {
+        CredentialAction::Issue {
+            subject,
+            ttl_hours,
+            scopes,
+        } => {
             let ttl_secs = ttl_hours
                 .checked_mul(3_600)
                 .context("credential lifetime overflows seconds")?;
+            let scopes = scopes
+                .iter()
+                .map(|word| credentials::Scope::parse(word))
+                .collect::<Result<Vec<_>>>()?;
             let (summary, token) =
-                credentials::issue(home, subject, ttl_secs, sshpool::model::now())?;
+                credentials::issue(home, subject, &scopes, ttl_secs, sshpool::model::now())?;
             // 标准输出只有一份 JSON：脚本要能直接取 token，人类会在提示里看到一次性说明。
             println!(
                 "{}",
                 serde_json::to_string_pretty(&serde_json::json!({
                     "id": summary.id,
                     "subject": summary.subject,
+                    "scopes": summary.scopes,
                     "created_at": summary.created_at,
                     "expires_at": summary.expires_at,
                     "token": token,
@@ -518,6 +530,7 @@ fn credential_command(home: &std::path::Path, command: &CredentialAction) -> Res
                     serde_json::json!({
                         "id": credential.id,
                         "subject": credential.subject,
+                        "scopes": credential.scopes,
                         "created_at": credential.created_at,
                         "expires_at": credential.expires_at,
                         "revoked_at": credential.revoked_at,

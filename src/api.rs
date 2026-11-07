@@ -43,6 +43,14 @@ impl ApiError {
         Self::new(StatusCode::UNAUTHORIZED, anyhow::anyhow!("unauthorized"))
     }
 
+    /// 已认证但权限不足；错误体只写缺少的权限名，不含主体与凭据标识。
+    fn forbidden(scope: &str) -> Self {
+        Self::new(
+            StatusCode::FORBIDDEN,
+            anyhow::anyhow!("credential lacks the `{scope}` scope"),
+        )
+    }
+
     /// 审计不可用时拒绝执行：宁可这次请求失败，也不要产生没有访问记录的动作。
     fn audit_unavailable() -> Self {
         Self::new(
@@ -108,6 +116,27 @@ impl Principal {
         match self {
             Self::Root => None,
             Self::Credential(grant) => Some(grant.id.to_string()),
+        }
+    }
+
+    /// 该主体拥有的权限；根 token 是运维凭据，四项全有。
+    pub fn scopes(&self) -> Vec<crate::credentials::Scope> {
+        match self {
+            Self::Root => crate::credentials::Scope::ALL.to_vec(),
+            Self::Credential(grant) => grant.scopes.clone(),
+        }
+    }
+
+    /// 授权检查：没有对应权限就返回 403，错误文本只说明缺哪一项。
+    ///
+    /// 403 与 401 的区别是有意的：401 表示「你是谁不知道」，403 表示
+    /// 「知道你是谁，但你不被允许做这件事」。审计中间件按状态码记录，
+    /// 因此「哪个主体反复越权」在 `access.jsonl` 里可以直接查出来。
+    pub fn require(&self, scope: crate::credentials::Scope) -> ApiResult<()> {
+        if self.scopes().contains(&scope) {
+            Ok(())
+        } else {
+            Err(ApiError::forbidden(scope.as_str()))
         }
     }
 }
@@ -187,9 +216,11 @@ pub fn routes(state: Arc<State>) -> Router {
 async fn access(
     AppState(state): AppState<Arc<State>>,
     // 中间件已经拦过未鉴权请求；这里再取一次，保证处理器本身也要求主体。
-    _principal: Principal,
+    principal: Principal,
     axum::extract::Query(query): axum::extract::Query<std::collections::HashMap<String, String>>,
 ) -> ApiResult<impl IntoResponse> {
+    // 审计里有其他人的主体名与访问时间：只读凭据不该看到别人的足迹。
+    principal.require(crate::credentials::Scope::Admin)?;
     let filter = crate::access::Filter {
         subject: query.get("subject").cloned(),
         decision: query.get("decision").cloned(),
@@ -299,7 +330,9 @@ async fn write_access(state: &State, record: &AccessRecord, status: StatusCode) 
         subject: record.subject.clone(),
         kind: record.kind.clone(),
         credential: record.credential.clone(),
-        decision: if status == StatusCode::UNAUTHORIZED {
+        // 401 是「身份不成立」，403 是「身份成立但越权」；两者都是拒绝，
+        // 只有真正执行过的请求才是 allowed。状态码另行记录，细节不丢。
+        decision: if status == StatusCode::UNAUTHORIZED || status == StatusCode::FORBIDDEN {
             "denied".into()
         } else {
             "allowed".into()
@@ -343,24 +376,27 @@ fn request_id_from_path(path: &str) -> Option<Uuid> {
 }
 async fn status(
     AppState(state): AppState<Arc<State>>,
-    _principal: Principal,
+    principal: Principal,
 ) -> ApiResult<impl IntoResponse> {
+    principal.require(crate::credentials::Scope::Read)?;
     let nodes = state.nodes().await;
     // 状态查询本身就是一次探测：它不在调度锁内，可以让调度复用同一份新鲜快照。
     Ok(axum::Json(state.refresh_health(&nodes).await))
 }
 async fn enable_node(
     AppState(state): AppState<Arc<State>>,
-    _principal: Principal,
+    principal: Principal,
     Path(name): Path<String>,
 ) -> ApiResult<impl IntoResponse> {
+    principal.require(crate::credentials::Scope::Admin)?;
     set_node_enabled(state, name, true).await
 }
 async fn disable_node(
     AppState(state): AppState<Arc<State>>,
-    _principal: Principal,
+    principal: Principal,
     Path(name): Path<String>,
 ) -> ApiResult<impl IntoResponse> {
+    principal.require(crate::credentials::Scope::Admin)?;
     set_node_enabled(state, name, false).await
 }
 async fn set_node_enabled(
@@ -374,24 +410,27 @@ async fn set_node_enabled(
 /// 只核对指定节点的未确认清理，并用远端看门狗证据解除隔离。
 async fn reconcile_node(
     AppState(state): AppState<Arc<State>>,
-    _principal: Principal,
+    principal: Principal,
     Path(name): Path<String>,
 ) -> ApiResult<axum::Json<crate::reconcile::Report>> {
+    principal.require(crate::credentials::Scope::Admin)?;
     Ok(axum::Json(
         crate::reconcile::reconcile(&state, Some(&name)).await?,
     ))
 }
 async fn reconcile_all(
     AppState(state): AppState<Arc<State>>,
-    _principal: Principal,
+    principal: Principal,
 ) -> ApiResult<axum::Json<crate::reconcile::Report>> {
+    principal.require(crate::credentials::Scope::Admin)?;
     Ok(axum::Json(crate::reconcile::reconcile(&state, None).await?))
 }
 
 async fn jobs(
     AppState(state): AppState<Arc<State>>,
-    _principal: Principal,
+    principal: Principal,
 ) -> ApiResult<impl IntoResponse> {
+    principal.require(crate::credentials::Scope::Read)?;
     let mut jobs = state
         .jobs
         .lock()
@@ -404,9 +443,10 @@ async fn jobs(
 }
 async fn job(
     AppState(state): AppState<Arc<State>>,
-    _principal: Principal,
+    principal: Principal,
     Path(id): Path<Uuid>,
 ) -> ApiResult<impl IntoResponse> {
+    principal.require(crate::credentials::Scope::Read)?;
     let job = state
         .jobs
         .lock()
@@ -418,9 +458,10 @@ async fn job(
 }
 async fn cancel(
     AppState(state): AppState<Arc<State>>,
-    _principal: Principal,
+    principal: Principal,
     Path(id): Path<Uuid>,
 ) -> ApiResult<impl IntoResponse> {
+    principal.require(crate::credentials::Scope::Cancel)?;
     // 与首次领取任务共用调度锁，避免取消和进入 Running 的窄竞态。
     let _scheduling = state.scheduling.lock().await;
     let _transition = state.transitions.lock().await;
@@ -439,9 +480,10 @@ async fn cancel(
 }
 async fn submit(
     AppState(state): AppState<Arc<State>>,
-    _principal: Principal,
+    principal: Principal,
     request: Request,
 ) -> ApiResult<impl IntoResponse> {
+    principal.require(crate::credentials::Scope::Submit)?;
     let encoded = request
         .headers()
         .get("x-sshpool-build")
@@ -565,10 +607,11 @@ fn ensure_disk(state: &State) -> Result<()> {
 }
 async fn log(
     AppState(state): AppState<Arc<State>>,
-    _principal: Principal,
+    principal: Principal,
     Path(id): Path<Uuid>,
     axum::extract::Query(query): axum::extract::Query<std::collections::HashMap<String, String>>,
 ) -> ApiResult<Response> {
+    principal.require(crate::credentials::Scope::Read)?;
     ensure_job(&state, id).await?;
     let offset = query
         .get("offset")
@@ -604,9 +647,10 @@ async fn ensure_job(state: &State, id: Uuid) -> Result<Job> {
 }
 async fn artifacts(
     AppState(state): AppState<Arc<State>>,
-    _principal: Principal,
+    principal: Principal,
     Path(id): Path<Uuid>,
 ) -> ApiResult<Response> {
+    principal.require(crate::credentials::Scope::Read)?;
     if !ensure_job(&state, id).await?.artifacts {
         return Err(anyhow::anyhow!("no artifacts available").into());
     }
@@ -622,9 +666,10 @@ async fn artifacts(
 
 async fn events(
     AppState(state): AppState<Arc<State>>,
-    _principal: Principal,
+    principal: Principal,
     Path(id): Path<Uuid>,
 ) -> ApiResult<impl IntoResponse> {
+    principal.require(crate::credentials::Scope::Read)?;
     ensure_job(&state, id).await?;
     let path = state.dir(id).join("events.jsonl");
     // 和追加事件共用锁，避免读取到尚未写完的 JSON 行。

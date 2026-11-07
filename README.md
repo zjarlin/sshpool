@@ -190,13 +190,26 @@ export SSHPOOL_CA_FILE=/etc/sshpool/ca.pem      # 或每次传 --ca-file
 多用户或多工作台可以签发短期凭据，不必分发根 token：
 
 ```sh
-sshpool credential issue --subject workbench --ttl-hours 12   # stdout 里有一次性的 token
+sshpool credential issue --subject workbench --ttl-hours 12                # 默认只读
+sshpool credential issue --subject builder --ttl-hours 12 \
+  --scope submit --scope cancel                                            # 可重复给权限
 sshpool credential list
 sshpool credential revoke <id>
 sshpool credential prune --apply                                # 只清理已过期且已撤销的记录
 ```
 
-明文 token 只在 `issue` 时打印一次，磁盘上只保存 SHA-256 摘要；有效期上限 90 天，到期是半开区间，撤销对之后发起的请求立即生效（已通过鉴权的进行中请求不会被中断）且可重复执行。根 token 仍然可用，并且是坏掉的 `credentials.json` 之外唯一的入口 —— 凭据库损坏时动态凭据一律 401，但根 token 不会因此被锁在门外。当前短期凭据与根 token 权限相同，都能提交和取消任务；按主体分级授权尚未实现。
+明文 token 只在 `issue` 时打印一次，磁盘上只保存 SHA-256 摘要；有效期上限 90 天，到期是半开区间，撤销对之后发起的请求立即生效（已通过鉴权的进行中请求不会被中断）且可重复执行。根 token 仍然可用，并且是坏掉的 `credentials.json` 之外唯一的入口 —— 凭据库损坏时动态凭据一律 401，但根 token 不会因此被锁在门外。
+
+权限是显式授予的四项白名单，签发时不写 `--scope` 只拿到 `read`：
+
+| 权限 | 允许的路由 |
+| --- | --- |
+| `read` | `GET /v1/status`、`/v1/jobs`、任务详情、日志、事件、产物（任何凭据都有；没有它整份凭据库拒绝加载） |
+| `submit` | `POST /v1/jobs` 提交任务（会占用 Worker） |
+| `cancel` | `POST /v1/jobs/{id}/cancel` 请求停止任务 |
+| `admin` | 节点启用/禁用、在线核对隔离、查询 `/v1/access` 访问审计 |
+
+缺权限返回 **403** 而不是 401（身份成立、权限不够），响应体只写缺哪一项：``credential lacks the `admin` scope``；审计里 401 与 403 一律记 `decision=denied`，`status` 保留具体状态码。旧版本签发、没有 `scopes` 字段的记录按最小权限降级为只读 —— 这是权限收紧，不给「缺字段等于全部权限」的兼容。根 token 不受分级影响，仍是运维用的全权凭据。
 
 ### 访问审计
 
@@ -234,7 +247,7 @@ curl -s http://127.0.0.1:9100/metrics    # Prometheus 文本格式；/ 等价
 - 不保证入口 Mac 关机、休眠或重启时会话在线。任务状态副本能保存已确认记录，但入口 SSH 和控制器不会自动漂移；恢复机需要独立保存的配置、token 与 SSH 凭据。
 - 不提供 NAT 穿透；复用已有 SSH ProxyJump/ProxyCommand 或受控网络。没有新增路由、隧道或端口映射。
 - HTTPS 只做服务端证书校验，没有客户端证书（mTLS）。改证书必须重启控制面，没有热重载或轮换；信任的 CA 需要用 `--ca-file` 指定，没有吊销列表。
-- 短期凭据只解决"能撤销"，尚未按主体限制权限：拿到任一条有效凭据就能提交、取消任务和查询全部记录。逐主体的授权见 [验证文档](docs/validation.md#access-network)。
+- 短期凭据按四项白名单（`read`/`submit`/`cancel`/`admin`）授权，但没有更细的粒度：没有「只提交、不取消别人的任务」或「只能操作自己提交的任务」这类主体范围限制，也没有按节点、按项目分权。权限在签发时固定，改权限要重新签发。见 [验证文档](docs/validation.md#access-network)。
 - 访问审计是本机 `home/access.jsonl` 上的普通追加文件，没有签名链或只追加存储：能写这个目录的人可以改写、删除或伪造记录。超过 12 MiB 的历史会被滚动丢弃，没有远程日志后端或归档；也没有按 IP/地理归因。
 - **存储冗余仍只是规划算术**：`sshpool storage-plan` 按拓扑核算副本、仲裁和恢复预留，并拒绝「两台物理机凑三故障域」这类承诺；但 Ceph 没有部署，没有掉盘、`fsync`、崩溃恢复或跨机接管验收。它也不探测真实磁盘容量——输入里的 `size_bytes` 与故障域由部署者申报，盘的归属必须先过 `storage-admission`。见 [跨物理机与无 RAID 存储边界](docs/ssi-physical-storage.md#先核算再承诺) 与 [验证记录](docs/validation.md#storage-placement)。
 - 指标端点没有鉴权：能连上 `metrics_listen` 就能读到节点名与资源水位，因此默认关闭、默认只绑回环；它只输出数值与节点名，不含 SSH 目标、token、任务消息或自由文本。指标不落盘、不带历史，重启后计数从现有任务记录重新渲染；Prometheus 配置与日志后端（Loki/ELK）由部署者自行提供。

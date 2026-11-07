@@ -216,5 +216,10 @@
       "所有凭据权限相同，审计只记录不约束",
       "超过 12 MiB 的历史被滚动丢弃，没有外部归档"
     ]
+  },
+  "known_gaps_superseded_by": {
+    "decision_403_now_denied": "docs/evidence/credential-scopes-20261107.json：403（越权）也记 decision=denied",
+    "credentials_now_scoped": "docs/evidence/credential-scopes-20261107.json：短期凭据按 read/submit/cancel/admin 分级",
+    "note": "上面 known_gaps 是 080 验收当时的快照，保留不改；现行口径以 docs/validation.md 为准"
   }
 }

@@ -228,14 +228,19 @@ _（本节标题锚点为 `access-network`。）_
 | 并发签发不丢记录 | `issue`/`revoke`/`prune` 先取 `credentials.lock` 排他锁再读改写 | `concurrent_issuance_does_not_lose_records`（去掉锁后 8 次并发只剩 1 条） |
 | 只清理已撤销且已过期 | 仍有效或"过期但没撤销"的记录都保留 | `prune_only_drops_credentials_that_expired_after_revocation` |
 | 坏库不锁死控制面 | 动态凭据校验 `Err` 时记 stderr 并返回 401，主 token 照常通过 | `dynamic_credentials_authenticate_and_a_corrupt_store_still_denies` |
+| 默认最小权限 | 不写 `--scope` 只签发 `read`；`read` 是必需项，缺它的库整份拒绝加载（fail-closed） | `a_read_only_credential_can_read_but_cannot_change_node_state`、`credentials_without_a_scope_field_are_downgraded_to_read_only` |
+| 越权是 403 不是 401 | 处理器入口 `Principal::require`，错误体只写缺哪一项权限 | `a_read_only_credential_is_refused_on_every_write_route` |
+| 旧记录降级只读 | 没有 `scopes` 字段的记录按 `legacy_scopes()` 处理，不兼容成「全部权限」 | `credentials_without_a_scope_field_are_downgraded_to_read_only` |
 
 真实二进制（macOS ARM64 release，rustls 0.23/ring，TLS1.2+1.3，openssl 4.1.0 自建 CA → `CA:FALSE` 叶证书）在 `127.0.0.1:18877` 的实测矩阵：`curl --cacert` 三种协商全部 `200`（auto/h2、强制 `--http1.1`、强制 `--http2`）；不带 CA 时 curl 退出码 60、`unable to get local issuer certificate`、状态 `000`；向 TLS 端口发明文 HTTP 退出码 1、`Received HTTP/0.9 when not allowed`。CLI 带 `--ca-file` 访问 `https://` 成功返回 `[]`，不带 CA 报 `invalid peer certificate: UnknownIssuer`。
 
 凭据侧：`credential issue --subject workbench --ttl-hours 1` 输出 `spt_` 前缀、101 字符、后 64 位十六进制的 token；`credentials.json` 与 `credentials.lock` 均为 `0600`，且磁盘上既没有明文也没有 secret 片段。该 token 能正常调用 `jobs` / `status`；`revoke` 后立刻复用得到 `controller: unauthorized`；重复 `revoke` 时 `revoked_at` 保持不变；根 token 全程不受影响；`--ttl-hours 2161` 被拒（`credential lifetime must not exceed 90 days`）；`prune` 默认 dry-run 只打印计划。向 `credentials.json` 写入坏内容后，CLI 用动态凭据退出码 1（`unauthorized`），服务端 stderr 出现 `credential store unusable`，根 token 仍是 200。松散私钥（`0644`）启动报 `TLS key … must not be readable by group or others (chmod 600)`；只配 `tls_key` 报 `tls_cert and tls_key must be configured together`；先发垃圾字节再建一条只连不说的连接，随后的正常请求仍在 1.6ms 内返回 200。证据见 [evidence/access-network-20261107.json](evidence/access-network-20261107.json)。
 
+权限分级在真实 TLS 链路上同样成立（macOS ARM64 release + 自建 CA，`credential issue` 走真实 CLI）：不写 `--scope` 时输出 `scopes == ["read"]`；只读凭据对 `GET /v1/status`、`/v1/jobs` 返回 200，对节点启用/禁用、在线核对隔离、`POST /v1/jobs`、任务取消、`GET /v1/access` 全部返回 403，且响应体逐条写明缺失的权限名（`admin` / `submit` / `cancel`）；`sshpool node disable`、`sshpool access` 用只读凭据时退出码 1 并原样打印 ``controller: credential lacks the `admin` scope``。显式 `--scope read --scope admin` 后同一路由不再 403，而是继续走到处理器（未知节点 → 400），说明 403 来自授权而不是路由不存在；这样的凭据仍不能提交任务（403 缺 `submit`）。`--scope READ --scope read --scope submit` 被归一成 `["read","submit"]`，`--scope root` 被拒且不写库。把一条记录的 `scopes` 字段删掉后 `credential list` 报 `["read"]`、读接口仍 200、提交变 403；把某条的 `scopes` 改成 `["admin"]`（缺 `read`）后整份库拒绝加载，两条动态凭据都退成 401，stderr 出现 `credential store unusable`，根 token 仍 200；撤销后同一把只读凭据读接口也变 401（撤销优先于权限）。证据见 [evidence/credential-scopes-20261107.json](evidence/credential-scopes-20261107.json)。
+
 抓到的两个真实缺陷：`axum` 未启用 `http2` feature 时，ALPN 协商成 `h2` 但服务端只会说 HTTP/1.1，curl 报 `Error in the HTTP2 framing layer` —— 打开 `features = ["http2"]` 后三种协商全部正常。握手最初串行执行，被"只连不说"的客户端卡住整个控制面；改成每连接独立任务 + 64 并发上限 + 10 秒超时后，该测试与真实链路都恢复正常。
 
-尚未覆盖：证书轮换/热重载（换证书需重启控制面）、客户端证书（mTLS，当前只做服务端证书校验）、凭据分级授权（短期凭据与根 token 权限相同，都能提交和取消任务，`Principal` 只用于识别主体与写审计）、跨公网真实 RTT、CA 文件轮换与吊销列表。
+尚未覆盖：证书轮换/热重载（换证书需重启控制面）、客户端证书（mTLS，当前只做服务端证书校验）、权限的主体范围（现在只有 `read`/`submit`/`cancel`/`admin` 四项动作白名单，没有「只能取消自己提交的任务」或按节点、按项目分权；权限在签发时固定，改权限要重新签发）、跨公网真实 RTT、CA 文件轮换与吊销列表。
 
 ### 可查询的用户访问审计 {#access-audit}
 
@@ -263,7 +268,7 @@ _（本节标题锚点为 `access-audit`。）_
 
 请求标识：客户端给 `x-request-id` 且只含 `alnum` 与 `- _ . : /`、长度不超过 128 时原样沿用（可用于把 CLI 一次操作与服务端记录对上），否则服务端生成 UUID；这是为了避免调用方把换行或超长内容塞进日志行。
 
-查询：`GET /v1/access?subject=&decision=&since=&limit=`，`limit` 默认 200、硬上限 5000，返回按时间倒序；`sshpool access` 是它的 CLI 包装。**查询本身也被审计** —— 匿名的 `/v1/access` 得到 401，而且这条拒绝会作为 `route == "/v1/access"`、`decision == "denied"` 的记录出现在下一次查询里。
+查询：`GET /v1/access?subject=&decision=&since=&limit=`，需要 `admin` 权限（审计里有其他人的主体名与时间，只读凭据看不到别人的足迹，越权得到 403），`limit` 默认 200、硬上限 5000，返回按时间倒序；`sshpool access` 是它的 CLI 包装。**查询本身也被审计** —— 匿名的 `/v1/access` 得到 401，只读凭据得到 403，两条拒绝都会作为 `route == "/v1/access"`、`decision == "denied"` 的记录出现在下一次查询里。
 
 有界：单文件 4 MiB，保留当前文件与 `.1`/`.2` 两代，磁盘上限 12 MiB。写满就滚动，**从不清空** —— 清空会让"审计突然变空"看起来像没有访问。滚动时先丢最老一代，再从旧往新搬，最后由 `current → .1`。
 
@@ -277,11 +282,11 @@ fail-closed 的两处边界：
 | 审计文件不可写 | 副作用请求（非 GET/HEAD/OPTIONS）在**执行前**返回 503，动作不发生；只读请求仍可用 | `a_non_writable_access_log_blocks_side_effect_requests` |
 | 行太大 / 磁盘满 / sync 失败 | 不吞错误：响应结束后的写失败只记 stderr（不能把已完成的响应改成失败） | — |
 
-`decision` 当前只区分 401 与"非 401"，这是一个**已知口径**：400（例如 `unknown job`、非法 `limit`）也会记成 `allowed`，`status` 才是准确的结论；要看真正的授权边界请用 `reason` + `status`。
+`decision` 把 **401 与 403 都记成 `denied`**（前者身份不成立、后者越权），其余状态码记成 `allowed` —— 这是一个**已知口径**：400（例如 `unknown job`、非法 `limit`）也会记成 `allowed`，所以「某个主体反复越权」用 `status == 403` 查最准，`decision` 只表示「这次有没有被拒绝」。
 
 真实二进制（macOS ARM64 release，临时 home、回环端口）实测：7 个矩阵请求加上 1 次就绪探测共留下 8 行，根 token 带 `x-request-id: cli-run-1` 时该字符串原样出现在 `request` 字段；凭据请求记成 `subject=workbench-ü`、`kind=credential`、带 grant id；匿名与伪造 token 都是 `401 / denied`（`missing-token` 与 `unknown-token`）；凭据打不存在的路由得到 `404`，日志里 `route=unmatched` 且不含 `/v1/does-not-exist`；`/v1/jobs/<uuid>` 的 UUID 进 `job` 字段。把 `access.jsonl` 换成一个同名目录后，`GET /v1/status` 仍 200，`POST /v1/nodes/test-node/disable` 返回 503。往末尾写半行后查询仍能读到 13 条；随后下一次请求返回 200，半行被清掉（`torn_line_still_present=false`、`new_record_found=true`），16 行全部可读。把第 2 行改成 `{not json}` 后 `sshpool access` 退出码 1，报 `malformed access record at …/access.jsonl:2: key must be a string`；把 `access.jsonl.1` 的权限设成 `000` 后同样退出码 1，报 `cannot read …/access.jsonl.1: Permission denied`。证据见 [evidence/access-audit-20261107.json](evidence/access-audit-20261107.json)。
 
-尚未覆盖：跨主机汇集与远程日志后端（只写本机 `home/`）、防篡改（能写 home 的人可以改写或删除记录，没有签名链或只追加存储）、按主体分权（所有凭据权限相同，审计只记录不约束）、超过 12 MiB 的历史归档、按 IP/地理位置归因。
+尚未覆盖：跨主机汇集与远程日志后端（只写本机 `home/`）、防篡改（能写 home 的人可以改写或删除记录，没有签名链或只追加存储）、超过 12 MiB 的历史归档、按 IP/地理位置归因。审计本身不约束动作，约束由各处理器的 `Scope` 授权完成（`GET /v1/access` 需要 `admin`，见 [跨不可信网络的控制面](#access-network)）。
 
 ### 外部观测系统 {#external-observation}
 

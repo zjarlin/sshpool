@@ -38,3 +38,13 @@ Feature: 身份与网络边界
     When 传输任务输入与访问 token
     Then 使用校验证书的 HTTPS 或 SSH 隧道
     And 可短期签发并撤销访问凭据
+
+  # evidence: tests/access_network.rs::a_read_only_credential_can_read_but_cannot_change_node_state
+  # evidence: docs/validation.md#access-network
+  @verified @automated @p1
+  Scenario: 短期凭据按主体限制权限
+    Given 一条签发给工作台的短期凭据
+    When 它调用读接口与写接口
+    Then 读接口返回 200
+    And 未被授予的权限返回 403 且写明缺哪一项
+    And 没有 scopes 字段的旧记录降级为只读
