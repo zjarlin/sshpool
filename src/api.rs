@@ -58,6 +58,8 @@ fn authorized(headers: &HeaderMap, state: &State) -> Result<()> {
 pub fn routes(state: Arc<State>) -> Router {
     Router::new()
         .route("/v1/status", get(status))
+        .route("/v1/nodes/{name}/enable", post(enable_node))
+        .route("/v1/nodes/{name}/disable", post(disable_node))
         .route("/v1/jobs", get(jobs).post(submit))
         .route("/v1/jobs/{id}", get(job))
         .route("/v1/jobs/{id}/cancel", post(cancel))
@@ -71,7 +73,32 @@ async fn status(
     headers: HeaderMap,
 ) -> ApiResult<impl IntoResponse> {
     authorized(&headers, &state)?;
-    Ok(axum::Json(probe::all(&state.config.nodes).await))
+    let nodes = state.nodes().await;
+    Ok(axum::Json(probe::all(&nodes).await))
+}
+async fn enable_node(
+    AppState(state): AppState<Arc<State>>,
+    headers: HeaderMap,
+    Path(name): Path<String>,
+) -> ApiResult<impl IntoResponse> {
+    set_node_enabled(state, headers, name, true).await
+}
+async fn disable_node(
+    AppState(state): AppState<Arc<State>>,
+    headers: HeaderMap,
+    Path(name): Path<String>,
+) -> ApiResult<impl IntoResponse> {
+    set_node_enabled(state, headers, name, false).await
+}
+async fn set_node_enabled(
+    state: Arc<State>,
+    headers: HeaderMap,
+    name: String,
+    enabled: bool,
+) -> ApiResult<axum::Json<crate::config::Node>> {
+    authorized(&headers, &state)?;
+    let node = state.set_node_enabled(&name, enabled).await?;
+    Ok(axum::Json(node))
 }
 async fn jobs(
     AppState(state): AppState<Arc<State>>,

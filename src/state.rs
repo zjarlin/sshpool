@@ -13,6 +13,7 @@ pub struct State {
     pub config: Config,
     pub token: String,
     pub jobs: Mutex<HashMap<Uuid, Job>>,
+    node_overrides: Mutex<HashMap<String, bool>>,
     pub uploads: Arc<Semaphore>,
     pub scheduling: Mutex<()>,
     pub audit: Mutex<()>,
@@ -42,10 +43,57 @@ impl State {
             config,
             token,
             jobs: Mutex::new(jobs),
+            node_overrides: Mutex::new(HashMap::new()),
             uploads,
             scheduling: Mutex::new(()),
             audit: Mutex::new(()),
         }))
+    }
+    /// 返回应用运行时节点开关后的配置副本，供状态查询和调度共同使用。
+    pub async fn nodes(&self) -> Vec<crate::config::Node> {
+        let overrides = self.node_overrides.lock().await;
+        self.nodes_with_overrides(&overrides)
+    }
+    /// 在线切换节点接单状态；已有活动任务必须先确认结束，避免维护期遗漏容器。
+    pub async fn set_node_enabled(&self, name: &str, enabled: bool) -> Result<crate::config::Node> {
+        let _scheduling = self.scheduling.lock().await;
+        let mut overrides = self.node_overrides.lock().await;
+        let mut config = self.config_with_overrides(&overrides);
+        let node = config
+            .nodes
+            .iter_mut()
+            .find(|node| node.name == name)
+            .ok_or_else(|| anyhow::anyhow!("unknown node"))?;
+        if !enabled {
+            let active = self.jobs.lock().await.values().any(|job| {
+                !job.phase.terminal()
+                    && job
+                        .attempts
+                        .last()
+                        .is_some_and(|attempt| attempt.node == name)
+            });
+            ensure!(
+                !active,
+                "node still owns an active job; wait for confirmed completion before disabling"
+            );
+        }
+        node.enabled = enabled;
+        let changed = node.clone();
+        config::save(&self.home, &config)?;
+        overrides.insert(name.into(), enabled);
+        Ok(changed)
+    }
+    fn config_with_overrides(&self, overrides: &HashMap<String, bool>) -> Config {
+        let mut config = self.config.clone();
+        for node in &mut config.nodes {
+            if let Some(enabled) = overrides.get(&node.name) {
+                node.enabled = *enabled;
+            }
+        }
+        config
+    }
+    fn nodes_with_overrides(&self, overrides: &HashMap<String, bool>) -> Vec<crate::config::Node> {
+        self.config_with_overrides(overrides).nodes
     }
     pub fn dir(&self, id: Uuid) -> PathBuf {
         self.home.join("jobs").join(id.to_string())

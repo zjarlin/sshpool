@@ -4,7 +4,7 @@
 
 **目标差距：当前产品不满足“一个 Linux/数据库实例使用多台机器合计资源”的完整 SSI 要求。** 资源池与有状态恢复仍未交付。最新 GiantVM 调研、实际 KVM/ISA 阻塞和容量边界见 [严格 SSI 可行性](docs/ssi-feasibility.md)；不要把任务调度器的验收数量当作 SSI 完成度。
 
-**跨物理机预检：** 新增 `sshpool ssi-preflight <SSH目标一> <SSH目标二>`，通过已有 SSH 查询真实 KVM 频率和接口，不安装软件或运行客体。已发现独立物理候选与 ESXi 实验 VM 的原生 TSC 分别为 2,095,147 与 2,394,374 kHz，双方无硬件缩放；当前运行时明确拒绝配对。尚未加入跨物理计算或存储，实测及无 RAID 存储边界见 [物理接入记录](docs/ssi-physical-storage.md)。
+**跨物理机预检与真实卸载：** `sshpool ssi-preflight <SSH目标一> <SSH目标二>` 通过已有 SSH 查询真实 KVM 频率和接口，不安装软件或运行客体。独立物理候选与 ESXi 实验 VM 的原生 TSC 分别为 2,095,147 与 2,394,374 kHz，双方无硬件缩放；当前 SSI 运行时明确拒绝配对。该独立 x86 物理机已作为真实 Docker/Cargo Worker 接入，并从 ARM64 工作台完成一次离线编译、产物执行和清理；**这仍是任务调度，不是跨物理 SSI**。实测及无 RAID 存储边界见 [物理接入记录](docs/ssi-physical-storage.md) 和 [验证记录](docs/validation.md#physical-host-and-build-proof)。
 
 **暂停恢复进展：** 为两端已分别暂停的实验客体增加代际检查、重新校时和两阶段恢复确认，并修复超时线程陷入 QEMU 退出回调锁的问题。有限七轮恢复与拒绝路径见 [时钟恢复、失败记录和范围](docs/ssi-clock-resume.md)。**单条全局暂停、重置后恢复、跨物理稳定性和完整 SSI 仍未完成**；反向 watchdog 与设备排空后的失败记录继续保留。
 
@@ -62,14 +62,16 @@ flowchart LR
   SSH --> Linux[Linux 工作台：OpenSSH / 文件 / 编辑器]
   Linux -->|源码快照、构建请求| Controller[Rust 控制面]
   Controller -->|系统 OpenSSH| A[Linux + Docker]
+  Controller -->|系统 OpenSSH| D[独立 x86 物理 Worker + Docker/KVM]
   Controller -->|系统 OpenSSH| B[macOS + Docker Linux VM]
   Controller -->|系统 OpenSSH| C[Windows 内的 WSL2 + Docker]
   A -->|日志与显式产物| Controller
+  D -->|日志与显式产物| Controller
   B -->|日志与显式产物| Controller
   C -->|日志与显式产物| Controller
 ```
 
-图中 macOS / WSL2 表示适配方向，不能视为均已完成执行验收。
+图中 macOS / WSL2 表示适配方向，不能视为均已完成执行验收；独立 x86 Worker 已完成任务级构建卸载，但尚未与入口组成同一个 SSI 客体。
 
 ## 能力与边界
 
@@ -95,7 +97,7 @@ sshpool node prepare linux-builder alpine:3.22
 sshpool serve
 ```
 
-配置位于 `~/.sshpool/config.toml`。节点地址、token、SSH 凭据与任务数据都不应提交到 Git。配置修改后重启控制面。`prepare` 是显式拉取镜像操作；普通构建不会自动拉镜像。`prepare` 同时把镜像加入该节点的允许清单；已安装的业务镜像也不会自动开放给任务。
+配置位于 `~/.sshpool/config.toml`。节点地址、token、SSH 凭据与任务数据都不应提交到 Git。新增节点或镜像后重启控制面；已有节点的 `node enable` / `node disable` 可在控制面运行时生效，仍有活动任务的节点不能被禁用。`prepare` 是显式拉取镜像操作；普通构建不会自动拉镜像。`prepare` 同时把镜像加入该节点的允许清单；已安装的业务镜像也不会自动开放给任务。
 
 稳定 Linux 工作台可以是已有 Linux 主机，或 Mac 上无宿主目录挂载的 Lima VM。把 `ssh_backend` 指向它的 SSH 端口，客户端只连接 `ssh_listen`。默认两者为 `127.0.0.1:2223` 和 `127.0.0.1:2222`。
 

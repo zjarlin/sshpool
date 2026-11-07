@@ -12,6 +12,8 @@
 
 实际只读探测了 Linux ARM64、Linux x86_64 和 macOS ARM64 三类节点，返回独立资源快照。资源不足的 macOS Worker 被候选过滤，未通过降低预留强行执行构建。WSL2 尚无实机测试。
 
+2026-11-07 增加了在线 `node enable` / `node disable`。控制面在不重启时更新调度状态并原子保存配置；仍有活动任务的节点拒绝禁用。API 测试覆盖鉴权、未知节点、活动任务保护、连续切换两个节点以及重载后保留全部选择。远程探测缺少控制面 `enabled` 字段时仍可解析，避免状态查询因协议扩展失败。
+
 ## rust
 
 从统一 SSH 工作台执行 `cargo build --offline --release`，通过项目配置和 Cargo shim 提交 ARM64 Rust Alpine 镜像。任务以 UID 65534 执行，在容器内完成编译。通过 `fetch` 在全新目录回取可执行文件并实际运行，输出目标架构 aarch64。
@@ -73,6 +75,26 @@ retries = 0
 保存为 `sshpool.toml` 后执行 `sshpool run`，记下任务 ID，再用 `sshpool events <id>` 和 `sshpool fetch <id>` 核对。复现示例使用更短的循环；上表记录对应实际验收的 1000 万次循环。Worker 管理员可以同时检查该任务标签的容器进程；仅打印 `uname` 不足以单独证明未使用仿真。
 
 macOS ARM64 Worker 本次只完成资源探测：可用内存约 2.7 GiB，小于保留给原有业务的 4 GiB，系统负载约 36。未降低预留、停止原有业务或强行执行。其任务执行验收仍未完成；未完成不能记作已经贡献硬件。不同 Worker 的可用内存没有合并，普通 SSH 命令和现有 sub2api 服务仍在各自原主机运行。
+
+## physical-host-and-build-proof
+
+2026-11-07 新增一台独立 x86 物理 Worker，并从 ARM64 统一工作台成功提交真实构建。公开记录 [ssi-physical-host-20261107.json](evidence/ssi-physical-host-20261107.json) 已去除地址、账号、密码、私有路径和磁盘序列号；检查器 `scripts/ssi-lab/check-physical-host.py` 会拒绝把未确认磁盘标成可擦除，也会拒绝提升为完整 SSI、自动故障接管或分布式存储已验证。
+
+| 证据 | 实测 |
+| --- | --- |
+| 物理 CPU | 双路 Xeon E5-2620 v4，16 物理核/32 逻辑 CPU |
+| 内存与虚拟化 | 约 60.5 GiB；普通用户可访问 KVM API 12 |
+| 容器运行时 | Docker 29.1.3，cgroup v2，内存/CPU/PID 限额有效 |
+| 隔离 VM | 8 vCPU，12 GiB，100 GiB 稀疏 overlay，SSH 仅映射回环 |
+| 物理执行 | 3 秒负载内八条 KVM vCPU 线程各产生 300 ticks |
+| 文件边界 | 未传业务块设备、未用 virtfs/9p、未挂载宿主业务目录 |
+| 构建任务 | `26757349-13e7-4a74-9fd4-17520a2c76bf`，`linux/amd64`，离线 Cargo release |
+| 结果与清理 | `succeeded`，`exit_code=0`，`cleanup_confirmed=true`，无残留容器 |
+| 产物 | SHA-256 `b51f6aeb99d2ef3558f3b4415c0099de75c803511b3828589821e84ec9f0c423` |
+| 架构边界 | 产物在物理 Worker 上运行成功；在 ARM64 入口被 `exec format error` 拒绝 |
+| 存储边界 | 独立附加盘的文件系统和归属未确认，未挂载、未格式化、未创建 RAID/LVM/OSD |
+
+实测已经证明真实物理计算卸载、日志、产物和清理闭环；它仍是任务调度，而不是严格 SSI。跨物理同一进程没有运行，CPU/RAM 没有合并，Ceph 没有部署，`.182` 故障后的自动服务接管和 sub2api/PostgreSQL/Redis 迁移也没有验收。
 
 ## publication
 

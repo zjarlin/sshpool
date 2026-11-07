@@ -28,10 +28,12 @@ pub async fn node(node: &Node) -> Health {
         Ok::<_, anyhow::Error>(health)
     }
     .await;
-    match result {
+    let mut health = match result {
         Ok(health) => health,
         Err(error) => Health::failed(&node.name, format!("{error:#}")),
-    }
+    };
+    health.enabled = node.enabled;
+    health
 }
 pub async fn all(nodes: &[Node]) -> Vec<Health> {
     futures_util::future::join_all(nodes.iter().map(node)).await

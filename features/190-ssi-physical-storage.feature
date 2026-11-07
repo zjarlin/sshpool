@@ -23,11 +23,14 @@ Feature: 物理主机准入与独立磁盘冗余
     And 缺少原始读数接口或对象回收确认时不能判定通过
     And 不以不同 machine-id 推断独立物理故障域
 
-  @planned @p0
+  # evidence: docs/evidence/ssi-physical-host-20261107.json
+  @verified @manual @p0
   Scenario: 新物理主机以隔离实验环境加入
     Given SSH 和真实 KVM 创建能力已在候选物理主机核验
     When 准备跨物理机实验
     Then 只创建有资源限额且不挂载业务目录的独立实验 VM
+    And 八条 KVM vCPU 线程在物理宿主 CPU 上产生执行时间
+    And 独立构建任务在物理宿主的 Docker 中完成编译和清理
     And 保存物理宿主身份与实验 VM 的对应关系和回退记录
     And 不覆盖物理宿主内核或已有磁盘内容
 

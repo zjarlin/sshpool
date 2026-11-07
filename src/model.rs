@@ -5,6 +5,9 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Health {
     pub name: String,
+    // 远端普通探测不返回控制面的启用状态；旧协议缺字段时按关闭处理。
+    #[serde(default)]
+    pub enabled: bool,
     pub os: String,
     pub arch: String,
     pub cpus: u32,
@@ -19,6 +22,7 @@ impl Health {
     pub fn failed(name: &str, error: String) -> Self {
         Self {
             name: name.into(),
+            enabled: false,
             os: String::new(),
             arch: String::new(),
             cpus: 0,

@@ -102,6 +102,14 @@ enum NodeAction {
         priority: i32,
     },
     List,
+    /// 在线恢复节点接单；不重启控制面。
+    Enable {
+        name: String,
+    },
+    /// 在线停用节点；仍有活动任务时拒绝。
+    Disable {
+        name: String,
+    },
     /// 显式准备容器镜像；此命令会增加节点镜像存储。
     Prepare {
         name: String,
@@ -150,7 +158,7 @@ async fn dispatch(cli: Cli) -> Result<i32> {
             );
         }
         Action::Serve => serve(home).await?,
-        Action::Node { command } => node_command(&home, command).await?,
+        Action::Node { command } => node_command(&cli, &home, command).await?,
         Action::SsiPreflight { ssh, ssh_config } => {
             let report = sshpool::ssi::preflight(ssh, ssh_config.as_deref()).await?;
             println!("{}", serde_json::to_string_pretty(&report)?);
@@ -223,7 +231,20 @@ async fn dispatch(cli: Cli) -> Result<i32> {
     }
     Ok(0)
 }
-async fn node_command(home: &std::path::Path, command: &NodeAction) -> Result<()> {
+async fn node_command(cli: &Cli, home: &std::path::Path, command: &NodeAction) -> Result<()> {
+    match command {
+        NodeAction::Enable { name } => {
+            client(cli, home)?.set_node_enabled(name, true).await?;
+            println!("Node enabled: {name}");
+            return Ok(());
+        }
+        NodeAction::Disable { name } => {
+            client(cli, home)?.set_node_enabled(name, false).await?;
+            println!("Node disabled: {name}");
+            return Ok(());
+        }
+        _ => {}
+    }
     let mut config = config::read(home)?;
     match command {
         NodeAction::Add {
@@ -286,6 +307,9 @@ async fn node_command(home: &std::path::Path, command: &NodeAction) -> Result<()
             }
             config::save(home, &config)?;
             println!("Image approved for this worker. Restart the controller to apply.");
+        }
+        NodeAction::Enable { .. } | NodeAction::Disable { .. } => {
+            anyhow::bail!("node state command was not dispatched")
         }
     }
     Ok(())

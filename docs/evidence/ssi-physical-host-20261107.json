@@ -1,0 +1,117 @@
+{
+  "schema": 1,
+  "date": "2026-11-07",
+  "scope": "One independent x86 physical host was accessed as a build worker and ran one isolated nested KVM experiment; no cross-physical same-process SSI or distributed storage was launched.",
+  "privacy": {
+    "addresses_removed": true,
+    "credentials_removed": true,
+    "private_paths_removed": true,
+    "disk_serials_removed": true,
+    "company_files_used": false
+  },
+  "physical_host": {
+    "label": "physical-x86-worker",
+    "ssh_access_verified": true,
+    "operating_system": "Ubuntu 26.04.1 LTS",
+    "kernel": "7.0.0-43-generic",
+    "architecture": "x86_64",
+    "cpu_model": "Intel(R) Xeon(R) CPU E5-2620 v4 @ 2.10GHz",
+    "packages": 2,
+    "physical_cores": 16,
+    "logical_cpus": 32,
+    "memory_bytes": 64973488128,
+    "numeric_identity_differs_from_guest": true,
+    "kvm": {
+      "available_to_worker_user": true,
+      "api_version": 12,
+      "get_tsc_khz_supported": true,
+      "tsc_control_supported": false,
+      "native_tsc_khz": 2095147
+    },
+    "docker": {
+      "client_version": "29.1.3",
+      "server_version": "29.1.3",
+      "cgroup_version": "v2",
+      "memory_limit": true,
+      "cpu_cfs_quota": true,
+      "pids_limit": true
+    },
+    "critical_configuration": {
+      "unchanged_during_experiment": true,
+      "fstab_sha256_before": "abed64fc2985ebdcb7a37eba8bd1ffb39a4706adb46ea5032238e995794bb75f",
+      "fstab_sha256_after": "abed64fc2985ebdcb7a37eba8bd1ffb39a4706adb46ea5032238e995794bb75f",
+      "grub_sha256_before": "90c43ba40b497af0a5ed7e3655710731bce21cc1c9c2bdf9bd772fda69be5e39",
+      "grub_sha256_after": "90c43ba40b497af0a5ed7e3655710731bce21cc1c9c2bdf9bd772fda69be5e39",
+      "sshd_config_sha256_before": "f5f0b40412fd9a84b787d967efbcb576728d398e8d40d0d32c825004a04a4999",
+      "sshd_config_sha256_after": "f5f0b40412fd9a84b787d967efbcb576728d398e8d40d0d32c825004a04a4999"
+    }
+  },
+  "isolated_vm": {
+    "guest_os": "Ubuntu 24.04 cloud image",
+    "vcpus": 8,
+    "memory_mib": 12288,
+    "root_overlay_mib": 102400,
+    "sparse_overlay": true,
+    "physical_host_cpu_execution_observed": true,
+    "sampling_window_secs": 3,
+    "kvm_vcpu_thread_ticks": [300, 300, 300, 300, 300, 300, 300, 300],
+    "host_business_directory_mounted": false,
+    "host_business_block_device_passed": false,
+    "virtfs_or_9p_configured": false,
+    "ssh_forwarded_to_loopback_only": true,
+    "clean_powerdown_observed": true,
+    "qemu_exit_observed": true,
+    "remaining_qemu_process": false
+  },
+  "build_offload": {
+    "job_id": "26757349-13e7-4a74-9fd4-17520a2c76bf",
+    "worker_label": "physical-x86-worker",
+    "platform": "linux/amd64",
+    "image": "rust:1.93-alpine",
+    "image_digest": "sha256:4fec02de605563c297c78a31064c8335bc004fa2b0bf406b1b99441da64e2d2d",
+    "command": ["cargo", "build", "--release"],
+    "cpus": 4.0,
+    "memory_mib": 1024,
+    "network": false,
+    "phase": "succeeded",
+    "exit_code": 0,
+    "cleanup_confirmed": true,
+    "container_remaining": false,
+    "artifact_sha256": "b51f6aeb99d2ef3558f3b4415c0099de75c803511b3828589821e84ec9f0c423",
+    "artifact_runs_on_worker": true,
+    "worker_output": "SSHPOOL_OK amd64 build=500000500000",
+    "cross_architecture_execution_on_arm64_entry_refused": true,
+    "cross_architecture_error": "exec format error"
+  },
+  "storage": {
+    "system_disk_discovered": true,
+    "additional_disk_discovered": true,
+    "additional_disk_filesystem_identified": false,
+    "additional_disk_ownership_confirmed": false,
+    "additional_disk_touched": false,
+    "mount_created": false,
+    "lvm_created": false,
+    "raid_created": false,
+    "osd_created": false,
+    "ceph_deployed": false,
+    "distributed_storage_verified": false,
+    "safe_to_reuse_without_owner_confirmation": false
+  },
+  "cross_physical_preflight": {
+    "compared_with_esxi_control_nodes": true,
+    "esxi_tsc_khz": 2394374,
+    "physical_host_tsc_khz": 2095147,
+    "native_tsc_precheck_passed": false,
+    "same_process_across_physical_hosts": false,
+    "cpu_and_memory_capacity_aggregated": false
+  },
+  "claims": {
+    "real_physical_cpu_execution": true,
+    "real_build_offload": true,
+    "online_node_maintenance_expected": true,
+    "full_ssi_accepted": false,
+    "automatic_host_failover_verified": false,
+    "database_migration_or_failover_verified": false,
+    "no_raid_distributed_storage_verified": false
+  }
+}

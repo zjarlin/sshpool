@@ -272,7 +272,8 @@ pub async fn run(state: Arc<State>, id: Uuid) -> Result<()> {
                 .await;
         }
         let guard = state.scheduling.lock().await;
-        let health = probe::all(&state.config.nodes).await;
+        let nodes = state.nodes().await;
+        let health = probe::all(&nodes).await;
         let active = state
             .jobs
             .lock()
@@ -282,7 +283,7 @@ pub async fn run(state: Arc<State>, id: Uuid) -> Result<()> {
             .collect::<Vec<_>>();
         let mut reasons = Vec::new();
         let mut candidates = Vec::new();
-        for (node, health) in state.config.nodes.iter().zip(&health) {
+        for (node, health) in nodes.iter().zip(&health) {
             if tried.contains(&node.name) {
                 continue;
             }

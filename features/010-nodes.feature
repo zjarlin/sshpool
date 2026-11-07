@@ -23,9 +23,11 @@ Feature: 显式登记异构 SSH 节点
     Then 可以按 Linux 能力登记
     But Windows OpenSSH 的 PowerShell 环境被明确拒绝
 
-  @planned @p1
+  # evidence: tests/api.rs::node_switch_persists_and_rejects_an_active_job
+  @verified @automated @p1
   Scenario: 在线禁用和恢复节点
     Given 管理员需要维护某个 Worker
     When 执行 node disable 或 node enable
     Then 不重启控制面也能调整接单状态
-    And 已有任务仍能完成状态核对
+    And 仍有活动任务时拒绝禁用
+    And 连续切换多个节点后重启仍保留全部选择

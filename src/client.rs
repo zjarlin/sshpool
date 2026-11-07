@@ -59,6 +59,16 @@ impl Client {
                 .await?,
         )
     }
+    /// 请求控制面在线启停节点；控制面负责持久化配置并执行活动任务保护。
+    pub async fn set_node_enabled(&self, name: &str, enabled: bool) -> Result<()> {
+        let action = if enabled { "enable" } else { "disable" };
+        let response = self
+            .request(reqwest::Method::POST, &format!("/v1/nodes/{name}/{action}"))
+            .send()
+            .await?;
+        Self::response(response).await?;
+        Ok(())
+    }
     pub async fn cancel(&self, id: Uuid) -> Result<()> {
         Self::response(
             self.request(reqwest::Method::POST, &format!("/v1/jobs/{id}/cancel"))

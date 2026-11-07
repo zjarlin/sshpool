@@ -119,6 +119,7 @@ fn node_and_health() -> (Node, Health) {
         },
         Health {
             name: "worker".into(),
+            enabled: true,
             os: "linux".into(),
             arch: "x86_64".into(),
             cpus: 8,
@@ -130,6 +131,23 @@ fn node_and_health() -> (Node, Health) {
             error: None,
         },
     )
+}
+#[test]
+fn health_accepts_probe_output_without_controller_enabled_state() -> Result<()> {
+    let health: Health = serde_json::from_value(serde_json::json!({
+        "name": "",
+        "os": "linux",
+        "arch": "x86_64",
+        "cpus": 32,
+        "memory_available_mib": 58500,
+        "disk_available_mib": 2780000,
+        "load": 0.1,
+        "runtime_memory_mib": 61975,
+        "runtime_arch": "x86_64",
+        "error": null
+    }))?;
+    assert!(!health.enabled);
+    Ok(())
 }
 #[test]
 fn scheduler_protects_reserves_platform_and_concurrent_slots() {
