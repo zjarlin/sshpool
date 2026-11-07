@@ -170,12 +170,7 @@ fn authenticate(headers: &HeaderMap, state: &State) -> std::result::Result<Princ
         return Err(Denial::Missing);
     }
     let expected = format!("Bearer {}", state.token);
-    let root_match = actual.len() == expected.len()
-        && actual
-            .bytes()
-            .zip(expected.bytes())
-            .fold(0_u8, |value, (a, b)| value | (a ^ b))
-            == 0;
+    let root_match = crate::token::same(actual, &expected);
     if root_match {
         return Ok(Principal::Root);
     }

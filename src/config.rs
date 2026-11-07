@@ -25,9 +25,14 @@ pub struct Config {
     pub nodes: Vec<Node>,
     #[serde(default)]
     pub replicas: Vec<Replica>,
-    /// Prometheus 抓取端点；不设置时不监听。它是独立端口，不参与访问鉴权与审计。
+    /// Prometheus 抓取端点；不设置时不监听。它是独立端口，不写入访问审计，
+    /// 但要求根 token 才能抓取。
     #[serde(default)]
     pub metrics_listen: Option<SocketAddr>,
+    /// 是否允许指标端点绑定非回环地址。指标端口是明文 HTTP，远端抓取会把
+    /// 根 token 送上网络，因此默认 false，只有部署者显式打开才放行。
+    #[serde(default)]
+    pub metrics_allow_remote: bool,
     /// PEM 证书链；与 `tls_key` 必须同时设置，否则 API 只监听明文 HTTP。
     #[serde(default)]
     pub tls_cert: Option<PathBuf>,
@@ -50,6 +55,7 @@ impl Default for Config {
             nodes: Vec::new(),
             replicas: Vec::new(),
             metrics_listen: None,
+            metrics_allow_remote: false,
             tls_cert: None,
             tls_key: None,
         }
@@ -259,6 +265,17 @@ pub fn validate(config: &Config) -> Result<()> {
         ensure!(
             metrics != config.api_listen && metrics != config.ssh_listen,
             "metrics_listen must not reuse api_listen or ssh_listen"
+        );
+        // 指标端口是明文 HTTP，抓取要带根 token：绑定非回环地址等于把运维 token
+        // 交给整个网络。默认只允许回环，远端抓取必须由部署者显式确认。
+        ensure!(
+            metrics.ip().is_loopback() || config.metrics_allow_remote,
+            "metrics_listen is not loopback; set metrics_allow_remote = true to expose it"
+        );
+        // 远端抓取必须加密：明文 HTTP 上的 Bearer token 等于公开凭据。
+        ensure!(
+            metrics.ip().is_loopback() || config.tls_cert.is_some(),
+            "a non-loopback metrics_listen requires TLS (tls_cert and tls_key)"
         );
     }
     // TLS 只能「全有或全无」：只配一半会让启动悄悄退回明文，是最危险的失败模式。

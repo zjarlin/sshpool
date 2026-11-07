@@ -294,6 +294,8 @@ _（本节标题锚点为 `external-observation`。）_
 
 Prometheus 抓取走**独立的** `metrics_listen`（`config.toml`），默认不监听 —— 启动行写 `metrics=off`。它不挂在 `/v1/...` 上，因为 Prometheus 默认 15 秒抓一次，走控制面路由的话光是抓取就会在几分钟内把 12 MiB 的有界访问审计冲掉。抓取不经过 `audit_access` 中间件，也不触发远端探测：指标是控制面**已有事实**的渲染，不是新的探活通道。
 
+但它是**有鉴权的**：只接受 `Authorization: Bearer <根 token>`，比较走与 API 相同的恒时实现（`src/token.rs`）。短期凭据即使带 `read` / `admin` 也抓不到 —— 指标是运维面，不是借出去的工作台接口。配置了 `tls_cert` / `tls_key` 时这个端口共用同一份证书，因此 token 不会漏到明文网络上；没配 TLS 时它只允许绑回环地址。
+
 | 指标 | 类型 | 口径 |
 | --- | --- | --- |
 | `sshpool_jobs{result}` | gauge | 终态任务数，6 类：`succeeded` / `failed-before-exit` / `failed-exit-nonzero` / `failed-after-exit` / `cancelled` / `interrupted`；进行中的任务不计入 |
@@ -315,20 +317,31 @@ Prometheus 抓取走**独立的** `metrics_listen`（`config.toml`），默认�
 
 | 情形 | 行为 | 自动化 |
 | --- | --- | --- |
-| `GET /metrics` 与 `GET /` | 200，`text/plain; version=0.0.4; charset=utf-8` | `scraping_is_parseable_and_never_writes_the_access_audit` |
-| 未知路径 | 404，不把任何请求都当成指标 | 同上 |
+| `GET /metrics` 与 `GET /`，带根 token | 200，`text/plain; version=0.0.4; charset=utf-8` | `scraping_is_parseable_and_never_writes_the_access_audit` |
+| 不带 token / `Bearer ` 空值 / 错误 token / 正确 token 加后缀 | 401，`www-authenticate: Bearer`，正文固定 `unauthorized`，不含任何样本或节点名 | `scraping_without_a_token_is_refused_without_leaking_samples` |
+| 短期凭据（含 `read`、`admin`） | 401；同一把凭据打 `/v1/status` 仍是 200，证明是权限边界而不是凭据失效 | `a_short_lived_read_credential_cannot_scrape`、`the_metrics_port_requires_the_root_token_over_tls` |
+| 401 前后 | `access.jsonl` 字节数不变：被拒绝的抓取也不写审计 | `a_refused_scrape_does_not_write_the_access_audit` |
+| 未知路径 | 未认证 401（不暴露路径是否存在），认证后 404 | `scraping_without_a_token_is_refused_without_leaking_samples` |
+| 非 `GET` 方法 | 405，不把 POST 当成一次抓取 | —（`decide` 先判方法） |
+| 配了 TLS | 指标端口走同一份证书的 HTTPS；无 CA 的客户端握手失败，明文打该端口也不被服务 | `the_metrics_port_requires_the_root_token_over_tls` |
+| 配了 TLS 时的 ALPN | 只宣告 `http/1.1`：只提供 h2 的客户端握手被拒。指标端点是手写 HTTP/1.1 解析器，宣告 h2 会让 Prometheus（Go）协商 h2、握手成功但抓取永远失败 | `the_metrics_listener_negotiates_http1_only`、`the_metrics_listener_advertises_http1_only` |
 | 沉默/半开连接 | 只丢那一条（每条连接独立任务、5 秒读超时、32 连接上限） | `a_silent_scraper_does_not_block_the_next_scrape` |
 | 不配 `metrics_listen` | 启动行写 `metrics=off`，没有第二个监听端口 | `metrics_are_off_by_default_and_opt_in_on_a_separate_port` |
 | 节点不可达 | `node_ready=0`、资源报 0、控制面仍服务 | `an_unprobeable_node_reports_zero_resources_not_a_stale_number` |
 | 空控制面 | 仍输出稳定骨架（各项 0），抓取端不用判空 | 同上（`nodes = []`） |
 | 端口被占用 | 服务启动前直接失败，而不是运行到第一次抓取才发现 | —（`serve` 里先 bind） |
 | `metrics_listen` 与 `api_listen` / `ssh_listen` 同端口 | 配置校验直接拒绝，不等到 bind | `metrics_endpoint_cannot_reuse_a_control_plane_port` |
+| 非回环 `metrics_listen`，未开 `metrics_allow_remote` | 启动前拒绝，消息提示该开关 | `a_public_metrics_listener_must_be_allowed_explicitly` |
+| 非回环 + `metrics_allow_remote` 但没配 TLS | 启动前拒绝：明文上的 Bearer token 等于公开凭据 | 同上 |
+| 非回环 + 开关 + TLS | 允许绑定，启动行如实写 `metrics=0.0.0.0:<port>` | 同上（证据里的真实二进制部分） |
 
 值的类型是硬约束：样本值只能是数字，`sshpool_node_ready` 曾输出过 `true`，那会让整份 exposition 被解析器拒绝；测试里的严格解析器就是这条的守卫（`the_parser_rejects_a_boolean_sample_and_counts_inf`）。
 
 真实二进制（macOS ARM64 release，临时 home、回环端口）实测：4 个终态任务夹具（成功、退出码 3、0 退出后失败、清理未确认的 interrupted）加 1 个不可达节点，抓取 200、`content-type` 正确、9916 字节 / 160 行；`succeeded=1`、`failed-exit-nonzero=1`、`failed-after-exit=1`、`failed-before-exit=0`、`interrupted=1`、`cancelled=0`，`attempts_total=4`、`retries_total=0`、`cleanup_unconfirmed=1`；排队 4 秒在 `le="5"` 起每个边界都为 1、`sum=4`，执行 207 秒与 296 秒分别落在对应分类的 `sum` 里，`+Inf == count`。节点全部报 0 而预留仍是 4096（配置事实）。同一份状态下连续两次抓取字节完全一致。8 条只连不说的连接没有拖住下一次抓取（0.0s 返回 200）。抓取 3 次前后 `access.jsonl` 都是 752 字节，证明它不写审计。不配 `metrics_listen` 的实例启动行是 `metrics=off`。空控制面（无任务、无节点）照常 200 并输出全 0 骨架。把 `metrics_listen` 配成与 `api_listen` 同一个端口时，`serve` 在绑定前就以退出码 1 报 `metrics_listen must not reuse api_listen or ssh_listen`，没有先占端口。证据见 [evidence/metrics-20261107.json](evidence/metrics-20261107.json)。
 
-尚未覆盖：日志后端本身（本仓库只产出 `events.jsonl` 与 `access.jsonl`，由部署者用 Loki/ELK 消费）、指标持久化与 Prometheus 抓取配置（本仓库只提供 exposition 端点）、**端点鉴权**（该端口无鉴权，因此只暴露节点名与数值，不含 SSH 目标、token、任务消息或任何自由文本，也不含按 IP 的归因）、多控制面实例的聚合。
+新增的鉴权实测（真实 release 二进制、自建 CA、控制面与指标端口都走 HTTPS、临时 home）：根 token 抓取 200、`content-type` 为 exposition、9858 字节 / 159 行、含不可达节点样本且不含 token；同一状态下再抓一次字节完全一致。匿名、空 Bearer、错误 token、正确 token 加后缀四种情形全部 401，正文逐字为 `unauthorized`、带 `www-authenticate: Bearer`、样本与节点名都不出现、`content-type` 不是 exposition。未知路径在不带 token 时也是 401，带根 token 才 404；`POST` 是 405。带 `read` + `admin` 的短期凭据打 `/v1/status` 是 200，打指标端口是 401。3 次成功抓取加 3 次失败抓取前后 `access.jsonl` 都是 507 字节。无 CA 的客户端握手被拒；明文打 TLS 指标端口失败。指标端口的 ALPN 只宣告 `http/1.1`（控制面同时提供 h2），所以 Go 写的 Prometheus 不会协商到它解析不了的协议。把 `metrics_listen` 配成 `0.0.0.0` 而没开 `metrics_allow_remote` 时退出码 1；开了开关但没配 TLS 时退出码 1 并报 `requires TLS`；两者都满足时启动行写 `metrics=0.0.0.0:<port>`，用根 token 经 HTTPS 抓取返回 200。证据见 [evidence/metrics-auth-20261107.json](evidence/metrics-auth-20261107.json)。
+
+尚未覆盖：日志后端本身（本仓库只产出 `events.jsonl` 与 `access.jsonl`，由部署者用 Loki/ELK 消费）、指标持久化与 Prometheus 抓取配置（本仓库只提供 exposition 端点）、**独立的抓取凭据**（现在只能用根 token，不能单独撤销或按节点过滤，也没有 IP 归因）、多控制面实例的聚合。
 
 ### 存储放置核算 {#storage-placement}
 

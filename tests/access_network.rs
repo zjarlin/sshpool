@@ -49,6 +49,8 @@ fn cli(home: &Path, args: &[&str]) -> Result<std::process::Output> {
 struct Controller {
     root: tempfile::TempDir,
     endpoint: String,
+    /// 配置了 `metrics_listen` 时该端口的地址；否则为 `None`。
+    metrics_endpoint: Option<String>,
     cert: std::path::PathBuf,
     child: std::process::Child,
     log: std::path::PathBuf,
@@ -56,6 +58,10 @@ struct Controller {
 
 impl Controller {
     async fn start() -> Result<Self> {
+        Self::start_with(false).await
+    }
+
+    async fn start_with(enable_metrics: bool) -> Result<Self> {
         let root = tempfile::tempdir()?;
         let init = cli(root.path(), &["init"])?;
         ensure!(
@@ -73,6 +79,18 @@ impl Controller {
         while backend == api || backend == ssh_listen {
             backend = free_port()?;
         }
+        let metrics = if enable_metrics {
+            let mut metrics = free_port()?;
+            while [api, ssh_listen, backend].contains(&metrics) {
+                metrics = free_port()?;
+            }
+            Some(metrics)
+        } else {
+            None
+        };
+        let metrics_line = metrics
+            .map(|port| format!("metrics_listen = \"127.0.0.1:{port}\"\n"))
+            .unwrap_or_default();
         // 直接写配置：`init` 的默认值是明文 8877，不适合并发测试。
         let config = format!(
             r#"api_listen = "127.0.0.1:{api}"
@@ -86,7 +104,7 @@ max_active_jobs = 1
 replica_min_ack = 0
 nodes = []
 replicas = []
-tls_cert = "{}"
+{metrics_line}tls_cert = "{}"
 tls_key = "{}"
 "#,
             certificate.cert.display(),
@@ -102,9 +120,11 @@ tls_key = "{}"
             .stderr(Stdio::from(fs::File::create(&log)?))
             .spawn()?;
         let endpoint = format!("https://127.0.0.1:{api}");
+        let metrics_endpoint = metrics.map(|port| format!("https://127.0.0.1:{port}"));
         let controller = Self {
             root,
             endpoint,
+            metrics_endpoint,
             cert: certificate.cert,
             child,
             log,
@@ -420,6 +440,173 @@ async fn a_read_only_credential_can_read_but_cannot_change_node_state() -> Resul
 
 /// 未握手的连接不能阻塞后续请求：扫描器发垃圾字节或只连不说，
 /// 也只该丢掉那一个连接，而不是让 accept 循环卡住。
+/// 指标端口与控制面共用同一份 TLS 证书：抓取要带根 token，
+/// 因此不能出现「token 走明文」的通路，也不能接受借出去的短期凭据。
+#[tokio::test]
+async fn the_metrics_port_requires_the_root_token_over_tls() -> Result<()> {
+    let controller = Controller::start_with(true).await?;
+    let ca = controller.cert.clone();
+    let endpoint = controller
+        .metrics_endpoint
+        .as_deref()
+        .context("metrics listener was not configured")?;
+    let token = controller.token()?;
+    let client = controller.http(Some(&ca)).await?;
+
+    // 1) 根 token + CA 校验：200，且正文是 exposition。
+    let response = client
+        .get(format!("{endpoint}/metrics"))
+        .bearer_auth(&token)
+        .send()
+        .await?;
+    assert_eq!(response.status(), 200);
+    assert_eq!(
+        response
+            .headers()
+            .get("content-type")
+            .and_then(|value| value.to_str().ok()),
+        Some(sshpool::metrics::CONTENT_TYPE)
+    );
+    let body = response.text().await?;
+    assert!(body.starts_with("# HELP sshpool_jobs "), "{body}");
+
+    // 2) 不带 token：401，且没有一个样本。
+    let response = client.get(format!("{endpoint}/metrics")).send().await?;
+    assert_eq!(response.status(), 401);
+    assert_eq!(response.text().await?, "unauthorized");
+
+    // 3) 短期凭据（含 read/admin）仍然抓不到指标。
+    let issued = controller.cli(
+        &[
+            "credential",
+            "issue",
+            "--subject",
+            "scraper",
+            "--scope",
+            "read",
+            "--scope",
+            "admin",
+        ],
+        &controller.token_file("root-token", &token)?,
+    )?;
+    ensure!(
+        issued.status.success(),
+        "credential issue failed: {}",
+        String::from_utf8_lossy(&issued.stderr)
+    );
+    let issued: Value = serde_json::from_slice(&issued.stdout)?;
+    let short = issued["token"].as_str().context("missing token")?;
+    let response = client
+        .get(format!("{endpoint}/metrics"))
+        .bearer_auth(short)
+        .send()
+        .await?;
+    assert_eq!(
+        response.status(),
+        401,
+        "a borrowed credential must not scrape"
+    );
+
+    // 4) 没有 CA 的客户端连握手都不该成功；明文打 TLS 端口也不该被服务。
+    let untrusted = controller.http(None).await?;
+    let error = untrusted
+        .get(format!("{endpoint}/metrics"))
+        .bearer_auth(&token)
+        .send()
+        .await
+        .expect_err("an unknown CA must not be accepted");
+    // reqwest 把「证书链不认识」放在 source 里；`{:#}` 不会展开 source，
+    // 这里用 `{:?}` 才能看到 `InvalidCertificate(UnknownIssuer)`。
+    assert!(
+        format!("{error:?}").contains("InvalidCertificate"),
+        "{error:?}"
+    );
+    let plaintext = endpoint.replacen("https://", "http://", 1);
+    assert!(
+        untrusted
+            .get(format!("{plaintext}/metrics"))
+            .bearer_auth(&token)
+            .send()
+            .await
+            .is_err(),
+        "the metrics listener must not serve plaintext when TLS is configured"
+    );
+    Ok(())
+}
+
+/// 指标端点只实现 HTTP/1.1：ALPN 里不能宣告 h2。
+///
+/// 控制面的 `TlsListener` 会把 h2 交给 axum；指标端口是手写解析器，若也宣告 h2，
+/// Prometheus（Go 客户端）会协商 h2，握手成功但抓取一直失败 —— 这种「看起来通了」
+/// 的故障最难排查，所以在这里用只提供 h2 的客户端证明握手被拒绝。
+#[tokio::test]
+async fn the_metrics_listener_negotiates_http1_only() -> Result<()> {
+    let controller = Controller::start_with(true).await?;
+    let endpoint = controller
+        .metrics_endpoint
+        .as_deref()
+        .context("metrics listener was not configured")?;
+    let address: SocketAddr = endpoint
+        .trim_start_matches("https://")
+        .parse()
+        .context("endpoint must be host:port")?;
+
+    let mut roots = rustls::RootCertStore::empty();
+    let pem = fs::read(&controller.cert)?;
+    for certificate in rustls_pemfile::certs(&mut std::io::BufReader::new(&pem[..])) {
+        roots.add(certificate?)?;
+    }
+    let client = |alpn: &[u8]| {
+        let mut config = rustls::ClientConfig::builder()
+            .with_root_certificates(roots.clone())
+            .with_no_client_auth();
+        config.alpn_protocols = vec![alpn.to_vec()];
+        std::sync::Arc::new(config)
+    };
+    let server_name = rustls::pki_types::ServerName::try_from("localhost".to_string())?;
+
+    // 只提供 h2：服务端不接受，握手必须失败而不是「握手成功但正文解析不了」。
+    let h2 = tokio_rustls::TlsConnector::from(client(b"h2"));
+    let stream = tokio::net::TcpStream::connect(address).await?;
+    assert!(
+        h2.connect(server_name.clone(), stream).await.is_err(),
+        "the metrics listener must not negotiate h2"
+    );
+
+    // 提供 http/1.1：握手成功，且协商结果就是 http/1.1。
+    let http1 = tokio_rustls::TlsConnector::from(client(b"http/1.1"));
+    let stream = tokio::net::TcpStream::connect(address).await?;
+    let mut stream: tokio_rustls::client::TlsStream<tokio::net::TcpStream> =
+        http1.connect(server_name, stream).await?;
+    assert_eq!(stream.get_ref().1.alpn_protocol(), Some(&b"http/1.1"[..]));
+
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let token = controller.token()?;
+    stream
+        .write_all(
+            format!(
+                "GET /metrics HTTP/1.1\r\nhost: localhost\r\nauthorization: Bearer {token}\r\nconnection: close\r\n\r\n"
+            )
+            .as_bytes(),
+        )
+        .await?;
+    // 服务端写完就 close，不发 TLS close_notify（http/1.1 + connection: close 的常态）；
+    // 逐块读到 EOF，遇到 UnexpectedEof 只当作结束，不当成失败。
+    let mut raw = Vec::new();
+    let mut chunk = [0_u8; 4096];
+    loop {
+        match stream.read(&mut chunk).await {
+            Ok(0) => break,
+            Ok(read) => raw.extend_from_slice(&chunk[..read]),
+            Err(error) if error.kind() == std::io::ErrorKind::UnexpectedEof => break,
+            Err(error) => return Err(error.into()),
+        }
+    }
+    let response = String::from_utf8_lossy(&raw);
+    assert!(response.starts_with("HTTP/1.1 200 OK"), "{response}");
+    Ok(())
+}
+
 #[tokio::test]
 async fn garbage_and_silent_connections_do_not_block_the_listener() -> Result<()> {
     use tokio::io::AsyncWriteExt;

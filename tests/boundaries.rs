@@ -445,6 +445,57 @@ fn metrics_endpoint_cannot_reuse_a_control_plane_port() {
     assert!(sshpool::config::validate(&config).is_ok());
 }
 
+/// 指标端口必须带根 token 才能抓，而它本身没有 TLS 默认开关：
+/// 绑定到非回环地址等于把 token 送上明文网络，因此默认拒绝。
+#[test]
+fn a_public_metrics_listener_must_be_allowed_explicitly() {
+    let mut config = Config {
+        metrics_listen: Some("127.0.0.1:9100".parse().unwrap()),
+        ..Config::default()
+    };
+    assert!(sshpool::config::validate(&config).is_ok());
+    // IPv6 回环同样算回环。
+    config.metrics_listen = Some("[::1]:9100".parse().unwrap());
+    assert!(sshpool::config::validate(&config).is_ok());
+
+    config.metrics_listen = Some("0.0.0.0:9100".parse().unwrap());
+    let refused = sshpool::config::validate(&config).unwrap_err().to_string();
+    assert!(refused.contains("metrics_allow_remote"), "{refused}");
+    // 打开远端开关还不够：明文 HTTP 上的 Bearer token 等于公开凭据。
+    config.metrics_allow_remote = true;
+    let refused = sshpool::config::validate(&config).unwrap_err().to_string();
+    assert!(refused.contains("requires TLS"), "{refused}");
+    let root = tempfile::tempdir().unwrap();
+    let (cert, key) = (root.path().join("cert.pem"), root.path().join("key.pem"));
+    let certified = rcgen::generate_simple_self_signed(vec!["localhost".to_string()]).unwrap();
+    std::fs::write(&cert, certified.cert.pem()).unwrap();
+    std::fs::write(&key, certified.signing_key.serialize_pem()).unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&key, std::fs::Permissions::from_mode(0o600)).unwrap();
+    }
+    config.tls_cert = Some(cert);
+    config.tls_key = Some(key);
+    assert!(sshpool::config::validate(&config).is_ok());
+    config.tls_cert = None;
+    config.tls_key = None;
+
+    // 局域网地址与公网地址一样被拒绝；只放行回环，不放行「看起来像内网」。
+    config.metrics_allow_remote = false;
+    for address in ["192.0.2.10:9100", "[2001:db8::1]:9100", "0.0.0.0:9100"] {
+        config.metrics_listen = Some(address.parse().unwrap());
+        assert!(
+            sshpool::config::validate(&config).is_err(),
+            "non-loopback {address} was accepted without opting in"
+        );
+    }
+    // 没开指标端口时这个开关无意义，但不该报错。
+    config.metrics_listen = None;
+    config.metrics_allow_remote = false;
+    assert!(sshpool::config::validate(&config).is_ok());
+}
+
 #[test]
 fn replica_namespace_cannot_escape_the_dedicated_remote_root() {
     let mut replica = Replica {

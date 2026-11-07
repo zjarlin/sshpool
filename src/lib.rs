@@ -23,5 +23,6 @@ pub mod ssi;
 pub mod state;
 pub mod storage;
 pub mod tls;
+pub mod token;
 pub mod transport;
 pub mod watchdog;

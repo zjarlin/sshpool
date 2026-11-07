@@ -816,11 +816,18 @@ async fn serve(home: PathBuf) -> Result<()> {
         );
     }
     // 证书与私钥在绑定端口之前解析：配置错误不应先占端口再失败。
-    let tls = match (&config.tls_cert, &config.tls_key) {
+    let tls_config = match (&config.tls_cert, &config.tls_key) {
         (Some(cert), Some(key)) => Some(sshpool::tls::server_config(cert, key)?),
         (None, None) => None,
         _ => anyhow::bail!("tls_cert and tls_key must be configured together"),
     };
+    // 指标端点手写 HTTP/1.1 解析器，因此单独要一份只宣告 http/1.1 的 ALPN，
+    // 否则 Prometheus（Go）会协商 h2，握手成功但抓取一直失败。
+    let metrics_tls = match (&config.tls_cert, &config.tls_key, config.metrics_listen) {
+        (Some(cert), Some(key), Some(_)) => Some(sshpool::tls::server_config_http1(cert, key)?),
+        _ => None,
+    };
+    let tls = tls_config.clone();
     let api = tokio::net::TcpListener::bind(config.api_listen).await?;
     let ssh = tokio::net::TcpListener::bind(config.ssh_listen).await?;
     // 指标端口单独绑定：端口被占用时应该在服务开始前失败，而不是运行到第一次抓取。
@@ -853,7 +860,9 @@ async fn serve(home: PathBuf) -> Result<()> {
     };
     let scrape = async {
         match metrics {
-            Some(listener) => metrics::serve(listener, state.clone()).await,
+            // 指标端口与控制面共用同一份 TLS 配置：抓取要带根 token，
+            // 不能让 token 以明文跨网络。
+            Some(listener) => metrics::serve(listener, state.clone(), metrics_tls.clone()).await,
             None => std::future::pending().await,
         }
     };

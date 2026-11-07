@@ -1,0 +1,121 @@
+{
+  "checked_at": "2026-11-07T22:24:53+0800",
+  "scope": "080 外部观测系统：指标端口只认根 token。真实 release 二进制，HTTPS 控制面与 HTTPS 指标端口，临时 home",
+  "environment": {
+    "os": "Darwin arm64",
+    "binary": "target/release/sshpool（release 构建）",
+    "controller": "https://127.0.0.1:<随机端口>（自建 CA 叶证书）",
+    "metrics": "https://127.0.0.1:<另一个随机端口>（与控制面共用同一份证书，要求根 token）",
+    "home": "临时目录（一次性 token / credentials.json）"
+  },
+  "root_token_scrape": {
+    "status": 200,
+    "content_type_is_exposition": true,
+    "starts_with_help": true,
+    "has_node_sample": true,
+    "bytes": 9858,
+    "lines": 159,
+    "root_token_absent": true
+  },
+  "deterministic": {
+    "identical_second_scrape": true
+  },
+  "refusals": {
+    "no_header": {
+      "status": 401,
+      "body_is_fixed": true,
+      "no_samples": true,
+      "no_node_name": true,
+      "challenge_is_bearer": true,
+      "not_exposition_type": true
+    },
+    "wrong_token": {
+      "status": 401,
+      "body_is_fixed": true,
+      "no_samples": true,
+      "no_node_name": true,
+      "challenge_is_bearer": true,
+      "not_exposition_type": true
+    },
+    "empty_bearer": {
+      "status": 401,
+      "body_is_fixed": true,
+      "no_samples": true,
+      "no_node_name": true,
+      "challenge_is_bearer": true,
+      "not_exposition_type": true
+    },
+    "root_token_plus_suffix": {
+      "status": 401,
+      "body_is_fixed": true,
+      "no_samples": true,
+      "no_node_name": true,
+      "challenge_is_bearer": true,
+      "not_exposition_type": true
+    }
+  },
+  "paths": {
+    "unknown_path_without_token_status": 401,
+    "unknown_path_without_token_hides_existence": true,
+    "unknown_path_with_token_status": 404,
+    "unknown_path_with_token_body": "not found",
+    "root_path_with_token_status": 200,
+    "post_is_not_a_scrape": 405
+  },
+  "short_lived_credential": {
+    "shape": "spt_…",
+    "api_status": 200,
+    "metrics_status": 401,
+    "metrics_body": "unauthorized",
+    "plaintext_not_in_store": true
+  },
+  "does_not_audit": {
+    "bytes_before": 507,
+    "bytes_after": 507,
+    "unchanged": true
+  },
+  "transport": {
+    "plaintext_against_tls_status": null,
+    "plaintext_body": "BadStatusLine: \u0015\u0003\u0003\u0000\u0002\u00022",
+    "untrusted_ca_rejected": true,
+    "untrusted_ca_error": "URLError"
+  },
+  "alpn": {
+    "control_plane_offers_h2_first": "h2",
+    "metrics_offers_h2_first": "http/1.1",
+    "metrics_only_http1": "http/1.1",
+    "h2_only_client_rejected_by_metrics": true,
+    "h2_only_client_accepted_by_control_plane": true
+  },
+  "startup_line": [
+    "SSHPool API=127.0.0.1:<port> (https) SSH=127.0.0.1:<port> backend=127.0.0.1:<port> metrics=127.0.0.1:<port>"
+  ],
+  "public_without_opt_in": {
+    "exit": 1,
+    "refused": true,
+    "message": [
+      "sshpool: metrics_listen is not loopback; set metrics_allow_remote = true to expose it"
+    ]
+  },
+  "public_without_tls": {
+    "exit": 1,
+    "refused": true,
+    "message": [
+      "sshpool: a non-loopback metrics_listen requires TLS (tls_cert and tls_key)"
+    ]
+  },
+  "public_with_opt_in_and_tls": {
+    "startup_line_reports_wildcard": true,
+    "startup_line": [
+      "SSHPool API=127.0.0.1:<port> (https) SSH=127.0.0.1:<port> backend=127.0.0.1:<port> metrics=0.0.0.0:<port>"
+    ],
+    "root_token_scrape_over_public_bind_status": 200
+  },
+  "exposition_head": [
+    "# HELP sshpool_jobs 终态任务数，按结构化失败分类；进行中的任务不计入",
+    "# TYPE sshpool_jobs gauge",
+    "sshpool_jobs{result=\"succeeded\"} 0"
+  ],
+  "assertions_total": 34,
+  "failed_assertions": []
+}

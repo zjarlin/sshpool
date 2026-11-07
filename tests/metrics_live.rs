@@ -175,16 +175,30 @@ impl Drop for Controller {
 }
 
 /// 手写 HTTP 拿原始文本：抓取点不是 JSON，也不需要保持连接。
-fn scrape(port: u16, path: &str) -> Result<String> {
+///
+/// `authorization` 传完整头部值（`Bearer <token>`）；`None` 表示故意不带凭据。
+fn scrape_with(port: u16, path: &str, authorization: Option<&str>) -> Result<String> {
     let mut stream = TcpStream::connect(("127.0.0.1", port))?;
     stream.set_read_timeout(Some(Duration::from_secs(10)))?;
-    write!(
-        stream,
-        "GET {path} HTTP/1.1\r\nhost: 127.0.0.1\r\nconnection: close\r\n\r\n"
-    )?;
+    let mut request = format!("GET {path} HTTP/1.1\r\nhost: 127.0.0.1\r\n");
+    if let Some(value) = authorization {
+        request.push_str(&format!("authorization: {value}\r\n"));
+    }
+    request.push_str("connection: close\r\n\r\n");
+    write!(stream, "{request}")?;
     let mut text = String::new();
     stream.read_to_string(&mut text)?;
     Ok(text)
+}
+
+/// 带根 token 的成功抓取：绝大多数断言关心的是 exposition 本身。
+fn scrape(port: u16, path: &str, token: &str) -> Result<String> {
+    scrape_with(port, path, Some(&format!("Bearer {token}")))
+}
+
+/// 把响应拆成响应头与正文；调用方先断言状态行再取样本。
+fn split(response: &str) -> (&str, &str) {
+    response.split_once("\r\n\r\n").unwrap_or((response, ""))
 }
 
 /// 严格校验 exposition：每个样本值是有限数字，标签值不逃逸，
@@ -387,8 +401,8 @@ async fn scraping_is_parseable_and_never_writes_the_access_audit() -> Result<()>
     std::thread::sleep(Duration::from_millis(200));
     let before = fs::metadata(&audit).map(|m| m.len()).unwrap_or(before);
 
-    let response = scrape(controller.metrics, "/metrics")?;
-    let (head, body) = response.split_once("\r\n\r\n").context("missing headers")?;
+    let response = scrape(controller.metrics, "/metrics", &controller.token)?;
+    let (head, body) = split(&response);
     assert!(head.starts_with("HTTP/1.1 200 OK"), "{head}");
     assert!(
         head.to_lowercase()
@@ -413,8 +427,98 @@ async fn scraping_is_parseable_and_never_writes_the_access_audit() -> Result<()>
     );
 
     // 未知路径 404，而不是把任何请求都当成指标。
-    let missing = scrape(controller.metrics, "/v1/jobs")?;
+    let missing = scrape(controller.metrics, "/v1/jobs", &controller.token)?;
     assert!(missing.starts_with("HTTP/1.1 404"), "{missing}");
+    Ok(())
+}
+
+/// 指标端口不是匿名入口：没有凭据一律 401，且响应里一个样本都不给。
+#[tokio::test]
+async fn scraping_without_a_token_is_refused_without_leaking_samples() -> Result<()> {
+    let controller = Controller::start(true, "nodes = [{name = \"lab\", ssh = \"127.0.0.1\"}]\n")?;
+    for authorization in [None, Some("Bearer "), Some("Bearer wrong-token")] {
+        let response = scrape_with(controller.metrics, "/metrics", authorization)?;
+        let (head, body) = split(&response);
+        assert!(
+            head.starts_with("HTTP/1.1 401 Unauthorized"),
+            "authorization {authorization:?} must be refused: {head}"
+        );
+        assert!(
+            head.to_lowercase().contains("www-authenticate: bearer"),
+            "a 401 must tell the client which scheme to use: {head}"
+        );
+        assert_eq!(
+            body, "unauthorized",
+            "the body must not vary with the guess"
+        );
+        assert!(
+            !body.contains("sshpool_") && !body.contains("lab"),
+            "a refused scrape must not leak metrics or node names: {body}"
+        );
+        // 未知路径也一样：未认证时连「哪些路径存在」都不该暴露。
+        let response = scrape_with(controller.metrics, "/v1/jobs", authorization)?;
+        assert!(response.starts_with("HTTP/1.1 401"), "{response}");
+    }
+    Ok(())
+}
+
+/// 短期凭据即使带 `read` 也抓不到指标：指标是运维面，不是借出去的工作台接口。
+#[tokio::test]
+async fn a_short_lived_read_credential_cannot_scrape() -> Result<()> {
+    let controller = Controller::start(true, "nodes = [{name = \"lab\", ssh = \"127.0.0.1\"}]\n")?;
+    let issued = cli(
+        controller.root.path(),
+        &[
+            "credential",
+            "issue",
+            "--subject",
+            "workbench",
+            "--scope",
+            "read",
+            "--scope",
+            "admin",
+        ],
+    )?;
+    ensure!(
+        issued.status.success(),
+        "credential issue failed: {}",
+        String::from_utf8_lossy(&issued.stderr)
+    );
+    let issued: serde_json::Value = serde_json::from_slice(&issued.stdout)?;
+    let token = issued["token"].as_str().context("issued token")?;
+
+    // 同一份凭据能读控制面（证明它本身有效），但抓不到指标。
+    let mut stream = TcpStream::connect(("127.0.0.1", controller.api))?;
+    stream.set_read_timeout(Some(Duration::from_secs(5)))?;
+    write!(
+        stream,
+        "GET /v1/status HTTP/1.1\r\nhost: localhost\r\nauthorization: Bearer {token}\r\nconnection: close\r\n\r\n"
+    )?;
+    let mut status = String::new();
+    stream.read_to_string(&mut status)?;
+    assert!(status.starts_with("HTTP/1.1 200"), "{status}");
+
+    let response = scrape(controller.metrics, "/metrics", token)?;
+    assert!(response.starts_with("HTTP/1.1 401"), "{response}");
+    Ok(())
+}
+
+/// 401 不写访问审计：抓取本来就不审计，被拒绝的抓取同样不该写。
+#[tokio::test]
+async fn a_refused_scrape_does_not_write_the_access_audit() -> Result<()> {
+    let controller = Controller::start(true, "nodes = []\n")?;
+    let audit = controller.root.path().join("access.jsonl");
+    std::thread::sleep(Duration::from_millis(200));
+    let before = fs::metadata(&audit).map(|m| m.len()).unwrap_or(0);
+    for authorization in [None, Some("Bearer wrong-token")] {
+        let response = scrape_with(controller.metrics, "/metrics", authorization)?;
+        assert!(response.starts_with("HTTP/1.1 401"), "{response}");
+    }
+    let after = fs::metadata(&audit).map(|m| m.len()).unwrap_or(0);
+    assert_eq!(
+        before, after,
+        "the metrics port must not write access.jsonl"
+    );
     Ok(())
 }
 
@@ -425,7 +529,7 @@ async fn a_silent_scraper_does_not_block_the_next_scrape() -> Result<()> {
         std::mem::forget(TcpStream::connect(("127.0.0.1", controller.metrics))?);
     }
     let started = std::time::Instant::now();
-    let response = scrape(controller.metrics, "/metrics")?;
+    let response = scrape(controller.metrics, "/metrics", &controller.token)?;
     assert!(response.starts_with("HTTP/1.1 200"), "{response}");
     assert!(
         started.elapsed() < Duration::from_secs(3),
@@ -440,8 +544,8 @@ async fn an_unprobeable_node_reports_zero_resources_not_a_stale_number() -> Resu
     // SSH 目标不可达：探测必然失败，但节点仍然是配置的一部分。
     let nodes = "nodes = [{name = \"dead\", ssh = \"127.0.0.1\"}]\n";
     let controller = Controller::start(true, nodes)?;
-    let body = scrape(controller.metrics, "/metrics")?;
-    let (_, body) = body.split_once("\r\n\r\n").context("missing headers")?;
+    let response = scrape(controller.metrics, "/metrics", &controller.token)?;
+    let (_, body) = split(&response);
     assert_parseable(body)?;
     assert!(
         body.contains("sshpool_node_ready{node=\"dead\"} 0"),

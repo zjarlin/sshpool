@@ -225,15 +225,42 @@ sshpool access --decision denied --since 1767225600
 
 ### 外部观测
 
-指标走独立的 `metrics_listen`，默认关闭；打开后与控制面同进程但不共端口，也不参与鉴权和访问审计（抓取是高频操作，不能把有界审计冲掉）。
+指标走独立的 `metrics_listen`，默认关闭；打开后与控制面同进程但不共端口，也**不写访问审计**（抓取是高频操作，不能把有界审计冲掉）。但它不是匿名入口：抓取要带**根 token**，短期凭据即使有 `read` / `admin` 也抓不到 —— 指标是运维面，不是借出去的工作台接口。
 
 ```toml
 metrics_listen = "127.0.0.1:9100"
 ```
 
 ```sh
-curl -s http://127.0.0.1:9100/metrics    # Prometheus 文本格式；/ 等价
+curl -s -H "Authorization: Bearer $(cat ~/.sshpool/token)" \
+  http://127.0.0.1:9100/metrics     # Prometheus 文本格式；/ 等价
 ```
+
+没有凭据、凭据错误、或只有短期凭据时一律 **401**，响应体固定为 `unauthorized` 并带 `www-authenticate: Bearer`，不输出任何样本，也不告诉你哪些路径存在。配置了 `tls_cert` / `tls_key` 时指标端口走同一份证书的 HTTPS，因此根 token 不会以明文跨网络。
+
+默认只允许绑回环地址。要跨主机抓取必须同时做三件事（开关、证书、私钥），少一件 `serve` 就在绑定端口之前退出：
+
+```toml
+metrics_listen = "0.0.0.0:9100"
+metrics_allow_remote = true          # 显式确认暴露；仍需下面两行 TLS
+tls_cert = "/etc/sshpool/cert.pem"
+tls_key = "/etc/sshpool/key.pem"
+```
+
+Prometheus 侧：
+
+```yaml
+scrape_configs:
+  - job_name: sshpool
+    scheme: https
+    bearer_token_file: /etc/prometheus/sshpool-token
+    tls_config:
+      ca_file: /etc/prometheus/sshpool-ca.pem
+    static_configs:
+      - targets: ["sshpool.internal:9100"]
+```
+
+指标端点只实现 HTTP/1.1，并在 TLS 的 ALPN 里只宣告 `http/1.1`（控制面同时提供 `h2`）。所以 Go 写的 Prometheus 不会协商到它解析不了的协议；这是抓取「证书正常但一直失败」最常见的原因，已用只提供 `h2` 的客户端反向验证。
 
 暴露的是控制面已有的事实：终态任务按失败结构分类（`failed-before-exit` / `failed-exit-nonzero` / `failed-after-exit`，只看 `phase` 与 `exit_code`，不解析文案）、排队与执行时长直方图、尝试与重试次数、清理未确认数、节点资源水位与是否接单、访问审计各代字节数。节点探测失败时资源报 0 而不是沿用旧快照。抓取不触发远端探测。细节与实测见 [验证文档](docs/validation.md#external-observation)。
 
@@ -250,7 +277,7 @@ curl -s http://127.0.0.1:9100/metrics    # Prometheus 文本格式；/ 等价
 - 短期凭据按四项白名单（`read`/`submit`/`cancel`/`admin`）授权，但没有更细的粒度：没有「只提交、不取消别人的任务」或「只能操作自己提交的任务」这类主体范围限制，也没有按节点、按项目分权。权限在签发时固定，改权限要重新签发。见 [验证文档](docs/validation.md#access-network)。
 - 访问审计是本机 `home/access.jsonl` 上的普通追加文件，没有签名链或只追加存储：能写这个目录的人可以改写、删除或伪造记录。超过 12 MiB 的历史会被滚动丢弃，没有远程日志后端或归档；也没有按 IP/地理归因。
 - **存储冗余仍只是规划算术**：`sshpool storage-plan` 按拓扑核算副本、仲裁和恢复预留，并拒绝「两台物理机凑三故障域」这类承诺；但 Ceph 没有部署，没有掉盘、`fsync`、崩溃恢复或跨机接管验收。它也不探测真实磁盘容量——输入里的 `size_bytes` 与故障域由部署者申报，盘的归属必须先过 `storage-admission`。见 [跨物理机与无 RAID 存储边界](docs/ssi-physical-storage.md#先核算再承诺) 与 [验证记录](docs/validation.md#storage-placement)。
-- 指标端点没有鉴权：能连上 `metrics_listen` 就能读到节点名与资源水位，因此默认关闭、默认只绑回环；它只输出数值与节点名，不含 SSH 目标、token、任务消息或自由文本。指标不落盘、不带历史，重启后计数从现有任务记录重新渲染；Prometheus 配置与日志后端（Loki/ELK）由部署者自行提供。
+- 指标端点只认根 token，**没有独立的抓取凭据**：Prometheus 必须拿运维用的全权 token，泄露它等于泄露整个控制面，不能像短期凭据那样单独撤销。抓取也没有 `read` 级细分或按节点过滤，能看到全部节点名与资源水位。它只输出数值与节点名，不含 SSH 目标、token、任务消息或自由文本。指标不落盘、不带历史，重启后计数从现有任务记录重新渲染；Prometheus 配置与日志后端（Loki/ELK）由部署者自行提供。
 
 ## 开发与验证
 

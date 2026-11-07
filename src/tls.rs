@@ -60,14 +60,27 @@ fn load_private_key(path: &Path) -> Result<PrivateKeyDer<'static>> {
 
 /// 构造服务端配置；证书或私钥有任何问题都在启动时失败，不进入「降级为明文」的分支。
 pub fn server_config(cert: &Path, key: &Path) -> Result<Arc<ServerConfig>> {
+    // 同时支持 HTTP/2 与 HTTP/1.1；两条协议栈都由 axum 的 serve 负责。
+    build(cert, key, vec![b"h2".to_vec(), b"http/1.1".to_vec()])
+}
+
+/// 只协商 HTTP/1.1 的配置，给指标端口用。
+///
+/// 指标端点是手写的 HTTP/1.1 解析器，不实现 HTTP/2。若沿用控制面的 ALPN，
+/// Go 写的 Prometheus 会主动选 h2，握手后收到的东西它解析不了 —— 表现为
+/// 「证书正常但抓取一直失败」。这里只宣告 http/1.1，客户端自然会退回来。
+pub fn server_config_http1(cert: &Path, key: &Path) -> Result<Arc<ServerConfig>> {
+    build(cert, key, vec![b"http/1.1".to_vec()])
+}
+
+fn build(cert: &Path, key: &Path, alpn: Vec<Vec<u8>>) -> Result<Arc<ServerConfig>> {
     let certificates = load_certificates(cert)?;
     let key = load_private_key(key)?;
     let mut config = ServerConfig::builder()
         .with_no_client_auth()
         .with_single_cert(certificates, key)
         .context("TLS certificate does not match the private key")?;
-    // 同时支持 HTTP/2 与 HTTP/1.1；两条协议栈都由 axum 的 serve 负责。
-    config.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()];
+    config.alpn_protocols = alpn;
     Ok(Arc::new(config))
 }
 
@@ -221,6 +234,20 @@ mod tests {
         assert!(server_config(&cert, &key).is_err());
         fs::write(&key, "not a key").unwrap();
         assert!(server_config(&cert, &key).is_err());
+    }
+
+    /// 指标端点的解析器只懂 HTTP/1.1：ALPN 里绝不能出现 h2。
+    #[test]
+    fn the_metrics_listener_advertises_http1_only() {
+        let root = tempfile::tempdir().unwrap();
+        let (cert, key) = (root.path().join("cert.pem"), root.path().join("key.pem"));
+        write_pair(&cert, &key, 0o600);
+        let control = server_config(&cert, &key).unwrap();
+        assert!(control.alpn_protocols.contains(&b"h2".to_vec()));
+        let metrics = server_config_http1(&cert, &key).unwrap();
+        assert_eq!(metrics.alpn_protocols, vec![b"http/1.1".to_vec()]);
+        // 证书与私钥校验与主配置完全一致，不是另一条降级路径。
+        assert!(server_config_http1(&cert, &root.path().join("missing.pem")).is_err());
     }
 
     #[test]

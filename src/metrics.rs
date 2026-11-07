@@ -6,8 +6,9 @@
 //! 与各任务的 `events.jsonl` 里，由部署者选择的日志后端消费。
 //!
 //! 指标走独立的 `metrics_listen`，不挂在控制面的 `/v1/...` 上：Prometheus 默认 15 秒
-//! 抓一次，若走控制面路由，光是抓取就会在几分钟内把有界的访问审计冲掉。该端点没有
-//! 鉴权，所以只暴露节点名与数值 —— 不含 SSH 目标、token、任务消息或任何自由文本。
+//! 抓一次，若走控制面路由，光是抓取就会在几分钟内把有界的访问审计冲掉。抓取必须带
+//! **根 token**（短期凭据不行），配置了 TLS 时该端口同样走 TLS；暴露的仍只有节点名
+//! 与数值 —— 不含 SSH 目标、token、任务消息或任何自由文本。
 use crate::{
     config::Node,
     model::{Health, Job, Phase},
@@ -16,6 +17,8 @@ use crate::{
 use std::{fmt::Write, path::Path, sync::Arc, time::Duration};
 
 pub const CONTENT_TYPE: &str = "text/plain; version=0.0.4; charset=utf-8";
+/// 鉴权失败与错误响应的类型；不声明版本号，免得被当成 exposition 解析。
+const PLAIN: &str = "text/plain; charset=utf-8";
 
 /// 排队与执行时长的上界；最后再加 `+Inf`，这是直方图的硬要求。
 const SECONDS: [u64; 6] = [5, 30, 120, 600, 1_800, 7_200];
@@ -272,82 +275,174 @@ fn escape(value: &str) -> String {
     escaped
 }
 
-/// 极简抓取服务：只接受 `GET /metrics` 与 `GET /`，不做鉴权也不写访问审计。
+/// 单次抓取的读超时：抓取端沉默或半开连接不该拖住下一次抓取。
+const READ_TIMEOUT: Duration = Duration::from_secs(5);
+/// 同时进行中的抓取连接上限；超过就直接关闭，而不是排队到内存里。
+const MAX_CONNECTIONS: usize = 32;
+/// 请求行加头部的硬上限；超过就当作坏请求，不继续读。
+const MAX_REQUEST_BYTES: usize = 8192;
+
+/// 极简抓取服务：只接受带根 token 的 `GET /metrics` 与 `GET /`。
 ///
-/// 每条连接在独立任务里完成，并带读超时与连接上限：抓取端沉默或半开连接
-/// 不该拖住下一次抓取（与 TLS 监听器同样的取舍）。
-pub async fn serve(listener: tokio::net::TcpListener, state: Arc<State>) -> anyhow::Result<()> {
-    use tokio::io::{AsyncReadExt, AsyncWriteExt};
-    const MAX_CONNECTIONS: usize = 32;
-    const READ_TIMEOUT: Duration = Duration::from_secs(5);
+/// 抓取**不写访问审计**（Prometheus 15 秒一次会把有界日志冲掉），但也绝不留匿名入口：
+/// 指标里有节点名与资源水位，谁能连上端口就等于能看到集群拓扑。这里只认根 token，
+/// 短期凭据即使带 `read` 也不能抓 —— 指标是运维面，不是借出去的工作台接口。
+///
+/// 每条连接在独立任务里完成，并带读超时与连接上限。配置了 TLS 时该端口同样走 TLS
+/// （与控制面共用同一份证书），因此根 token 不会以明文跨网络。
+pub async fn serve(
+    listener: tokio::net::TcpListener,
+    state: Arc<State>,
+    tls: Option<Arc<rustls::ServerConfig>>,
+) -> anyhow::Result<()> {
     let permits = Arc::new(tokio::sync::Semaphore::new(MAX_CONNECTIONS));
     loop {
-        let (mut socket, _) = listener.accept().await?;
+        let (socket, address) = listener.accept().await?;
         let Ok(permit) = permits.clone().try_acquire_owned() else {
-            // 超过上限就直接关闭，而不是排队到内存里。
             continue;
         };
         let state = state.clone();
+        let tls = tls.clone();
         tokio::spawn(async move {
             let _permit = permit;
-            let mut request = Vec::new();
-            let mut chunk = [0_u8; 1024];
-            let read = tokio::time::timeout(READ_TIMEOUT, async {
-                loop {
-                    let read = socket.read(&mut chunk).await?;
-                    if read == 0 {
-                        return Ok::<_, std::io::Error>(());
-                    }
-                    request.extend_from_slice(&chunk[..read]);
-                    // 请求行 + 头足够判断路径；不需要完整解析，也不接受正文。
-                    if request.windows(4).any(|window| window == b"\r\n\r\n")
-                        || request.len() > 8192
-                    {
-                        return Ok(());
-                    }
-                }
-            })
-            .await;
-            let response = match read {
-                Ok(Ok(())) => {
-                    let line = String::from_utf8_lossy(&request);
-                    let path = line
-                        .split_whitespace()
-                        .nth(1)
-                        .unwrap_or("/")
-                        .split('?')
-                        .next()
-                        .unwrap_or("/");
-                    if !matches!(path, "/" | "/metrics") {
-                        (404, "not found".to_string(), "text/plain; charset=utf-8")
-                    } else {
-                        (200, render_state(&state).await, CONTENT_TYPE)
-                    }
-                }
-                // 读超时与读错误都不该产生日志噪声：抓取端行为，不是控制面状态。
-                _ => (
-                    408,
-                    "request timeout".to_string(),
-                    "text/plain; charset=utf-8",
-                ),
+            let Some(config) = tls else {
+                handle(socket, &state).await;
+                return;
             };
-            let body = response.1;
-            let reason = match response.0 {
-                200 => "OK",
-                404 => "Not Found",
-                _ => "Request Timeout",
-            };
-            let head = format!(
-                "HTTP/1.1 {} {reason}\r\ncontent-type: {}\r\ncontent-length: {}\r\nconnection: close\r\n\r\n",
-                response.0,
-                response.2,
-                body.len()
-            );
-            let _ = socket.write_all(head.as_bytes()).await;
-            let _ = socket.write_all(body.as_bytes()).await;
-            let _ = socket.flush().await;
+            // 握手在独立任务里做并带时限：只连不说的客户端占不到 `accept()` 循环。
+            let acceptor = tokio_rustls::TlsAcceptor::from(config);
+            match tokio::time::timeout(crate::tls::HANDSHAKE_TIMEOUT, acceptor.accept(socket)).await
+            {
+                Ok(Ok(stream)) => handle(stream, &state).await,
+                Ok(Err(error)) => {
+                    eprintln!("sshpool: metrics TLS handshake from {address} failed: {error}")
+                }
+                Err(_) => eprintln!("sshpool: metrics TLS handshake from {address} timed out"),
+            }
         });
     }
+}
+
+/// 抓取请求在鉴权后的去向：要么直接回固定响应，要么渲染指标。
+enum Decision {
+    Respond(Response),
+    Render,
+}
+
+/// 一条连接的完整生命周期；TLS 与明文共用，因此对具体流类型没有要求。
+async fn handle<S>(mut socket: S, state: &State)
+where
+    S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
+{
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let mut request = Vec::new();
+    let mut chunk = [0_u8; 1024];
+    let read = tokio::time::timeout(READ_TIMEOUT, async {
+        loop {
+            let read = socket.read(&mut chunk).await?;
+            if read == 0 {
+                return Ok::<_, std::io::Error>(());
+            }
+            request.extend_from_slice(&chunk[..read]);
+            // 请求行 + 头足够判断路径与凭据；不解析正文，也不接受正文。
+            if request.windows(4).any(|window| window == b"\r\n\r\n")
+                || request.len() > MAX_REQUEST_BYTES
+            {
+                return Ok(());
+            }
+        }
+    })
+    .await;
+
+    let response = match read {
+        Ok(Ok(())) => match decide(&request, state) {
+            Decision::Respond(response) => response,
+            Decision::Render => Response::new(200, render_state(state).await, CONTENT_TYPE),
+        },
+        // 读超时与读错误都不该产生日志噪声：抓取端行为，不是控制面状态。
+        _ => Response::new(408, "request timeout", PLAIN),
+    };
+    let head = format!(
+        "HTTP/1.1 {} {}\r\ncontent-type: {}\r\ncontent-length: {}\r\nconnection: close\r\n{}\r\n",
+        response.status,
+        response.reason,
+        response.content_type,
+        response.body.len(),
+        response.extra
+    );
+    let _ = socket.write_all(head.as_bytes()).await;
+    let _ = socket.write_all(response.body.as_bytes()).await;
+    let _ = socket.flush().await;
+}
+
+/// 响应体只有固定字面量：不回显路径、token 或任何请求内容。
+struct Response {
+    status: u16,
+    reason: &'static str,
+    content_type: &'static str,
+    body: String,
+    /// 额外的响应头（自带结尾 CRLF），401 用它声明 `WWW-Authenticate`。
+    extra: &'static str,
+}
+
+impl Response {
+    fn new(status: u16, body: impl Into<String>, content_type: &'static str) -> Self {
+        Self {
+            status,
+            reason: match status {
+                200 => "OK",
+                401 => "Unauthorized",
+                404 => "Not Found",
+                405 => "Method Not Allowed",
+                _ => "Request Timeout",
+            },
+            content_type,
+            body: body.into(),
+            extra: "",
+        }
+    }
+
+    fn unauthorized() -> Self {
+        Self {
+            extra: "www-authenticate: Bearer\r\n",
+            ..Self::new(401, "unauthorized", PLAIN)
+        }
+    }
+}
+
+fn decide(request: &[u8], state: &State) -> Decision {
+    let text = String::from_utf8_lossy(request);
+    // 只接受 GET：其他方法一律 405，而不是把 POST 也当成一次抓取。
+    if text.split_whitespace().next() != Some("GET") {
+        return Decision::Respond(Response::new(405, "method not allowed", PLAIN));
+    }
+    // 先鉴权再看路径：未认证时连「哪些路径存在」都不暴露。
+    if !authorized(&text, state) {
+        return Decision::Respond(Response::unauthorized());
+    }
+    let path = text
+        .split_whitespace()
+        .nth(1)
+        .unwrap_or("/")
+        .split('?')
+        .next()
+        .unwrap_or("/");
+    if matches!(path, "/" | "/metrics") {
+        Decision::Render
+    } else {
+        Decision::Respond(Response::new(404, "not found", PLAIN))
+    }
+}
+
+/// 头部名大小写不敏感；只接受整行 `Bearer <根 token>`，与 API 共用恒时比较。
+fn authorized(text: &str, state: &State) -> bool {
+    let actual = text
+        .split("\r\n")
+        .filter_map(|line| line.split_once(':'))
+        .find(|(name, _)| name.eq_ignore_ascii_case("authorization"))
+        .map(|(_, value)| value.trim())
+        .unwrap_or("");
+    !actual.is_empty() && crate::token::same(actual, &format!("Bearer {}", state.token))
 }
 
 /// 从共享状态取一份一致性快照：任务记录加当前健康快照。
