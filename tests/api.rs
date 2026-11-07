@@ -6,10 +6,10 @@ use axum::{
 use base64::Engine;
 use sshpool::{
     config::{Build, Config, Node},
-    model::{Attempt, Job, Phase},
+    model::{Attempt, Job, Phase, now},
     state::State,
 };
-use std::{fs, sync::Arc};
+use std::{fs, sync::Arc, time::Duration};
 use tower::ServiceExt;
 
 fn state() -> Result<(tempfile::TempDir, Arc<State>)> {
@@ -71,7 +71,52 @@ fn active_job(node: &str) -> Job {
         artifacts: false,
         cancel_requested: false,
         cleanup_confirmed: false,
+        queue_deadline: None,
     }
+}
+
+fn queued_job(queue_timeout_secs: u64, queue_deadline: Option<u64>) -> Job {
+    Job {
+        id: uuid::Uuid::new_v4(),
+        build: Build {
+            queue_timeout_secs,
+            ..Build::default()
+        },
+        phase: Phase::Queued,
+        created_at: now(),
+        finished_at: None,
+        attempts: Vec::new(),
+        exit_code: None,
+        message: None,
+        artifacts: false,
+        cancel_requested: false,
+        cleanup_confirmed: false,
+        queue_deadline,
+    }
+}
+
+fn write_empty_source(state: &State, id: uuid::Uuid) -> Result<()> {
+    let file = fs::File::create(state.dir(id).join("source.tar"))?;
+    let mut archive = tar::Builder::new(file);
+    archive.finish()?;
+    Ok(())
+}
+
+async fn wait_for_terminal(state: &State, id: uuid::Uuid) -> Result<Job> {
+    for _ in 0..100 {
+        let job = state
+            .jobs
+            .lock()
+            .await
+            .get(&id)
+            .cloned()
+            .ok_or_else(|| anyhow::anyhow!("job disappeared"))?;
+        if job.phase.terminal() {
+            return Ok(job);
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    anyhow::bail!("job did not reach a terminal state")
 }
 
 #[tokio::test]
@@ -172,6 +217,184 @@ async fn malformed_and_oversized_uploads_remove_only_their_own_staging() -> Resu
     assert_eq!(fs::read_to_string(sentinel)?, "untouched");
     Ok(())
 }
+
+#[tokio::test]
+async fn limited_queue_waits_once_and_cancel_wakes_the_runner() -> Result<()> {
+    let (_root, state) = state()?;
+    state.set_node_enabled("test-node", false).await?;
+    state.set_node_enabled("second-node", false).await?;
+    let source = tempfile::NamedTempFile::new()?;
+    let mut archive = tar::Builder::new(fs::File::create(source.path())?);
+    archive.finish()?;
+    let build = Build {
+        queue_timeout_secs: 30,
+        ..Build::default()
+    };
+    let encoded = base64::engine::general_purpose::STANDARD.encode(serde_json::to_vec(&build)?);
+    let response = sshpool::api::routes(state.clone())
+        .oneshot(
+            Request::post("/v1/jobs")
+                .header("authorization", format!("Bearer {}", state.token))
+                .header("x-sshpool-build", encoded)
+                .body(Body::from(fs::read(source.path())?))?,
+        )
+        .await?;
+    assert_eq!(response.status(), StatusCode::ACCEPTED);
+    let bytes = axum::body::to_bytes(response.into_body(), 65536).await?;
+    let job: Job = serde_json::from_slice(&bytes)?;
+    assert!(job.queue_deadline.is_some_and(|deadline| deadline > now()));
+    for _ in 0..100 {
+        if state
+            .jobs
+            .lock()
+            .await
+            .get(&job.id)
+            .is_some_and(|current| current.message.is_some())
+        {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    state.wake_queue();
+    state.wake_queue();
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    let events = fs::read_to_string(state.dir(job.id).join("events.jsonl"))?;
+    assert_eq!(
+        events
+            .lines()
+            .filter(|line| line.contains("\"queue_wait\""))
+            .count(),
+        1
+    );
+    let response = sshpool::api::routes(state.clone())
+        .oneshot(
+            Request::post(format!("/v1/jobs/{}/cancel", job.id))
+                .header("authorization", format!("Bearer {}", state.token))
+                .body(Body::empty())?,
+        )
+        .await?;
+    assert_eq!(response.status(), StatusCode::OK);
+    let finished = wait_for_terminal(&state, job.id).await?;
+    assert_eq!(finished.phase, Phase::Cancelled);
+    assert!(finished.attempts.is_empty());
+    Ok(())
+}
+
+#[tokio::test]
+async fn default_zero_queue_timeout_keeps_immediate_failure_semantics() -> Result<()> {
+    let (_root, state) = state()?;
+    state.set_node_enabled("test-node", false).await?;
+    state.set_node_enabled("second-node", false).await?;
+    let job = Job {
+        queue_deadline: None,
+        ..queued_job(0, None)
+    };
+    fs::create_dir(state.dir(job.id))?;
+    write_empty_source(&state, job.id)?;
+    state.persist(&job)?;
+    state.jobs.lock().await.insert(job.id, job.clone());
+    let permit = state
+        .uploads
+        .clone()
+        .try_acquire_owned()
+        .map_err(|_| anyhow::anyhow!("test queue slot unavailable"))?;
+    sshpool::runner::spawn_job(state.clone(), job.id, permit);
+    let failed = wait_for_terminal(&state, job.id).await?;
+    assert_eq!(failed.phase, Phase::Failed);
+    assert!(failed.attempts.is_empty());
+    assert!(
+        failed
+            .message
+            .as_deref()
+            .unwrap_or_default()
+            .contains("no eligible worker")
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn restart_retains_only_a_valid_unexpired_queue_request() -> Result<()> {
+    let (_root, state) = state()?;
+    state.set_node_enabled("test-node", false).await?;
+    state.set_node_enabled("second-node", false).await?;
+    let deadline = now() + 60;
+    let job = queued_job(60, Some(deadline));
+    fs::create_dir(state.dir(job.id))?;
+    write_empty_source(&state, job.id)?;
+    state.persist(&job)?;
+    state.jobs.lock().await.insert(job.id, job.clone());
+    sshpool::runner::recover(&state).await?;
+    let retained = state
+        .jobs
+        .lock()
+        .await
+        .get(&job.id)
+        .cloned()
+        .ok_or_else(|| anyhow::anyhow!("retained job disappeared"))?;
+    assert_eq!(retained.phase, Phase::Queued);
+    assert_eq!(retained.queue_deadline, Some(deadline));
+    let events = fs::read_to_string(state.dir(job.id).join("events.jsonl"))?;
+    assert!(events.contains("\"queue_recovered\""));
+    {
+        let mut jobs = state.jobs.lock().await;
+        let retained = jobs
+            .get_mut(&job.id)
+            .ok_or_else(|| anyhow::anyhow!("retained job disappeared"))?;
+        retained.cancel_requested = true;
+        state.persist(retained)?;
+    }
+    state.wake_queue();
+    assert_eq!(
+        wait_for_terminal(&state, job.id).await?.phase,
+        Phase::Cancelled
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn restart_interrupts_expired_or_missing_source_queue_requests() -> Result<()> {
+    for (deadline, source) in [
+        (now().saturating_sub(1), Some(b"expired archive".as_slice())),
+        (now() + 60, None),
+        (now() + 60, Some(b"invalid archive".as_slice())),
+    ] {
+        let (_root, state) = state()?;
+        let job = queued_job(60, Some(deadline));
+        fs::create_dir(state.dir(job.id))?;
+        if let Some(bytes) = source {
+            fs::write(state.dir(job.id).join("source.tar"), bytes)?;
+        }
+        state.persist(&job)?;
+        state.jobs.lock().await.insert(job.id, job.clone());
+        sshpool::runner::recover(&state).await?;
+        let recovered = state
+            .jobs
+            .lock()
+            .await
+            .get(&job.id)
+            .cloned()
+            .ok_or_else(|| anyhow::anyhow!("recovered job disappeared"))?;
+        assert_eq!(recovered.phase, Phase::Interrupted);
+        assert!(
+            !recovered
+                .attempts
+                .iter()
+                .any(|attempt| attempt.node == "test-node")
+        );
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn enabling_a_node_wakes_queue_watchers() -> Result<()> {
+    let (_root, state) = state()?;
+    state.set_node_enabled("test-node", false).await?;
+    let changed = state.queue_changed();
+    assert!(!changed.has_changed()?);
+    state.set_node_enabled("test-node", true).await?;
+    assert!(changed.has_changed()?);
+    Ok(())
+}
 #[tokio::test]
 async fn restart_marks_queued_work_interrupted_without_replaying_it() -> Result<()> {
     let (_root, state) = state()?;
@@ -187,6 +410,7 @@ async fn restart_marks_queued_work_interrupted_without_replaying_it() -> Result<
         artifacts: false,
         cancel_requested: false,
         cleanup_confirmed: false,
+        queue_deadline: None,
     };
     fs::create_dir(state.dir(job.id))?;
     state.persist(&job)?;
@@ -217,6 +441,7 @@ async fn audit_events_survive_state_reload_without_credentials() -> Result<()> {
         artifacts: false,
         cancel_requested: false,
         cleanup_confirmed: true,
+        queue_deadline: None,
     };
     state.persist(&job)?;
     state.event(id, "submitted", "source validated").await?;

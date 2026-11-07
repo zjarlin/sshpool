@@ -359,6 +359,7 @@ async fn shutdown_jobs(state: &Arc<State>) -> Result<()> {
             state.persist(job)?;
         }
     }
+    state.wake_queue();
     for _ in 0..25 {
         if state
             .jobs

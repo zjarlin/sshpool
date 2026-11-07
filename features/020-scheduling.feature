@@ -35,13 +35,24 @@ Feature: 在业务预留和兼容性约束内调度
     Then 隔离该 Worker
     And 核对成功后才允许重新接单
 
-  @planned @p1
+  # evidence: tests/api.rs::limited_queue_waits_once_and_cancel_wakes_the_runner
+  @verified @automated @p1
   Scenario: 有限期持久队列
     Given 暂时没有足够资源而用户允许等待
     When 提交任务
     Then 持久化排队期限和优先级
-    And 节点恢复后重新调度
-    And 控制面重启不丢失排队请求
+    And 无候选节点时保持排队且只记录一次等待事件
+    And 取消或可用节点变化会结束等待
+    And 默认零等待仍立即失败
+
+  # evidence: tests/api.rs::restart_retains_only_a_valid_unexpired_queue_request
+  @verified @automated @p1
+  Scenario: 重启只恢复仍有效的排队请求
+    Given 控制面在任务被节点领取前重启
+    When 恢复持久化任务
+    Then 仅源码合法且原期限未过的未尝试任务继续排队
+    And 恢复不延长绝对截止时间
+    And 过期缺失或损坏源码的任务按谨慎语义中断
 
   @planned @p2
   Scenario: 根据预计完成时间选择节点

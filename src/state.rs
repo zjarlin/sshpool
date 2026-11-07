@@ -4,7 +4,7 @@ use crate::{
 };
 use anyhow::{Result, ensure};
 use std::{collections::HashMap, fs, path::PathBuf, sync::Arc};
-use tokio::sync::{Mutex, Semaphore};
+use tokio::sync::{Mutex, Semaphore, watch};
 use uuid::Uuid;
 
 /// 控制面共享状态：同一把锁同时保护节点配额与任务状态转换。
@@ -14,6 +14,7 @@ pub struct State {
     pub token: String,
     pub jobs: Mutex<HashMap<Uuid, Job>>,
     node_overrides: Mutex<HashMap<String, bool>>,
+    queue_changed: watch::Sender<u64>,
     pub uploads: Arc<Semaphore>,
     pub scheduling: Mutex<()>,
     pub audit: Mutex<()>,
@@ -38,12 +39,14 @@ impl State {
             jobs.insert(id, job);
         }
         let uploads = Arc::new(Semaphore::new(config.max_active_jobs));
+        let (queue_changed, _) = watch::channel(0);
         Ok(Arc::new(Self {
             home,
             config,
             token,
             jobs: Mutex::new(jobs),
             node_overrides: Mutex::new(HashMap::new()),
+            queue_changed,
             uploads,
             scheduling: Mutex::new(()),
             audit: Mutex::new(()),
@@ -81,7 +84,18 @@ impl State {
         let changed = node.clone();
         config::save(&self.home, &config)?;
         overrides.insert(name.into(), enabled);
+        self.wake_queue();
         Ok(changed)
+    }
+    /// 订阅队列或节点容量变化；接收端可在一次探测之后等待新的调度机会。
+    pub fn queue_changed(&self) -> watch::Receiver<u64> {
+        self.queue_changed.subscribe()
+    }
+    /// 唤醒有限队列的等待者；不改变任务期限或执行状态。
+    pub fn wake_queue(&self) {
+        self.queue_changed.send_modify(|generation| {
+            *generation = generation.wrapping_add(1);
+        });
     }
     fn config_with_overrides(&self, overrides: &HashMap<String, bool>) -> Config {
         let mut config = self.config.clone();
@@ -139,7 +153,9 @@ impl State {
         self.persist(job)?;
         let phase = format!("{:?}", job.phase);
         drop(jobs);
-        self.event(id, "finished", &phase).await
+        self.event(id, "finished", &phase).await?;
+        self.wake_queue();
+        Ok(())
     }
     pub async fn cancelled(&self, id: Uuid) -> bool {
         self.jobs

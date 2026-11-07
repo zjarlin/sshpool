@@ -2,7 +2,7 @@ use anyhow::Result;
 use sshpool::{
     archive,
     config::{Build, Node},
-    model::{Attempt, Health, Job, Phase},
+    model::{Attempt, Health, Job, Phase, queue_precedes},
     scheduler, transport,
 };
 use std::{fs, path::Path};
@@ -186,6 +186,7 @@ fn scheduler_protects_reserves_platform_and_concurrent_slots() {
         artifacts: false,
         cancel_requested: false,
         cleanup_confirmed: false,
+        queue_deadline: None,
     };
     assert!(scheduler::score(&node, &health, &build, &[job]).is_err());
 }
@@ -200,9 +201,51 @@ fn retry_and_path_policies_fail_closed() {
     assert!(build.validate().is_ok());
     build.network = true;
     assert!(build.validate().is_err());
+    build.network = false;
+    build.queue_priority = 10;
+    assert!(build.validate().is_err());
+    build.queue_timeout_secs = 60;
+    assert!(build.validate().is_ok());
+    build.queue_timeout_secs = 604_801;
+    assert!(build.validate().is_err());
     for path in ["/", "../a", ".", "a/../b"] {
         assert!(archive::relative_path(Path::new(path)).is_err());
     }
+}
+
+#[test]
+fn limited_queue_orders_priority_then_submission_time_with_stable_ids() {
+    let build = Build {
+        queue_timeout_secs: 60,
+        ..Build::default()
+    };
+    let make_job = |priority, created_at| Job {
+        id: uuid::Uuid::nil(),
+        build: Build {
+            queue_priority: priority,
+            ..build.clone()
+        },
+        phase: Phase::Queued,
+        created_at,
+        finished_at: None,
+        attempts: Vec::new(),
+        exit_code: None,
+        message: None,
+        artifacts: false,
+        cancel_requested: false,
+        cleanup_confirmed: false,
+        queue_deadline: Some(created_at + 60),
+    };
+    let lower = make_job(0, 1);
+    let earlier = make_job(1, 2);
+    let later = make_job(1, 3);
+    assert!(queue_precedes(&earlier, &lower));
+    assert!(queue_precedes(&earlier, &later));
+    let mut older_id = later.clone();
+    older_id.id = uuid::Uuid::from_u128(1);
+    let mut newer_id = later;
+    newer_id.id = uuid::Uuid::from_u128(2);
+    assert!(queue_precedes(&older_id, &newer_id));
 }
 #[tokio::test]
 async fn gateway_preserves_full_duplex_bytes_and_half_close() -> Result<()> {
@@ -269,6 +312,7 @@ fn uncertain_cleanup_quarantines_the_worker() {
         artifacts: false,
         cancel_requested: false,
         cleanup_confirmed: false,
+        queue_deadline: None,
     };
     assert!(scheduler::score(&node, &health, &build, std::slice::from_ref(&job)).is_err());
     job.cleanup_confirmed = true;

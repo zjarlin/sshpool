@@ -136,13 +136,18 @@ async fn cancel(
     Path(id): Path<Uuid>,
 ) -> ApiResult<impl IntoResponse> {
     authorized(&headers, &state)?;
+    // 与首次领取任务共用调度锁，避免取消和进入 Running 的窄竞态。
+    let _scheduling = state.scheduling.lock().await;
     let mut jobs = state.jobs.lock().await;
     let job = jobs.get_mut(&id).context("unknown job")?;
     if !job.phase.terminal() {
         job.cancel_requested = true;
         state.persist(job)?;
     }
-    Ok(axum::Json(job.clone()))
+    let record = job.clone();
+    drop(jobs);
+    state.wake_queue();
+    Ok(axum::Json(record))
 }
 async fn submit(
     AppState(state): AppState<Arc<State>>,
@@ -160,6 +165,7 @@ async fn submit(
         .map_err(anyhow::Error::from)?;
     let build: Build = serde_json::from_slice(&decoded).map_err(anyhow::Error::from)?;
     build.validate()?;
+    let queue_timeout_secs = build.queue_timeout_secs;
     let permit = state
         .uploads
         .clone()
@@ -195,11 +201,14 @@ async fn submit(
         fs::remove_dir_all(&directory).map_err(anyhow::Error::from)?;
         return Err(error.into());
     }
+    let created_at = now();
+    let queue_deadline =
+        (queue_timeout_secs > 0).then_some(created_at.saturating_add(queue_timeout_secs));
     let job = Job {
         id,
         build,
         phase: Phase::Queued,
-        created_at: now(),
+        created_at,
         finished_at: None,
         attempts: Vec::new(),
         exit_code: None,
@@ -207,26 +216,13 @@ async fn submit(
         artifacts: false,
         cancel_requested: false,
         cleanup_confirmed: false,
+        queue_deadline,
     };
     state.persist(&job)?;
     state.jobs.lock().await.insert(id, job.clone());
     state.event(id, "submitted", "source validated").await?;
-    tokio::spawn(async move {
-        let _permit = permit;
-        if let Err(error) = runner::run(state.clone(), id).await
-            && let Err(save_error) = state
-                .finish(
-                    id,
-                    Phase::Interrupted,
-                    None,
-                    format!("controller error: {error:#}"),
-                    false,
-                )
-                .await
-        {
-            eprintln!("cannot save failure for {id}: {save_error:#}");
-        }
-    });
+    state.wake_queue();
+    runner::spawn_job(state, id, permit);
     Ok((StatusCode::ACCEPTED, axum::Json(job)))
 }
 fn ensure_disk(state: &State) -> Result<()> {

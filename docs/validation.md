@@ -14,6 +14,12 @@
 
 2026-11-07 增加了在线 `node enable` / `node disable`。控制面在不重启时更新调度状态并原子保存配置；仍有活动任务的节点拒绝禁用。API 测试覆盖鉴权、未知节点、活动任务保护、连续切换两个节点以及重载后保留全部选择。远程探测缺少控制面 `enabled` 字段时仍可解析，避免状态查询因协议扩展失败。
 
+## limited-queue
+
+有限队列默认关闭；`Build.queue_timeout_secs=0` 时无候选 Worker 仍立即失败。显式等待时，任务保存绝对截止时间和可选优先级，以 `queued` 状态持有本地源码。`limited_queue_waits_once_and_cancel_wakes_the_runner` 验证无节点时只写入一次 `queue_wait`、重复唤醒不刷审计，并验证取消后进入已确认没有远端尝试的 `cancelled` 状态。控制面重启测试验证未过期且归档合法的未领取任务保留原截止时间，而过期、缺失或损坏源码的请求进入 `interrupted`；已尝试任务仍不会重放。优先级边界、期限范围和排序由 `retry_and_path_policies_fail_closed` 与 `limited_queue_orders_priority_then_submission_time_with_stable_ids` 覆盖。
+
+这些测试使用本机临时状态，不建立 Worker 连接。它们证明控制面生命周期和失败语义，不证明入口主机故障时队列仍在线，也不构成 SSI、Ceph 或数据库接管验收。
+
 ## rust
 
 从统一 SSH 工作台执行 `cargo build --offline --release`，通过项目配置和 Cargo shim 提交 ARM64 Rust Alpine 镜像。任务以 UID 65534 执行，在容器内完成编译。通过 `fetch` 在全新目录回取可执行文件并实际运行，输出目标架构 aarch64。
@@ -100,4 +106,4 @@ macOS ARM64 Worker 本次只完成资源探测：可用内存约 2.7 GiB，小�
 
 公开源码已发布到 [zjarlin/sshpool](https://github.com/zjarlin/sshpool)，MIT 许可，包含 Cargo.lock、Linux/macOS CI 和 Gherkin 验收清单。首个源码提交为 `b27c835`。提交前检查真实地址、节点 SSH 别名、用户目录、私钥标记和常见 token 格式，没有将私有配置或任务归档加入仓库。
 
-本地 14 项 Rust 测试、格式检查、Clippy 和 release build 通过；工作台客户端与 Mac 控制面均已更新。CI 每次运行以 [GitHub Actions](https://github.com/zjarlin/sshpool/actions) 上相应提交的结果为准，公开源码不代表生产可用或全部验收场景通过。
+本地 Rust 测试、格式检查、Clippy 和 release build 通过；具体数量随版本增长，以对应提交的 CI 为准。工作台客户端与 Mac 控制面均已更新，但公开源码不代表生产可用或全部验收场景通过。CI 运行结果见 [GitHub Actions](https://github.com/zjarlin/sshpool/actions)。

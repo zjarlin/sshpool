@@ -9,3 +9,6 @@ timeout_secs = 30
 network = false
 retries = 1
 idempotent = true
+# 显式允许等待最多两分钟；省略或设为零时无合适 Worker 会立即失败。
+queue_timeout_secs = 120
+queue_priority = 0

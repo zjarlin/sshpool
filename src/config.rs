@@ -91,6 +91,10 @@ pub struct Build {
     pub network: bool,
     pub retries: usize,
     pub idempotent: bool,
+    /// 无可用 Worker 时允许等待的秒数；零保持立即失败。
+    pub queue_timeout_secs: u64,
+    /// 有限队列内的优先级；仅在允许等待时生效。
+    pub queue_priority: i32,
 }
 impl Default for Build {
     fn default() -> Self {
@@ -112,6 +116,8 @@ impl Default for Build {
             network: false,
             retries: 0,
             idempotent: false,
+            queue_timeout_secs: 0,
+            queue_priority: 0,
         }
     }
 }
@@ -156,6 +162,18 @@ impl Build {
             "pids must be 16..4096"
         );
         ensure!(self.retries <= 3, "at most three retries");
+        ensure!(
+            self.queue_timeout_secs <= 604_800,
+            "queue_timeout_secs must not exceed seven days"
+        );
+        ensure!(
+            (-1000..=1000).contains(&self.queue_priority),
+            "queue_priority must be between -1000 and 1000"
+        );
+        ensure!(
+            self.queue_timeout_secs > 0 || self.queue_priority == 0,
+            "queue_priority requires queue_timeout_secs"
+        );
         ensure!(
             self.retries == 0 || (self.idempotent && !self.network),
             "retry requires idempotent=true and network=false"

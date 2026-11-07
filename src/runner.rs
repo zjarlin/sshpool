@@ -1,7 +1,7 @@
 use crate::{
     archive,
     config::{Build, Node},
-    model::{Attempt, Phase, now},
+    model::{Attempt, Job, Phase, now, queue_precedes},
     probe, scheduler,
     state::State,
     transport,
@@ -10,7 +10,7 @@ use anyhow::{Context, Result, bail, ensure};
 use std::{path::Path, sync::Arc, time::Duration};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
-    sync::Mutex,
+    sync::{Mutex, OwnedSemaphorePermit, watch},
 };
 use uuid::Uuid;
 
@@ -255,6 +255,64 @@ async fn attempt(
     };
     Ok((code, artifacts))
 }
+async fn mark_queue_waiting(state: &State, id: Uuid, reason: &str) -> Result<()> {
+    let mut jobs = state.jobs.lock().await;
+    let job = jobs.get_mut(&id).context("unknown job")?;
+    job.phase = Phase::Queued;
+    job.message = Some(format!("waiting for an eligible worker: {reason}"));
+    state.persist(job)
+}
+
+async fn queue_deadline(state: &State, id: Uuid) -> Option<u64> {
+    state
+        .jobs
+        .lock()
+        .await
+        .get(&id)
+        .and_then(|job| job.queue_deadline)
+}
+
+/// 所有队列都使用同一资源快照，较早且在此快照中可运行的任务必须先领取资源。
+fn earlier_job_is_eligible(
+    jobs: &std::collections::HashMap<Uuid, Job>,
+    id: Uuid,
+    nodes: &[Node],
+    health: &[crate::model::Health],
+    active: &[Job],
+    timestamp: u64,
+) -> bool {
+    let Some(current) = jobs.get(&id) else {
+        return false;
+    };
+    jobs.values()
+        .filter(|job| job.id != id && job.queue_open_at(timestamp) && queue_precedes(job, current))
+        .any(|job| {
+            nodes
+                .iter()
+                .zip(health)
+                .any(|(node, health)| scheduler::score(node, health, &job.build, active).is_ok())
+        })
+}
+
+async fn wait_for_queue_change(receiver: &mut watch::Receiver<u64>, deadline: u64) -> Result<()> {
+    let remaining = deadline.saturating_sub(now());
+    let delay = Duration::from_secs(remaining.min(30));
+    tokio::select! {
+        changed = receiver.changed() => {
+            changed.context("queue wake channel closed")?;
+            Ok(())
+        }
+        _ = tokio::time::sleep(delay) => Ok(()),
+    }
+}
+
+fn source_can_resume(state: &State, id: Uuid) -> Result<()> {
+    let source = state.dir(id).join("source.tar");
+    ensure!(source.is_file(), "source archive is missing");
+    let limit = state.config.max_upload_mib * 1048576;
+    archive::validate(&source, limit, None)
+}
+
 pub async fn run(state: Arc<State>, id: Uuid) -> Result<()> {
     let build = state
         .jobs
@@ -264,8 +322,10 @@ pub async fn run(state: Arc<State>, id: Uuid) -> Result<()> {
         .context("unknown job")?
         .build
         .clone();
+    let mut queue_receiver = state.queue_changed();
+    let mut wait_event_recorded = false;
     let mut tried = Vec::new();
-    for _ in 0..=build.retries {
+    loop {
         if state.cancelled(id).await {
             return state
                 .finish(id, Phase::Cancelled, None, "cancelled".into(), false)
@@ -281,6 +341,36 @@ pub async fn run(state: Arc<State>, id: Uuid) -> Result<()> {
             .values()
             .cloned()
             .collect::<Vec<_>>();
+        let current = state
+            .jobs
+            .lock()
+            .await
+            .get(&id)
+            .cloned()
+            .context("unknown job")?;
+        let first_attempt = current.attempts.is_empty();
+        if first_attempt
+            && current.build.queue_timeout_secs > 0
+            && current
+                .queue_deadline
+                .is_some_and(|deadline| now() >= deadline)
+        {
+            drop(guard);
+            return state
+                .finish(
+                    id,
+                    Phase::Failed,
+                    None,
+                    "queue deadline exceeded before worker assignment".into(),
+                    false,
+                )
+                .await;
+        }
+        let queue_open = current.queue_open_at(now());
+        let earlier_ready = queue_open && {
+            let jobs = state.jobs.lock().await;
+            earlier_job_is_eligible(&jobs, id, &nodes, &health, &active, now())
+        };
         let mut reasons = Vec::new();
         let mut candidates = Vec::new();
         for (node, health) in nodes.iter().zip(&health) {
@@ -293,8 +383,35 @@ pub async fn run(state: Arc<State>, id: Uuid) -> Result<()> {
             }
         }
         candidates.sort_by(|a, b| b.1.total_cmp(&a.1));
+        if earlier_ready {
+            reasons.push("higher-priority queue item is eligible".into());
+        }
         let Some((node, _)) = candidates.into_iter().next() else {
             drop(guard);
+            if first_attempt && queue_open {
+                if !wait_event_recorded {
+                    let reason = reasons.join("; ");
+                    mark_queue_waiting(&state, id, &reason).await?;
+                    state.event(id, "queue_wait", &reason).await?;
+                    wait_event_recorded = true;
+                }
+                let deadline = queue_deadline(&state, id)
+                    .await
+                    .context("queue deadline is missing")?;
+                if now() >= deadline {
+                    return state
+                        .finish(
+                            id,
+                            Phase::Failed,
+                            None,
+                            "queue deadline exceeded while waiting for an eligible worker".into(),
+                            false,
+                        )
+                        .await;
+                }
+                wait_for_queue_change(&mut queue_receiver, deadline).await?;
+                continue;
+            }
             return state
                 .finish(
                     id,
@@ -305,6 +422,17 @@ pub async fn run(state: Arc<State>, id: Uuid) -> Result<()> {
                 )
                 .await;
         };
+        if earlier_ready {
+            drop(guard);
+            wait_for_queue_change(
+                &mut queue_receiver,
+                queue_deadline(&state, id)
+                    .await
+                    .context("queue deadline is missing")?,
+            )
+            .await?;
+            continue;
+        }
         tried.push(node.name.clone());
         let container = format!("sshpool-{id}-{}", tried.len());
         {
@@ -394,9 +522,37 @@ pub async fn run(state: Arc<State>, id: Uuid) -> Result<()> {
             Err(_) => {}
         }
     }
-    Ok(())
 }
-/// 控制面重启不盲目重放任务：先核对并终止旧容器，再记录中断。
+
+/// 在独立任务中持有上传配额；控制器错误只会中断仍未落入终态的任务。
+pub fn spawn_job(state: Arc<State>, id: Uuid, permit: OwnedSemaphorePermit) {
+    tokio::spawn(async move {
+        let _permit = permit;
+        if let Err(error) = run(state.clone(), id).await {
+            let should_finish = state
+                .jobs
+                .lock()
+                .await
+                .get(&id)
+                .is_some_and(|job| !job.phase.terminal());
+            if should_finish
+                && let Err(save_error) = state
+                    .finish(
+                        id,
+                        Phase::Interrupted,
+                        None,
+                        format!("controller error: {error:#}"),
+                        false,
+                    )
+                    .await
+            {
+                eprintln!("cannot save failure for {id}: {save_error:#}");
+            }
+        }
+    });
+}
+
+/// 控制面重启只恢复仍处于原始等待期限内且源码完整的未领取任务。
 pub async fn recover(state: &Arc<State>) -> Result<()> {
     let unfinished = state
         .jobs
@@ -408,7 +564,39 @@ pub async fn recover(state: &Arc<State>) -> Result<()> {
         })
         .cloned()
         .collect::<Vec<_>>();
+    let mut queued = Vec::new();
     for job in unfinished {
+        if job.phase == Phase::Queued && job.cancel_requested {
+            state
+                .finish(
+                    job.id,
+                    Phase::Cancelled,
+                    None,
+                    "cancelled while queued before controller restart".into(),
+                    false,
+                )
+                .await?;
+            continue;
+        }
+        let can_retain = job.queue_open_at(now()) && source_can_resume(state, job.id).is_ok();
+        if can_retain {
+            let mut jobs = state.jobs.lock().await;
+            let record = jobs.get_mut(&job.id).context("unknown job")?;
+            record.cleanup_confirmed = true;
+            record.message =
+                Some("controller restarted; queue retained with the original deadline".into());
+            state.persist(record)?;
+            drop(jobs);
+            state
+                .event(
+                    job.id,
+                    "queue_recovered",
+                    "source validated; original deadline retained",
+                )
+                .await?;
+            queued.push(job);
+            continue;
+        }
         let cleanup = match job.attempts.last() {
             Some(attempt) => match state
                 .config
@@ -435,6 +623,30 @@ pub async fn recover(state: &Arc<State>) -> Result<()> {
         state
             .finish(job.id, Phase::Interrupted, None, message, false)
             .await?;
+    }
+    queued.sort_by(|left, right| {
+        if queue_precedes(left, right) {
+            std::cmp::Ordering::Less
+        } else if queue_precedes(right, left) {
+            std::cmp::Ordering::Greater
+        } else {
+            std::cmp::Ordering::Equal
+        }
+    });
+    for job in queued {
+        let Ok(permit) = state.uploads.clone().try_acquire_owned() else {
+            state
+                .finish(
+                    job.id,
+                    Phase::Interrupted,
+                    None,
+                    "controller restart found no active-job capacity for the persistent queue; increase max_active_jobs and restart again".into(),
+                    false,
+                )
+                .await?;
+            continue;
+        };
+        spawn_job(state.clone(), job.id, permit);
     }
     Ok(())
 }

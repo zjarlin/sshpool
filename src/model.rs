@@ -51,6 +51,17 @@ impl Phase {
         !matches!(self, Self::Queued | Self::Running)
     }
 }
+impl Job {
+    /// 判断当前时刻是否仍可按显式期限等待；已尝试或旧记录均不重放。
+    pub fn queue_open_at(&self, timestamp: u64) -> bool {
+        self.phase == Phase::Queued
+            && self.attempts.is_empty()
+            && self.build.queue_timeout_secs > 0
+            && self
+                .queue_deadline
+                .is_some_and(|deadline| timestamp < deadline)
+    }
+}
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Attempt {
     pub node: String,
@@ -72,6 +83,23 @@ pub struct Job {
     pub cancel_requested: bool,
     #[serde(default)]
     pub cleanup_confirmed: bool,
+    /// 新任务的有限排队绝对截止时间；旧记录缺失时不自动重放。
+    #[serde(default)]
+    pub queue_deadline: Option<u64>,
+}
+
+/// 有限队列按优先级降序、提交时间升序和稳定任务标识排序。
+pub fn queue_precedes(left: &Job, right: &Job) -> bool {
+    if left.phase != Phase::Queued || right.phase != Phase::Queued {
+        return false;
+    }
+    if left.build.queue_priority != right.build.queue_priority {
+        return left.build.queue_priority > right.build.queue_priority;
+    }
+    if left.created_at != right.created_at {
+        return left.created_at < right.created_at;
+    }
+    left.id < right.id
 }
 pub fn now() -> u64 {
     std::time::SystemTime::now()
