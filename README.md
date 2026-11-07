@@ -281,6 +281,24 @@ scrape_configs:
 
 暴露的是控制面已有的事实：终态任务按失败结构分类（`failed-before-exit` / `failed-exit-nonzero` / `failed-after-exit`，只看 `phase` 与 `exit_code`，不解析文案）、排队与执行时长直方图、尝试与重试次数、清理未确认数、节点资源水位与是否接单、访问审计各代字节数。节点探测失败时资源报 0 而不是沿用旧快照。抓取不触发远端探测。细节与实测见 [验证文档](docs/validation.md#external-observation)。
 
+### 应用状态与持久化约定审核
+
+迁移数据库之前先要弄清楚哪些数据丢了会出事，并且这件事要能被核对，而不是写在文档里自我保证：
+
+```sh
+sshpool state-audit --inventory examples/state-audit/sub2api.json --ssh my-linux
+# 退出码 0 表示清单与事实一致；2 表示被拒；1 表示输入非法
+sshpool state-audit --inventory examples/state-audit/sub2api.json --probe probe.json   # 离线复核
+```
+
+清单由人维护（版本、镜像摘要、RPO/RTO、每个状态面、关键表、去重索引、Redis 承担的角色），探针只读地到主机上核对，报告里给出逐项结论。三条硬性约定：
+
+- 备份只有 `scheduled{interval_seconds}` / `manual` / `none` 三态，没有「随便填一个秒数」。人工备份与没有备份的 RPO 是**没有上界**（`null`），不是 0，也不是一个大数。
+- 声明 Redis 只是可丢弃缓存，却探到超过允许值的无 TTL 键，则声明被拒，并按权威状态计算 RPO。
+- 声明与事实冲突时**降级声明**，不改数字凑通过。
+
+它只做审核，不迁移、不备份、不改配置。协议、判定码与真实结论见 [应用状态与持久化约定审核](docs/state-audit.md)。
+
 ## 已知限制
 
 - 使用整个任务分派；尚未集成 sccache/Icecream 的编译单元拆分或远程缓存。原型借鉴 Slurm 的资源预约、OpenSSH 的连接面和容器运行时的隔离机制，不依赖这些项目的源码。
@@ -297,6 +315,7 @@ scrape_configs:
 - **发布物是预发布二进制，不是生产承诺**：`v*` 标签会构建 Linux x86_64（glibc ≥ 2.35）与 macOS arm64/x86_64 三个产物并附 `SHA256SUMS`，但 macOS 只有 ad-hoc 签名、没有公证（首次运行要自己处理 quarantine），Linux 是动态链接（Alpine 跑不了），校验和与压缩包放在同一个 Release 里所以只防传输损坏、不防篡改。没有 Linux aarch64 与静态 musl 变体。见 [版本发布](docs/release.md#已知限制)。
 - 官方镜像声明的 `VOLUME`（例如 `gradle` 的 `/home/gradle/.gradle`）不会被拒绝，而是逐个用同路径、`min(64 MiB, 工作区)` 且有上限的 tmpfs 遮蔽，所以容器里能看到一个可写的空缓存目录，但不可能借此绕开任务的内存/磁盘上限；`docker inspect` 的 `Mounts` 必须为空。代价是这类缓存不会跨任务保留——每次构建都要重新下载依赖，离线构建仍然要求镜像里已经带好依赖。
 - 源码归档的成员 mtime 固定为 1980-01-01（zip 能表达的最早时间）。它让归档逐字节可复算，但也意味着容器里的构建工具看不到真实源码修改时间：依赖「源码比产物新」的增量构建在容器内会退化成全量构建。
+- **状态审核不等于迁移演练**：`sshpool state-audit` 只核对清单与现场事实是否一致，退出码 0 也不表示迁移会成功；RPO 上界按配置推算，不压测、不证明 `fsync` 真的落盘。见 [应用状态与持久化约定审核](docs/state-audit.md)。
 - **演示数据的数据库迁移与切回只到数据层**：`tests/migration_live.rs` 用一次性 PostgreSQL + Redis 容器证明了「同一停写窗口导出 → 恢复到新环境 → 应用用户读到的内容级指纹逐项相等 → 切回后旧写入方可重新写入且新环境保持冻结」，并证明漏恢复一张表会连同它的序列一起被报出来。它**没有**覆盖真实 `sub2api` 容器、入口层流量切换、停写窗口之外的增量、PostgreSQL WAL 归档/流复制或 Redis AOF 重放，因此不能据此宣称生产数据库高可用。见 [验证记录](docs/validation.md#stateful-migration)。
 - 指标抓取凭据只解决「可撤销、不给 API」：`scrape` 是**全有或全无**，没有按节点或按指标过滤，任何一把 scrape 凭据都能看到全部节点名与资源水位。抓取也不进访问审计（15 秒一次会冲掉有界日志），所以「谁抓过」只能靠网络层或 Prometheus 自身的日志。它只输出数值与节点名，不含 SSH 目标、token、任务消息或自由文本。指标不落盘、不带历史，重启后计数从现有任务记录重新渲染；Prometheus 配置与日志后端（Loki/ELK）由部署者自行提供。
 

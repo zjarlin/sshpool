@@ -638,6 +638,37 @@ SSHPOOL_LIVE_NODE=sshpool-anchor \
 - 不承诺 RPO/RTO：停写窗口之外的增量不在范围内。
 - Redis 走 RDB 全量快照，未覆盖 AOF 重放与主从复制；PostgreSQL 未覆盖 WAL 归档与流复制。
 
+### 应用状态与持久化约定 {#state-audit}
+
+迁移方案的第一步是承认「哪些数据丢了会出事」。2026-11-08 用 `sshpool state-audit` 对**运行中的** `sub2api`（`okm182`，x86_64，60 个容器）做了一次只读审核：人写清单，工具到主机上核对，按退出码区分「可用于制定迁移方案」与「被拒」。
+
+```sh
+sshpool state-audit --inventory examples/state-audit/sub2api.json --ssh okm182 --output /tmp/audit.json
+SSHPOOL_LIVE_NODE=okm182 cargo test --test state_audit_live -- --ignored --nocapture --test-threads=1
+```
+
+| 核对项 | 声明 | 实测 | 结论 |
+| --- | --- | --- | --- |
+| 版本固定 | `zjarlin/sub2api@sha256:4915bd…474f4` | 与容器 `Image`/`image inspect` 的 `Id` 一致 | 通过 |
+| 关键表 | 会话、计费、后台任务共 6 张 | 全部存在（库共 116 表、78 序列、482 索引、95 外键） | 通过 |
+| 去重索引 | `usage_billing_dedup(request_id, api_key_id)` 唯一 | `idx_usage_billing_dedup_request_api_key` 覆盖这两列 | 通过 |
+| PostgreSQL RPO | 清单声明 3600 秒 | `archive_mode=off`、0 副本、只有人工备份 | **无上界**（`null`） |
+| Redis 定位 | 声明 `derived`（可丢弃缓存） | AOF `everysec`、3 个库、**4346 个无 TTL 键** | **声明被拒 → 按权威状态计** |
+| 应用卷 RPO | 清单声明 3600 秒 | `/app/data` 2976.2 MiB、只有人工备份 | **无上界** |
+| 故障域 | 不宣称独立 | 应用卷与两份数据库目录同为设备 2049 | 一致（同盘） |
+
+结论是 `exit 2`、`migration_plan_approved: false`、`achievable_rpo_seconds: null`，violations 只有两条：`redis_cache_claim_refused`、`rpo_claim_unachievable`；**没有 blocker** —— 也就是说被拒的是清单里的承诺，不是审核本身。这正是真实现状：crontab、`/etc/cron.d`、systemd timers 里都没有备份任务，唯一的备份目录停在 2026-10-24。
+
+两条测试都以同一份清单为输入：
+
+- `the_declared_contract_is_checked_against_the_host` 断言现状被拒，并逐项核对表、唯一索引、设备号、`archive_mode`。
+- `a_contract_that_matches_the_facts_is_approved` 是**阳性对照**：把备份节奏与 `cache_persistent_allowance` 改成与事实相符的值后，工具必须给出通过且 `achievable_rpo_seconds == 3600`。没有这条，工具只会永远说「不行」，证明不了任何事。
+- `the_binary_exits_two_and_prints_one_report` 走真实二进制，断言退出码 2 且 `--output` 是一份 JSON。
+
+探针只跑 `docker inspect` / `docker exec ... psql|redis-cli` 与 `stat`/`du`，**没有创建容器、卷、网络，也没有改任何配置**。证据见 [evidence/state-admission-20261108.json](evidence/state-admission-20261108.json)（12 条断言全为 true）。
+
+边界：这是**清单核对**，不是迁移演练，也不是 RPO 实测。上界按配置推算（AOF `everysec` → 1 秒、备份间隔 → 间隔、WAL 归档 → 段切换）；`fsync` 是否真的落盘、盘是否真的持久，这条链路不证明。主机上另有 3 个未声明的数据库容器（minio、mysql、pg252r）与 63 处范围外可写挂载，不在本次结论内。协议与全部判定码见 [应用状态与持久化约定审核](state-audit.md)。
+
 ## watchdog-cleanup-proof
 
 2026-11-07 把「清理未确认时禁止换机重跑」从一句注释变成可执行的证据链。之前的实现只会把 Worker 隔离，并要求重启控制面才能恢复接单；现在隔离状态可以在线解除，且解除依据可复现。

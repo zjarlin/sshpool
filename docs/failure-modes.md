@@ -28,6 +28,8 @@
 
 截止 2026-11-07，实际服务的 PostgreSQL `archive_mode=off`，Redis 使用 AOF，数据目录仍位于同一台物理主机和同一磁盘。单个逻辑备份能恢复某个时间点，但会产生从备份时间到故障时间的 RPO；存在旧备份也不能证明当前数据完整。
 
+声明与事实冲突时**降级声明**，不要改数字凑通过。典型例子：Redis 被写成「可丢弃缓存」，但 `INFO keyspace` 里 `keys - expires` 有几千个键，那它承担的就是权威状态，RPO 必须按 AOF 配置算，而不能继续按 0 算；「说不清多久备份一次」既不是 0 也不是 86400，而是没有上界 —— 只有三态 `scheduled{interval}` / `manual` / `none` 的清单里，后两者都推出 `None`。`sshpool state-audit` 把这三条写成可执行判定，见 [应用状态与持久化约定审核](state-audit.md)。
+
 数据库达到“确认事务不丢”至少需要：
 
 1. 定期 PostgreSQL 基础备份，并持续归档 WAL 到独立物理故障域。

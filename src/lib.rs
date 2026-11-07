@@ -22,6 +22,7 @@ pub mod scheduler;
 pub mod shim;
 pub mod ssi;
 pub mod state;
+pub mod state_audit;
 pub mod storage;
 pub mod tls;
 pub mod token;

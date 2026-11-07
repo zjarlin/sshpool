@@ -1,7 +1,8 @@
 Feature: sub2api PostgreSQL Redis 一致性恢复
   数据库恢复和计算任务重试不是同一种操作。
 
-  @planned @p0
+  # evidence: docs/validation.md#state-audit
+  @verified @automated @p0
   Scenario: 精确识别应用的状态与持久化约定
     Given 指定的应用版本配置和镜像
     When 审核迁移方案

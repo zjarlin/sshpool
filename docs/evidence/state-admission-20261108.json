@@ -1,0 +1,178 @@
+{
+ "schema": 1,
+ "checked_at": "2026-11-08T03:20:00+08:00",
+ "scope": "对运行中的 sub2api 应用做只读状态与持久化约定审核：核对声明是否与主机事实一致；不执行迁移、不备份、不创建容器、不改任何配置",
+ "privacy": {
+  "addresses_removed": true,
+  "credentials_removed": true,
+  "private_paths_removed": true,
+  "business_rows_removed": true,
+  "identifier_note": "宿主绝对路径只以 sha256 前 16 位出现在探针结果里；报告不含口令、连接串与业务行"
+ },
+ "entry": {
+  "test": "tests/state_audit_live.rs",
+  "command": "SSHPOOL_LIVE_NODE=okm182 cargo test --test state_audit_live -- --ignored --nocapture --test-threads=1",
+  "cli": "sshpool state-audit --inventory examples/state-audit/sub2api.json --ssh okm182",
+  "why": "判据是清单与现场事实逐项对上，且退出码把「可用于制定迁移方案」与「被拒」分开"
+ },
+ "host": {
+  "alias": "okm182",
+  "arch": "x86_64",
+  "containers_observed": 60,
+  "database_containers": [
+   "postgres（postgres）",
+   "redis（redis）",
+   "minio（minio）",
+   "mysql（mysql）",
+   "pg252r（postgres）"
+  ],
+  "undeclared_database_containers": [
+   "minio（minio）",
+   "mysql（mysql）",
+   "pg252r（postgres）"
+  ]
+ },
+ "declared": {
+  "inventory": "examples/state-audit/sub2api.json",
+  "version": "zjarlin/sub2api:8c06464b44505fb386975624933a6b4e36fd03da",
+  "image_pinned": "zjarlin/sub2api@sha256:4915bd…474f4",
+  "rpo_seconds": 3600,
+  "rto_seconds": 1800,
+  "rto_rehearsal": "data-layer",
+  "surfaces": [
+   "postgres::sub2api",
+   "redis",
+   "sub2api:/app/data"
+  ]
+ },
+ "facts": {
+  "postgres": {
+   "server_version": "15.19",
+   "archive_mode": "off",
+   "wal_level": "replica",
+   "archive_timeout_seconds": 0,
+   "replicas": 0,
+   "size_mib": 3188.5,
+   "tables": 116,
+   "sequences": 78,
+   "indexes": 482,
+   "foreign_keys": 95,
+   "extensions": [
+    "pg_trgm",
+    "plpgsql"
+   ],
+   "unlogged_tables": 0,
+   "tables_without_primary_key": 2,
+   "key_tables_present": true,
+   "dedup_unique_index": "idx_usage_billing_dedup_request_api_key (request_id, api_key_id)",
+   "backup": {
+    "kind": "manual"
+   },
+   "largest_tables": {
+    "usage_logs_mib": 1086,
+    "ops_error_logs_mib": 666,
+    "usage_billing_dedup_mib": 339,
+    "ops_system_logs_mib": 287,
+    "channel_monitor_v2_latency_histograms_1m_mib": 191
+   }
+  },
+  "redis": {
+   "version": "8.10.2",
+   "appendonly": true,
+   "appendfsync": "everysec",
+   "save_rules": "3600 1 300 100 60 10000",
+   "maxmemory": "0",
+   "eviction": "noeviction",
+   "replicas": 0,
+   "databases": [
+    {
+     "index": 0,
+     "keys": 9129,
+     "expires": 4809
+    },
+    {
+     "index": 6,
+     "keys": 27,
+     "expires": 26
+    },
+    {
+     "index": 7,
+     "keys": 28,
+     "expires": 1
+    }
+   ],
+   "keys_without_ttl": 4346,
+   "observed_prefixes": [
+    "sched:",
+    "reasoning_content:",
+    "token_family:"
+   ]
+  },
+  "volumes": {
+   "sub2api:/app/data": {
+    "miB": 2976.2,
+    "device": "2049",
+    "note": "bind 到宿主 data 目录，其中 downloads 约 3.0 GiB"
+   },
+   "engine_data_devices": {
+    "postgres": "2049",
+    "redis": "2049"
+   },
+   "independent_failure_domains_claimed": false,
+   "independent_failure_domains_supported": false
+  },
+  "scheduled_backups": {
+   "crontab_entries": 0,
+   "cron_d_backup_entries": 0,
+   "systemd_backup_timers": 0
+  }
+ },
+ "results": {
+  "exit_code": 2,
+  "migration_plan_approved": false,
+  "read_only": true,
+  "achievable_rpo_seconds": null,
+  "rpo_claim_supported": false,
+  "blockers": [],
+  "violations": [
+   "redis_cache_claim_refused",
+   "rpo_claim_unachievable"
+  ],
+  "warnings": [
+   "undeclared_database_containers",
+   "writable_binds_outside_scope",
+   "no_wal_archive",
+   "rto_scope_data_layer"
+  ],
+  "redis_effective_disposition": "authoritative",
+  "positive_control": {
+   "command": "same probe, inventory amended to match the facts",
+   "violations": [],
+   "blockers": [],
+   "approved": true,
+   "achievable_rpo_seconds": 3600
+  }
+ },
+ "assertions": {
+  "declared_key_tables_all_exist": true,
+  "dedup_unique_index_matches_request_and_api_key": true,
+  "postgres_archive_mode_is_not_on": true,
+  "redis_holds_keys_without_ttl": true,
+  "three_data_directories_share_one_device": true,
+  "cache_claim_is_refused": true,
+  "declared_rpo_is_refuted": true,
+  "achievable_rpo_has_no_upper_bound": true,
+  "refused_cache_claim_is_counted_as_authoritative": true,
+  "a_matched_contract_is_approved": true,
+  "binary_exits_two_for_a_refused_contract": true,
+  "no_containers_or_volumes_were_created": true
+ },
+ "assertions_total": 12,
+ "failed_assertions": [],
+ "boundaries": [
+  "只读审核，不执行迁移、不做备份、不切换入口，也不验证应用侧连接串",
+  "RPO 上界按配置推算（AOF everysec → 1 秒、备份间隔 → 间隔、WAL 归档 → 段切换），不是压测出的丢失量，也不证明 fsync 真的落盘",
+  "主机上另有 3 个未声明的数据库容器（minio、mysql、pg252r）与 63 处范围外可写挂载，本次不纳入结论",
+  "「被拒」是正确结果：清单宣称 RPO 3600 秒，但没有任何定时备份、没有 WAL 归档、没有副本"
+ ]
+}

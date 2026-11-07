@@ -1,0 +1,72 @@
+{
+  "schema": 1,
+  "application": "sub2api",
+  "version": "zjarlin/sub2api:8c06464b44505fb386975624933a6b4e36fd03da",
+  "images": [
+    "zjarlin/sub2api@sha256:4915bd250efa7c7c78b4a733c828330234a84438d937d0e098ce41747a8474f4"
+  ],
+  "rpo_seconds": 3600,
+  "rto_seconds": 1800,
+  "rto_rehearsal": "data-layer",
+  "postgres": [
+    {
+      "container": "postgres",
+      "database": "sub2api",
+      "user": "sub2api",
+      "backup": {
+        "kind": "manual"
+      },
+      "groups": {
+        "sessions": [
+          "pending_auth_sessions",
+          "auth_cache_invalidation_outbox"
+        ],
+        "billing": [
+          "usage_billing_dedup",
+          "billing_usage_entries"
+        ],
+        "background": [
+          "scheduler_outbox",
+          "batch_image_jobs"
+        ]
+      },
+      "dedup": [
+        {
+          "purpose": "客户端重试不得重复计费",
+          "table": "usage_billing_dedup",
+          "columns": [
+            "request_id",
+            "api_key_id"
+          ]
+        }
+      ]
+    }
+  ],
+  "redis": [
+    {
+      "container": "redis",
+      "disposition": "derived",
+      "backup": {
+        "kind": "manual"
+      },
+      "required_prefixes": [
+        "sched:",
+        "reasoning_content:"
+      ],
+      "cache_persistent_allowance": 0
+    }
+  ],
+  "volumes": [
+    {
+      "container": "sub2api",
+      "destination": "/app/data",
+      "disposition": "authoritative",
+      "backup": {
+        "kind": "manual"
+      }
+    }
+  ],
+  "failure_domains": {
+    "claim_independent": false
+  }
+}

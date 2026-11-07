@@ -54,6 +54,26 @@ enum Action {
         #[command(subcommand)]
         command: DrAction,
     },
+    /// 只读核对应用的状态面与持久化约定；不改数据库、不改容器配置。
+    ///
+    /// 结论是「能不能按这份清单制定迁移方案」：声明与事实冲突、探针不完整、
+    /// 键表不存在、去重唯一索引不存在，都会以退出码 2 拒绝。
+    StateAudit {
+        /// 状态清单（协议 1 的 JSON）；见 docs/state-audit.md。
+        #[arg(long)]
+        inventory: PathBuf,
+        /// 现场探测的 SSH 目标；与 `--probe` 二选一。
+        #[arg(long)]
+        ssh: Option<String>,
+        #[arg(long)]
+        ssh_config: Option<PathBuf>,
+        /// 离线复核一份已经采集好的探针结果；与 `--ssh` 二选一。
+        #[arg(long)]
+        probe: Option<PathBuf>,
+        /// 报告写入文件；省略则打印到标准输出。
+        #[arg(long)]
+        output: Option<PathBuf>,
+    },
     /// 只读检查新存储设备；不格式化、不挂载，也不创建 RAID/LVM/OSD。
     StorageAdmission {
         #[arg(long)]
@@ -384,6 +404,36 @@ async fn dispatch(cli: Cli) -> Result<i32> {
             );
         }
         Action::Dr { command } => return dr_command(command),
+        Action::StateAudit {
+            inventory,
+            ssh,
+            ssh_config,
+            probe,
+            output,
+        } => {
+            ensure!(
+                ssh.is_some() != probe.is_some(),
+                "state-audit takes exactly one of --ssh or --probe"
+            );
+            let declared = sshpool::state_audit::read_inventory(inventory)?;
+            let facts = match (ssh, probe) {
+                (Some(ssh), _) => {
+                    sshpool::state_audit::probe(&declared, ssh, ssh_config.as_deref()).await?
+                }
+                (_, Some(probe)) => sshpool::state_audit::read_probe(probe)?,
+                _ => unreachable!("validated above"),
+            };
+            let report = sshpool::state_audit::assess(&declared, &facts);
+            let json = serde_json::to_vec_pretty(&report)?;
+            match output {
+                Some(path) => {
+                    ensure!(!path.exists(), "output already exists: {}", path.display());
+                    config::atomic_write(path, &json)?;
+                }
+                None => println!("{}", String::from_utf8(json)?),
+            }
+            return Ok(if report.migration_plan_approved { 0 } else { 2 });
+        }
         Action::Doctor => {
             println!(
                 "{}",
