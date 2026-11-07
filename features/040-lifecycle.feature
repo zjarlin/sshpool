@@ -1,8 +1,11 @@
 Feature: 可解释且谨慎的任务生命周期
   断线不等于远程进程已经停止。
 
-  # evidence: docs/validation.md#jobs
-  @verified @manual @p0
+  # evidence: tests/delivery_live.rs::unified_entry_delivers_logs_exit_code_and_artifacts
+  # evidence: tests/delivery_live.rs::nonzero_exit_is_reported_without_publishing_artifacts
+  # evidence: tests/delivery_live.rs::missing_declared_output_fails_closed
+  # evidence: docs/evidence/delivery-20261107.json
+  @verified @automated @p0
   Scenario: 从提交到产物交付
     Given 任务输入已验证
     When 容器执行完毕

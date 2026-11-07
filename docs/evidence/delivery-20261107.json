@@ -1,0 +1,100 @@
+{
+  "checked_at": "2026-11-07T19:20:00+08:00",
+  "scope": "提交→执行→日志/退出码→产物回传→清理的端到端交付闭环，经真实 HTTP 入口而非内部函数",
+  "entry": {
+    "test": "tests/delivery_live.rs",
+    "command": "SSHPOOL_LIVE_NODE=<alias> cargo test --test delivery_live -- --ignored --test-threads=1",
+    "transport": "进程内 axum::serve 绑定 127.0.0.1:0；客户端用 sshpool::client::Client（reqwest, no_proxy）",
+    "why": "直接调用 runner 只能证明内部函数可跑；这里证明工作台通过 API 真的拿得到日志、退出码与产物"
+  },
+  "worker": {
+    "aliases": [
+      "okm182-lan",
+      "sshpool-anchor"
+    ],
+    "arch": {
+      "okm182-lan": "x86_64",
+      "sshpool-anchor": "aarch64"
+    },
+    "docker": "29.1.3",
+    "image": "alpine:3.22"
+  },
+  "scenarios": {
+    "unified_entry_delivers_logs_exit_code_and_artifacts": {
+      "job": {
+        "okm182-lan": "ac9e5f3b-ff0d-4989-969a-09567b862d67",
+        "sshpool-anchor": "e39c47fb-a9e7-4109-ad2a-598037abec4a"
+      },
+      "asserted": [
+        "client.run 返回 0",
+        "phase=succeeded, exit_code=0, artifacts=true, cleanup_confirmed=true",
+        "message 保留 `exit 0`",
+        "source_sha256 为 64 位十六进制",
+        "日志含远端 stdout (`line-one`) 与 stderr (`line-two`)",
+        "事件链 submitted/assigned/image_check/container_create/source_import/execution/artifact_export/cleanup(confirmed)/finished",
+        "产物 out/arch.txt 与请求平台一致（x86_64→amd64，aarch64→arm64）",
+        "产物 out/sum.txt 与工作台独立算式 (200000*200001/2) mod 1000003 = 40000 一致",
+        "二次 fetch 到同一目录被拒绝",
+        "按 label=io.sshpool.job=<id> 查询 Worker：容器数为 0"
+      ],
+      "observed_output": {
+        "okm182-lan": [
+          "line-one",
+          "x86_64",
+          "40000",
+          "line-two"
+        ],
+        "sshpool-anchor": [
+          "line-two",
+          "line-one",
+          "aarch64",
+          "40000"
+        ]
+      }
+    },
+    "nonzero_exit_is_reported_without_publishing_artifacts": {
+      "job": {
+        "okm182-lan": "4e741f80-0ae8-4a52-b6f6-f6f16c8bffc8",
+        "sshpool-anchor": "245861a6-8ef8-40aa-81e9-598acea1db7c"
+      },
+      "asserted": [
+        "client.run 返回 7（不是被吞成 1 或 0）",
+        "phase=failed, exit_code=7, artifacts=false",
+        "cleanup_confirmed=true",
+        "/v1/jobs/{id}/artifacts 明确报错",
+        "容器数为 0"
+      ]
+    },
+    "missing_declared_output_fails_closed": {
+      "job": {
+        "okm182-lan": "a499e89a-b083-4e61-a4f3-7e0cec1e49cd",
+        "sshpool-anchor": "eda4f588-1044-4b0f-bfc4-85516b507a05"
+      },
+      "asserted": [
+        "命令自身 exit 0 但声明产物 out 不存在 → client.run 返回非 0",
+        "phase=failed，message 含 `artifact export failed`",
+        "artifacts=false",
+        "容器数为 0"
+      ],
+      "observed_message": "artifact export failed: tar: out: No such file or directory"
+    }
+  },
+  "source_change": {
+    "file": "src/client.rs",
+    "change": "新增 pub async fn log(&self, id, offset) -> Vec<u8>；follow() 改为复用它",
+    "reason": "原来只有 follow 内联一份取日志代码，外部无法验证日志交付；现在只有一个实现，测试与 CLI 走同一条路径",
+    "api_note": "/v1/jobs/{id}/log 返回原始字节，一次最多 256 KiB，调用方按返回长度推进 offset 直到空响应"
+  },
+  "residual_containers": {
+    "okm182-lan": 0,
+    "sshpool-anchor": 0,
+    "query": "docker ps -aq --filter label=io.sshpool.job | wc -l"
+  },
+  "boundaries": [
+    "不证明跨平台二进制兼容：产物只在本轮对应架构的 Worker 上生成并核对 arch 字段",
+    "不覆盖大归档（>16 MiB 配额）与慢速上传的边界；这些由 tests/boundaries.rs 的配额断言覆盖",
+    "不覆盖产物导出超时（60s）与下载中途断线重试；当前实现没有断点续传，重试需要重新 fetch 到新目录",
+    "sshpool-anchor 的 sshd 会在 stderr 打印 `bash: warning: setlocale: LC_ALL` 噪声，被原样写进 log.txt；这属于远端宿主环境，不影响退出码与产物断言",
+    "不替代真实生产入口的验收：这里用的是临时控制面目录与一次性容器标签"
+  ]
+}

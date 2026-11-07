@@ -44,6 +44,28 @@ ARM64 的 shell 任务已完成日志、退出码、产物导出与清理闭环�
 
 恢复、取消、配额与故障切换的进一步验收结果会在本文件追加。单元和 API 测试不替代真实故障注入。
 
+### 从提交到产物交付（统一入口）
+
+2026-11-07 新增 `tests/delivery_live.rs`：进程内启动真实 `axum::serve`（端口 `0` 由内核分配），用 `sshpool::client::Client` 走完整的 HTTP 入口——提交项目归档、跟随 `/v1/jobs/{id}/log`、按任务 ID 回取产物。测试不直接调用 `runner`，也不读写控制面目录绕过 API；断言目标是「工作台真的拿得到东西」，不是「接口返回 200」。
+
+```sh
+SSHPOOL_LIVE_NODE=okm182-lan \
+  cargo test --test delivery_live -- --ignored --test-threads=1
+```
+
+| 场景 | 断言 |
+| --- | --- |
+| 正向交付 | `phase=succeeded`、`exit_code=0`、`artifacts=true`、`cleanup_confirmed=true`；日志同时含远端 stdout 与 stderr；事件链 `submitted → assigned → image_check → container_create → source_import → execution → artifact_export → cleanup(confirmed) → finished`；产物解包后架构与请求平台一致、计算值由工作台用等差数列公式独立复核 |
+| 非零退出 | `client.run` 返回 7，任务 `failed` 且 `exit_code=7`，`artifacts=false`，产物接口明确报错而不是回空归档，容器仍然被清理 |
+| 产物缺失 | 命令 `exit 0` 但声明的 `out` 不存在 → 任务 `failed`，消息含 `artifact export failed`，不发布任何产物 |
+| 不覆盖 | 对同一目录二次 `fetch` 必须失败（复用 030 的 `fetching_never_overwrites_existing_directory`） |
+
+实测：`okm182-lan`（linux/amd64）与 `sshpool-anchor`（linux/arm64）各一轮，三个场景全部通过；每轮结束后两台 Worker 上 `docker ps -aq --filter label=io.sshpool.job | wc -l` 均为 0。证据在 [evidence/delivery-20261107.json](evidence/delivery-20261107.json)。
+
+虚构一条「交付成功」比失败危险：这里刻意把三类失败也写成自动化断言（非零退出、缺产物、重复回取），因为它们的共同失效模式都是「报告成功但工作台没有可用产物」。
+
+顺带修掉一处重复：`Client::follow` 原先内联了一份取日志的代码，且 `Client` 没有对外暴露读取日志的方法。现在统一为 `Client::log(id, offset)`（返回原始字节，一次最多 256 KiB），`follow` 与新测试共用同一实现。
+
 ### 取消与执行期限
 
 `POST /v1/jobs/{id}/cancel` 与期限到期走同一条停止路径：控制面先按任务标签确认容器身份，再发送 `docker stop --time 20`，然后重新读取状态。只有 `Absent` 与 `Stopped` 算「已停止」；`Running` 和任何 SSH 错误都不算，此时任务进入 `interrupted` 并隔离该 Worker，绝不报成 `cancelled`。

@@ -82,6 +82,20 @@ impl Client {
                 .await?,
         )
     }
+    /// 读取任务日志的原始字节；`offset` 是已消费的字节数，接口不返回 JSON。
+    ///
+    /// 一次最多返回 256 KiB，调用方需要按返回长度推进 `offset` 直到空响应。
+    pub async fn log(&self, id: Uuid, offset: u64) -> Result<Vec<u8>> {
+        let response = self
+            .request(
+                reqwest::Method::GET,
+                &format!("/v1/jobs/{id}/log?offset={offset}"),
+            )
+            .send()
+            .await?;
+        Ok(Self::response(response).await?.bytes().await?.to_vec())
+    }
+
     pub async fn cancel(&self, id: Uuid) -> Result<()> {
         Self::response(
             self.request(reqwest::Method::POST, &format!("/v1/jobs/{id}/cancel"))
@@ -136,18 +150,11 @@ impl Client {
             }
             seen_attempts = job.attempts.len();
             loop {
-                let response = self
-                    .request(
-                        reqwest::Method::GET,
-                        &format!("/v1/jobs/{id}/log?offset={offset}"),
-                    )
-                    .send()
-                    .await?;
-                let bytes = Self::response(response).await?.bytes().await?;
+                let bytes = self.log(id, offset).await?;
                 if bytes.is_empty() {
                     break;
                 }
-                offset += bytes.len();
+                offset += bytes.len() as u64;
                 tokio::io::stdout().write_all(&bytes).await?;
             }
             if job.phase.terminal() {
