@@ -429,6 +429,22 @@ fn enabled_replicas_require_distinct_failure_domains_and_positive_quorum() {
     assert!(sshpool::config::validate(&config).is_ok());
 }
 
+/// 指标端点必须独立：与控制面同端口会让抓取走进鉴权与审计中间件。
+#[test]
+fn metrics_endpoint_cannot_reuse_a_control_plane_port() {
+    let mut config = Config {
+        metrics_listen: Some(Config::default().api_listen),
+        ..Config::default()
+    };
+    assert!(sshpool::config::validate(&config).is_err());
+    config.metrics_listen = Some(Config::default().ssh_listen);
+    assert!(sshpool::config::validate(&config).is_err());
+    config.metrics_listen = Some("127.0.0.1:9100".parse().unwrap());
+    assert!(sshpool::config::validate(&config).is_ok());
+    config.metrics_listen = None;
+    assert!(sshpool::config::validate(&config).is_ok());
+}
+
 #[test]
 fn replica_namespace_cannot_escape_the_dedicated_remote_root() {
     let mut replica = Replica {

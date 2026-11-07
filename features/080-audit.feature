@@ -17,7 +17,10 @@ Feature: 持久任务审计
     Then 记录主体权限决定与请求标识
     And token 私钥和敏感环境值不进入日志
 
-  @planned @p2
+  # evidence: tests/metrics_live.rs::scraping_is_parseable_and_never_writes_the_access_audit
+  # evidence: tests/boundaries.rs::metrics_endpoint_cannot_reuse_a_control_plane_port
+  # evidence: docs/validation.md#external-observation
+  @verified @automated @p2
   Scenario: 外部观测系统
     Given 部署者配置指标和日志后端
     When 任务执行或节点故障

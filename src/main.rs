@@ -3,7 +3,7 @@ use clap::{Parser, Subcommand};
 use sshpool::{
     client::Client,
     config::{self, Build, Node, Replica},
-    gateway, probe, runner,
+    gateway, metrics, probe, runner,
     state::State,
 };
 use std::{fs, path::PathBuf, sync::Arc};
@@ -793,14 +793,24 @@ async fn serve(home: PathBuf) -> Result<()> {
     };
     let api = tokio::net::TcpListener::bind(config.api_listen).await?;
     let ssh = tokio::net::TcpListener::bind(config.ssh_listen).await?;
+    // 指标端口单独绑定：端口被占用时应该在服务开始前失败，而不是运行到第一次抓取。
+    let metrics = match config.metrics_listen {
+        Some(address) => Some(tokio::net::TcpListener::bind(address).await?),
+        None => None,
+    };
     let backend = config.ssh_backend;
     let state = State::load(home, config)?;
     runner::recover(&state).await?;
     eprintln!(
-        "SSHPool API={} ({}) SSH={} backend={backend}",
+        "SSHPool API={} ({}) SSH={} backend={backend} metrics={}",
         state.config.api_listen,
         if tls.is_some() { "https" } else { "http" },
-        state.config.ssh_listen
+        state.config.ssh_listen,
+        state
+            .config
+            .metrics_listen
+            .map(|address| address.to_string())
+            .unwrap_or_else(|| "off".into())
     );
     let routes = sshpool::api::routes(state.clone());
     // 两种监听器类型不同，各自走一遍 `axum::serve`；分支在外面写清楚，
@@ -811,9 +821,16 @@ async fn serve(home: PathBuf) -> Result<()> {
             None => axum::serve(api, routes).await,
         }
     };
+    let scrape = async {
+        match metrics {
+            Some(listener) => metrics::serve(listener, state.clone()).await,
+            None => std::future::pending().await,
+        }
+    };
     tokio::select! {
         result = serve_api => result?,
         result = gateway::serve(ssh, backend) => result?,
+        result = scrape => result?,
         result = shutdown_signal() => { result?; shutdown_jobs(&state).await?; }
     }
     Ok(())

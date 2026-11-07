@@ -1,0 +1,136 @@
+{
+  "checked_at": "2026-11-07T21:18:58+0800",
+  "scope": "080 外部观测系统：真实二进制 serve + 独立指标端口抓取，临时 home，不涉及生产状态目录",
+  "environment": {
+    "os": "Darwin arm64",
+    "binary": "target/release/sshpool（release 构建）",
+    "controller": "127.0.0.1:<随机端口>（明文回环 HTTP）",
+    "metrics": "127.0.0.1:<另一个随机端口>（独立监听器，无鉴权、不写访问审计）"
+  },
+  "scrape": {
+    "status": 200,
+    "content_type": "text/plain; version=0.0.4; charset=utf-8",
+    "elapsed_seconds": 0.001,
+    "bytes": 9916,
+    "sample_lines": 160
+  },
+  "job_classification": {
+    "succeeded": true,
+    "failed-exit-nonzero": true,
+    "failed-after-exit": true,
+    "failed-before-exit": true,
+    "interrupted": true,
+    "cancelled": true,
+    "attempts_total_4": true,
+    "retries_total_0": true,
+    "cleanup_unconfirmed_1": true,
+    "active_0": true,
+    "queued_0": true
+  },
+  "histograms": {
+    "queue_le_5": true,
+    "queue_4s_is_cumulative_from_le_5": true,
+    "queue_sum_failed_4": true,
+    "queue_sum_succeeded_3": true,
+    "duration_sum_succeeded_207": true,
+    "duration_sum_failed_296": true,
+    "inf_equals_count": true,
+    "empty_class_has_zero_buckets": true
+  },
+  "node_levels": {
+    "ready_0": true,
+    "cpus_0": true,
+    "memory_0": true,
+    "disk_0": true,
+    "reserve_is_config_fact": true,
+    "numeric_never_boolean": true
+  },
+  "access_log_bytes": {
+    "generation_0": true,
+    "generation_1": true,
+    "reported_sizes": {
+      "generation_0": 752,
+      "generation_1": 130
+    },
+    "rotated_generations_absent": true
+  },
+  "no_secrets": {
+    "root_token_absent": true,
+    "authorization_absent": true
+  },
+  "scrape_does_not_audit": {
+    "bytes_before": 752,
+    "bytes_after": 752,
+    "unchanged": true
+  },
+  "paths": {
+    "metrics_404_path": "/v1/jobs",
+    "metrics_404_status": 404,
+    "root_status": 200,
+    "root_is_exposition": true
+  },
+  "deterministic": {
+    "identical_second_scrape": true
+  },
+  "silent_connections": {
+    "opened": 8,
+    "next_scrape_status": 200,
+    "next_scrape_seconds": 0.0,
+    "under_3s": true
+  },
+  "control_plane_still_serves": true,
+  "startup_line": [
+    "SSHPool API=127.0.0.1:58400 (http) SSH=127.0.0.1:58401 backend=127.0.0.1:58402 metrics=127.0.0.1:58403"
+  ],
+  "default_off": {
+    "startup_line": [
+      "SSHPool API=127.0.0.1:58425 (http) SSH=127.0.0.1:58426 backend=127.0.0.1:58427 metrics=off"
+    ],
+    "contains_metrics_off": true
+  },
+  "empty_control_plane": {
+    "status": 200,
+    "skeleton": {
+      "sshpool_jobs{result=\"succeeded\"} 0": true,
+      "sshpool_active_jobs 0": true,
+      "sshpool_queued_jobs 0": true,
+      "sshpool_job_attempts_total 0": true,
+      "sshpool_job_queue_seconds_count{result=\"succeeded\"} 0": true
+    },
+    "no_node_samples": true,
+    "access_only_current_generation": true
+  },
+  "port_conflict_rejected": {
+    "exit": 1,
+    "rejected_before_serving": true,
+    "stderr": [
+      "sshpool: metrics_listen must not reuse api_listen or ssh_listen"
+    ]
+  },
+  "exposition_excerpt": [
+    "sshpool_jobs{result=\"succeeded\"} 1",
+    "sshpool_jobs{result=\"failed-before-exit\"} 0",
+    "sshpool_jobs{result=\"failed-exit-nonzero\"} 1",
+    "sshpool_jobs{result=\"failed-after-exit\"} 1",
+    "sshpool_jobs{result=\"cancelled\"} 0",
+    "sshpool_jobs{result=\"interrupted\"} 1",
+    "sshpool_job_attempts_total 4",
+    "sshpool_job_retries_total 0",
+    "sshpool_active_jobs 0",
+    "sshpool_queued_jobs 0",
+    "sshpool_jobs_cleanup_unconfirmed 1",
+    "sshpool_node_ready{node=\"lab-unreachable\"} 0",
+    "sshpool_node_cpus{node=\"lab-unreachable\"} 0",
+    "sshpool_node_memory_available_mib{node=\"lab-unreachable\"} 0",
+    "sshpool_node_disk_available_mib{node=\"lab-unreachable\"} 0",
+    "sshpool_node_load{node=\"lab-unreachable\"} 0",
+    "sshpool_node_reserve_memory_mib{node=\"lab-unreachable\"} 4096",
+    "sshpool_access_log_bytes{generation=\"0\"} 752",
+    "sshpool_access_log_bytes{generation=\"1\"} 130"
+  ],
+  "exposition_head": [
+    "# HELP sshpool_jobs 终态任务数，按结构化失败分类；进行中的任务不计入",
+    "# TYPE sshpool_jobs gauge",
+    "sshpool_jobs{result=\"succeeded\"} 1"
+  ]
+}

@@ -25,6 +25,9 @@ pub struct Config {
     pub nodes: Vec<Node>,
     #[serde(default)]
     pub replicas: Vec<Replica>,
+    /// Prometheus 抓取端点；不设置时不监听。它是独立端口，不参与访问鉴权与审计。
+    #[serde(default)]
+    pub metrics_listen: Option<SocketAddr>,
     /// PEM 证书链；与 `tls_key` 必须同时设置，否则 API 只监听明文 HTTP。
     #[serde(default)]
     pub tls_cert: Option<PathBuf>,
@@ -46,6 +49,7 @@ impl Default for Config {
             replica_min_ack: 0,
             nodes: Vec::new(),
             replicas: Vec::new(),
+            metrics_listen: None,
             tls_cert: None,
             tls_key: None,
         }
@@ -249,6 +253,14 @@ pub fn validate(config: &Config) -> Result<()> {
         config.ssh_listen != config.ssh_backend,
         "SSH proxy cannot forward to itself"
     );
+    // 指标端点与控制面共端口会让指标请求落进带鉴权与审计的路由，
+    // 而且抓取会冲掉有界审计；这里显式拒绝，而不是等 bind 报 address in use。
+    if let Some(metrics) = config.metrics_listen {
+        ensure!(
+            metrics != config.api_listen && metrics != config.ssh_listen,
+            "metrics_listen must not reuse api_listen or ssh_listen"
+        );
+    }
     // TLS 只能「全有或全无」：只配一半会让启动悄悄退回明文，是最危险的失败模式。
     ensure!(
         config.tls_cert.is_some() == config.tls_key.is_some(),

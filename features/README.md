@@ -20,7 +20,7 @@
 | [050-build-adapters.feature](050-build-adapters.feature) | 1 | 1 | 2 | 0 |
 | [060-isolation.feature](060-isolation.feature) | 2 | 0 | 1 | 1 |
 | [070-access-network.feature](070-access-network.feature) | 3 | 0 | 2 | 0 |
-| [080-audit.feature](080-audit.feature) | 2 | 0 | 1 | 0 |
+| [080-audit.feature](080-audit.feature) | 3 | 0 | 0 | 0 |
 | [090-delivery.feature](090-delivery.feature) | 3 | 0 | 1 | 0 |
 | [100-ssi-research.feature](100-ssi-research.feature) | 0 | 0 | 0 | 3 |
 | [110-pooled-linux.feature](110-pooled-linux.feature) | 0 | 0 | 0 | 7 |
@@ -33,4 +33,4 @@
 | [180-ssi-device-order.feature](180-ssi-device-order.feature) | 1 | 1 | 0 | 4 |
 | [190-ssi-physical-storage.feature](190-ssi-physical-storage.feature) | 4 | 2 | 1 | 1 |
 | [200-control-state-recovery.feature](200-control-state-recovery.feature) | 14 | 0 | 0 | 1 |
-| 合计 | 106 | 20 | 14 | 30 |
+| 合计 | 107 | 20 | 13 | 30 |

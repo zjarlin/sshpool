@@ -210,6 +210,20 @@ sshpool access --decision denied --since 1767225600
 
 单文件 4 MiB、保留 3 代，磁盘上限 12 MiB，写满滚动而不清空。审计写不进去时副作用请求直接 503（动作不发生），只读请求照常；中间行损坏会报错而不是被跳过，只有当前文件末尾的崩溃半行会被容忍并在下一次写入前切掉。`/v1/access` 自身也走同一套审计。`decision` 只区分 401 与非 401，所以 400 会记成 `allowed`，看结论请结合 `status`。细节与验收证据见 [验证文档](docs/validation.md#access-audit)。
 
+### 外部观测
+
+指标走独立的 `metrics_listen`，默认关闭；打开后与控制面同进程但不共端口，也不参与鉴权和访问审计（抓取是高频操作，不能把有界审计冲掉）。
+
+```toml
+metrics_listen = "127.0.0.1:9100"
+```
+
+```sh
+curl -s http://127.0.0.1:9100/metrics    # Prometheus 文本格式；/ 等价
+```
+
+暴露的是控制面已有的事实：终态任务按失败结构分类（`failed-before-exit` / `failed-exit-nonzero` / `failed-after-exit`，只看 `phase` 与 `exit_code`，不解析文案）、排队与执行时长直方图、尝试与重试次数、清理未确认数、节点资源水位与是否接单、访问审计各代字节数。节点探测失败时资源报 0 而不是沿用旧快照。抓取不触发远端探测。细节与实测见 [验证文档](docs/validation.md#external-observation)。
+
 ## 已知限制
 
 - 使用整个任务分派；尚未集成 sccache/Icecream 的编译单元拆分或远程缓存。原型借鉴 Slurm 的资源预约、OpenSSH 的连接面和容器运行时的隔离机制，不依赖这些项目的源码。
@@ -222,6 +236,7 @@ sshpool access --decision denied --since 1767225600
 - HTTPS 只做服务端证书校验，没有客户端证书（mTLS）。改证书必须重启控制面，没有热重载或轮换；信任的 CA 需要用 `--ca-file` 指定，没有吊销列表。
 - 短期凭据只解决"能撤销"，尚未按主体限制权限：拿到任一条有效凭据就能提交、取消任务和查询全部记录。逐主体的授权见 [验证文档](docs/validation.md#access-network)。
 - 访问审计是本机 `home/access.jsonl` 上的普通追加文件，没有签名链或只追加存储：能写这个目录的人可以改写、删除或伪造记录。超过 12 MiB 的历史会被滚动丢弃，没有远程日志后端或归档；也没有按 IP/地理归因。
+- 指标端点没有鉴权：能连上 `metrics_listen` 就能读到节点名与资源水位，因此默认关闭、默认只绑回环；它只输出数值与节点名，不含 SSH 目标、token、任务消息或自由文本。指标不落盘、不带历史，重启后计数从现有任务记录重新渲染；Prometheus 配置与日志后端（Loki/ELK）由部署者自行提供。
 
 ## 开发与验证
 

@@ -283,6 +283,48 @@ fail-closed 的两处边界：
 
 尚未覆盖：跨主机汇集与远程日志后端（只写本机 `home/`）、防篡改（能写 home 的人可以改写或删除记录，没有签名链或只追加存储）、按主体分权（所有凭据权限相同，审计只记录不约束）、超过 12 MiB 的历史归档、按 IP/地理位置归因。
 
+### 外部观测系统 {#external-observation}
+
+_（本节标题锚点为 `external-observation`。）_
+
+Prometheus 抓取走**独立的** `metrics_listen`（`config.toml`），默认不监听 —— 启动行写 `metrics=off`。它不挂在 `/v1/...` 上，因为 Prometheus 默认 15 秒抓一次，走控制面路由的话光是抓取就会在几分钟内把 12 MiB 的有界访问审计冲掉。抓取不经过 `audit_access` 中间件，也不触发远端探测：指标是控制面**已有事实**的渲染，不是新的探活通道。
+
+| 指标 | 类型 | 口径 |
+| --- | --- | --- |
+| `sshpool_jobs{result}` | gauge | 终态任务数，6 类：`succeeded` / `failed-before-exit` / `failed-exit-nonzero` / `failed-after-exit` / `cancelled` / `interrupted`；进行中的任务不计入 |
+| `sshpool_job_attempts_total`、`sshpool_job_retries_total` | counter | 已记录任务的尝试次数之和、除首次外的重试次数 |
+| `sshpool_active_jobs`、`sshpool_queued_jobs`、`sshpool_queued_oldest_seconds` | gauge | 已领取未结束、等待领取、最老排队任务已等待秒数 |
+| `sshpool_jobs_cleanup_unconfirmed` | gauge | 尚未确认远端清理的任务数 |
+| `sshpool_job_queue_seconds{result}` | histogram | 提交到**第一次**被领取；从未领取不出样本 |
+| `sshpool_job_duration_seconds{result}` | histogram | 最后一次领取到终态（含远端清理） |
+| `sshpool_node_ready{node}` / `node_cpus` / `node_memory_available_mib` / `node_disk_available_mib` / `node_load` / `node_reserve_memory_mib` | gauge | 当前健康快照 |
+| `sshpool_access_log_bytes{generation}` | gauge | 访问审计各代字节数；不存在的代次不出现 |
+
+失败分类**只看结构化字段**（`phase` + `exit_code`），不解析 `job.message` 的文案：`failed-before-exit` 是容器没给出退出码（调度、SSH、启动或超时未确认），`failed-exit-nonzero` 是跑完但退出码非零，`failed-after-exit` 是以 0 退出后失败（产物、清理、复制）。改提示文案不会改变任何分类。
+
+直方图是**累计桶** `5/30/120/600/1800/7200` 秒再加 `+Inf`，每个 `result` 分类都有完整的 `_bucket`/`_sum`/`_count` 三条，`+Inf` 恒等于 `_count`。没有样本的分类照报 0 桶，抓取端不用判断"这个分类存不存在"。
+
+节点探测失败（SSH 不可达、未探测过）时 `node_ready=0`，且 `node_cpus` / `memory_available_mib` / `disk_available_mib` / `node_load` 一律报 **0**，不沿用上一次快照 —— 旧数字会被误读成当前水位。`node_reserve_memory_mib` 是配置事实，探测失败照报。节点名按 Prometheus 规则转义 `\`、`"` 与换行：一个带引号的节点名不该能让整份 exposition 解析失败。
+
+端点行为：
+
+| 情形 | 行为 | 自动化 |
+| --- | --- | --- |
+| `GET /metrics` 与 `GET /` | 200，`text/plain; version=0.0.4; charset=utf-8` | `scraping_is_parseable_and_never_writes_the_access_audit` |
+| 未知路径 | 404，不把任何请求都当成指标 | 同上 |
+| 沉默/半开连接 | 只丢那一条（每条连接独立任务、5 秒读超时、32 连接上限） | `a_silent_scraper_does_not_block_the_next_scrape` |
+| 不配 `metrics_listen` | 启动行写 `metrics=off`，没有第二个监听端口 | `metrics_are_off_by_default_and_opt_in_on_a_separate_port` |
+| 节点不可达 | `node_ready=0`、资源报 0、控制面仍服务 | `an_unprobeable_node_reports_zero_resources_not_a_stale_number` |
+| 空控制面 | 仍输出稳定骨架（各项 0），抓取端不用判空 | 同上（`nodes = []`） |
+| 端口被占用 | 服务启动前直接失败，而不是运行到第一次抓取才发现 | —（`serve` 里先 bind） |
+| `metrics_listen` 与 `api_listen` / `ssh_listen` 同端口 | 配置校验直接拒绝，不等到 bind | `metrics_endpoint_cannot_reuse_a_control_plane_port` |
+
+值的类型是硬约束：样本值只能是数字，`sshpool_node_ready` 曾输出过 `true`，那会让整份 exposition 被解析器拒绝；测试里的严格解析器就是这条的守卫（`the_parser_rejects_a_boolean_sample_and_counts_inf`）。
+
+真实二进制（macOS ARM64 release，临时 home、回环端口）实测：4 个终态任务夹具（成功、退出码 3、0 退出后失败、清理未确认的 interrupted）加 1 个不可达节点，抓取 200、`content-type` 正确、9916 字节 / 160 行；`succeeded=1`、`failed-exit-nonzero=1`、`failed-after-exit=1`、`failed-before-exit=0`、`interrupted=1`、`cancelled=0`，`attempts_total=4`、`retries_total=0`、`cleanup_unconfirmed=1`；排队 4 秒在 `le="5"` 起每个边界都为 1、`sum=4`，执行 207 秒与 296 秒分别落在对应分类的 `sum` 里，`+Inf == count`。节点全部报 0 而预留仍是 4096（配置事实）。同一份状态下连续两次抓取字节完全一致。8 条只连不说的连接没有拖住下一次抓取（0.0s 返回 200）。抓取 3 次前后 `access.jsonl` 都是 752 字节，证明它不写审计。不配 `metrics_listen` 的实例启动行是 `metrics=off`。空控制面（无任务、无节点）照常 200 并输出全 0 骨架。把 `metrics_listen` 配成与 `api_listen` 同一个端口时，`serve` 在绑定前就以退出码 1 报 `metrics_listen must not reuse api_listen or ssh_listen`，没有先占端口。证据见 [evidence/metrics-20261107.json](evidence/metrics-20261107.json)。
+
+尚未覆盖：日志后端本身（本仓库只产出 `events.jsonl` 与 `access.jsonl`，由部署者用 Loki/ELK 消费）、指标持久化与 Prometheus 抓取配置（本仓库只提供 exposition 端点）、**端点鉴权**（该端口无鉴权，因此只暴露节点名与数值，不含 SSH 目标、token、任务消息或任何自由文本，也不含按 IP 的归因）、多控制面实例的聚合。
+
 ## hardware-proof
 
 2026-11-07 起，这条链路有可复跑的 `#[ignore]` 测试：`tests/hardware_live.rs`。它在测试进程内启动临时控制面（临时 home + 回环随机端口），由 **ARM64 工作台执行真实 CLI** 通过 `host.lima.internal` 访问该控制面，再派发到独立 x86_64 Worker。
