@@ -163,7 +163,18 @@ macOS ARM64 Worker 本次只完成资源探测：可用内存约 2.7 GiB，小�
 
 2026-11-07 在两个独立物理故障域完成非业务演示任务的 quorum-2 双向恢复：先隔离一个远端并从另一个恢复完整任务归档，再交换隔离方向重复验证。恢复结果保留任务 ID、源码 SHA-256、队列状态、revision、事件和提交回执。脱敏记录见 [control-state-recovery-20261107.json](evidence/control-state-recovery-20261107.json)。
 
-自动化还覆盖同一 revision 的不同内容或回执冲突、达不到 quorum、较新发布版本损坏、重复主机/故障域、namespace 路径逃逸和未确认远端清理。真实测试没有证明运行进程迁移、自动控制面漂移、PostgreSQL 事务容灾或跨主机存储；这些仍按失败关闭处理。
+同日补上「控制面主机整体丢失」的故障注入（`tests/control_state_live.rs`，一次性 namespace，`okm182-lan` + `macmini-lan` 两个独立物理故障域，连续 3 轮通过）：
+
+| 注入 | 实测 |
+| --- | --- |
+| 新主机只有 `config.toml` 与 `token`，`jobs/` 与回执目录为空 | 从远端副本恢复出任务，日志、已声明产物、终态事件、源码摘要与 revision 全部一致 |
+| 只剩一台远端副本 | quorum 2 由「新主机 + 一台远端」满足，仍能恢复 |
+| 两台副本都被删除 | 拒绝启动（`quorum not met at startup`），且不生成任何任务目录 |
+| 恢复目录缺少 `token` | `State::load` 拒绝加载，证明密钥不在恢复范围内 |
+
+这轮还修了一个真实缺陷：`State::finish` 原先先做最后一次跨机提交、再写 `finished` 事件，导致终态事件永远进不了恢复包——从远端恢复出来的任务看不到「何时结束」。现在事件先落盘再提交；`job.json` 仍是阶段权威来源，所以提交失败只多一条事件，不会让任务被误判为已结束。
+
+自动化还覆盖同一 revision 的不同内容或回执冲突、达不到 quorum、较新发布版本损坏、重复主机/故障域、namespace 路径逃逸和未确认远端清理。真实测试没有证明运行进程迁移、自动控制面接管与入口 DNS 切换、PostgreSQL 事务容灾或跨主机存储；这些仍按失败关闭处理。
 
 ## stateful-backup-recovery
 

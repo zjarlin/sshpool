@@ -32,5 +32,5 @@
 | [170-ssi-transport.feature](170-ssi-transport.feature) | 20 | 6 | 0 | 4 |
 | [180-ssi-device-order.feature](180-ssi-device-order.feature) | 1 | 1 | 0 | 4 |
 | [190-ssi-physical-storage.feature](190-ssi-physical-storage.feature) | 4 | 2 | 1 | 1 |
-| [200-control-state-recovery.feature](200-control-state-recovery.feature) | 13 | 1 | 0 | 1 |
-| 合计 | 100 | 21 | 17 | 30 |
+| [200-control-state-recovery.feature](200-control-state-recovery.feature) | 14 | 0 | 0 | 1 |
+| 合计 | 101 | 20 | 17 | 30 |

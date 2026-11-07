@@ -207,14 +207,17 @@ impl State {
             .get(&id)
             .cloned()
             .context("unknown job")?;
-        candidate.phase = phase;
+        candidate.phase = phase.clone();
         candidate.exit_code = code;
         candidate.message = Some(message);
         candidate.finished_at = Some(now());
         candidate.artifacts = artifacts;
-        let (finished, _) = self.checkpoint_candidate_locked(candidate).await?;
-        self.event(id, "finished", &format!("{:?}", finished.phase))
-            .await?;
+        // 事件必须先于最后一次跨机提交落盘：恢复包只包含提交时刻目录里的文件，
+        // 先提交再写事件会让「任务已经结束」这条审计记录永远进不了任何副本，
+        // 从远端恢复出来的任务就缺少终态事件。job.json 仍是阶段的权威来源，
+        // 因此提交失败时多出的这条事件不会让任务被误认为已结束。
+        self.event(id, "finished", &format!("{:?}", phase)).await?;
+        self.checkpoint_candidate_locked(candidate).await?;
         self.wake_queue();
         Ok(())
     }

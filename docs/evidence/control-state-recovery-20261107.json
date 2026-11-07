@@ -4,18 +4,75 @@
   "scope": "Non-business demonstration task; task-state replication only",
   "quorum": 2,
   "independent_physical_domains": 2,
-  "demonstration_job_labels": ["direction-a", "direction-b"],
+  "demonstration_job_labels": [
+    "direction-a",
+    "direction-b"
+  ],
   "source_digest_verified": true,
   "directions": [
-    {"failed_replica": 1, "surviving_replica": 1, "recovered_job": true, "source_digest_verified": true, "queue_state_preserved": true, "events_preserved": true, "commit_proof_preserved": true},
-    {"failed_replica": 1, "surviving_replica": 1, "recovered_job": true, "source_digest_verified": true, "queue_state_preserved": true, "events_preserved": true, "commit_proof_preserved": true}
+    {
+      "failed_replica": 1,
+      "surviving_replica": 1,
+      "recovered_job": true,
+      "source_digest_verified": true,
+      "queue_state_preserved": true,
+      "events_preserved": true,
+      "commit_proof_preserved": true
+    },
+    {
+      "failed_replica": 1,
+      "surviving_replica": 1,
+      "recovered_job": true,
+      "source_digest_verified": true,
+      "queue_state_preserved": true,
+      "events_preserved": true,
+      "commit_proof_preserved": true
+    }
   ],
   "not_verified": [
     "running process migration",
-    "automatic control-plane takeover",
     "PostgreSQL transaction durability",
     "Redis and application-volume consistency",
     "cross-site disaster recovery",
-    "distributed persistent storage"
-  ]
+    "distributed persistent storage",
+    "automatic control-plane takeover on a live entry point (DNS switch not exercised)"
+  ],
+  "controller_host_loss_fault_injection": {
+    "test": "tests/control_state_live.rs::controller_state_is_recovered_from_remote_failure_domains",
+    "command": "SSHPOOL_LIVE_REPLICAS=okm182-lan,macmini-lan cargo test --test control_state_live -- --ignored",
+    "replicas": [
+      {
+        "alias": "okm182-lan",
+        "os": "Linux x86_64",
+        "failure_domain": "physical-linux"
+      },
+      {
+        "alias": "macmini-lan",
+        "os": "Darwin arm64",
+        "failure_domain": "physical-macmini"
+      }
+    ],
+    "namespace": "一次性 live-<12 位随机>，测试结束删除",
+    "fault": "控制面状态目录整体不可用：新主机只保留 config.toml 与 token，jobs/ 与 replica-receipts/ 为空",
+    "steps": [
+      "原控制面完成一个带 log.txt 与 artifacts.tar 的任务，提交到两个独立故障域",
+      "新控制面目录从远端恢复：任务、源码摘要、日志、已声明产物、事件与 revision 全部一致",
+      "只剩一台远端副本时仍满足 quorum 2 并恢复成功",
+      "两台副本都不可用时拒绝启动（quorum not met at startup），且不留下任何被恢复的任务目录",
+      "恢复目录缺少 token 时 State::load 拒绝加载，证明密钥不在恢复范围内"
+    ],
+    "observed": {
+      "restored_job_ids": 1,
+      "log_preserved": true,
+      "declared_artifacts_preserved": true,
+      "terminal_event_preserved": true,
+      "revision_not_regressed": true,
+      "rounds": 3
+    },
+    "not_covered": [
+      "运行中的容器/进程不会迁移，恢复只涉及已提交的任务状态",
+      "token、配置与 SSH 私钥必须由运维从独立备份重新提供",
+      "未演练自动控制面接管或 DNS/入口切换"
+    ]
+  }
 }

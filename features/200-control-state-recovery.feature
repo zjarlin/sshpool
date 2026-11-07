@@ -117,8 +117,10 @@ Feature: 控制面任务状态跨物理故障域恢复
     And 只有远端看门狗证明旧容器终止后才允许后续自动重跑
     And 远端仍在运行时租约过期也不构成证明
 
-  # evidence: docs/validation.md#control-state-recovery
-  @partial @manual @p0
+  # evidence: tests/control_state_live.rs::controller_state_is_recovered_from_remote_failure_domains
+  # evidence: src/state.rs::finish
+  # evidence: docs/evidence/control-state-recovery-20261107.json
+  @verified @automated @p0
   Scenario: 控制面主机丢失后从远端故障域恢复
     Given 两个独立物理故障域已持有内容寻址归档
     When 控制面工作和状态目录不可用
