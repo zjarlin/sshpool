@@ -1,0 +1,43 @@
+{
+  "checked_at": "2026-11-07T17:05:00+08:00",
+  "scope": "remote watchdog proof for unconfirmed container cleanup",
+  "boundaries": [
+    "proves no process can keep producing results for that container",
+    "does not prove the interrupted job's output is valid",
+    "does not migrate a running process or restore lost in-memory state"
+  ],
+  "unit_and_integration": {
+    "cargo_test": "78 automated tests pass (35 lib + 19 api + 16 boundaries + 8 ssi-preflight)",
+    "live_tests": "2 ignored-by-default live tests pass twice on real Docker: okm182 (linux/amd64, 29.1.3) before the changes, and the local lima worker `sshpool` (linux/arm64, 29.1.3) after them (2 passed in 9.85s)",
+    "fmt_clippy_release": "cargo fmt, clippy -D warnings and release build pass"
+  },
+  "live_container_lease": {
+    "worker": "okm182 docker 29.1.3 (linux/amd64)",
+    "container_args": "same create flags as runner: --read-only --cap-drop=ALL --restart=no --network=none --entrypoint=/bin/sh alpine:3.22 -c 'sleep N'",
+    "observed": "State.Running true at start, false with ExitCode 0 after the sleep expired",
+    "conclusion": "PID1 exit stops the container and --restart=no never revives it"
+  },
+  "live_reconcile": {
+    "quarantine": "controller reported: controller restarted; cleanup unconfirmed ... run `sshpool node reconcile` after the watchdog lease expires",
+    "pending": "node reconcile returned proven=false with remaining lease seconds while the lease was still in the future",
+    "expired": "node reconcile returned proof=watchdog-lease-expired, cleared the quarantine and requeued the job",
+    "not_resumed": "the requeued job ended as failed (no eligible worker) instead of being reported as success",
+    "stopped_container": "real stopped container -> proof=remote-stopped, container removed, quarantine cleared",
+    "still_running": "real running container -> proven=false and removal refused even with an expired lease"
+  },
+  "cleanup": {
+    "temporary_controllers": "stopped",
+    "remote_containers": "0 sshpool-live / sshpool-probe containers left on okm182"
+  },
+  "live_rerun_note": "The first rerun on okm182 timed out and that host has stayed unresponsive since: ssh stalls at banner exchange while TCP 22/80/443 still accept connections, and plain `docker create` there took 18.7s with `docker rm -f` not returning for minutes. That is host saturation, not a test regression - the same pair of tests passes on another real Docker worker. Leftover sshpool-live-*/sshpool-manual-* containers on 182 still need removal once it answers again; this round does NOT claim 182 is clean.",
+  "controller_checks_this_round": {
+    "lease_pending": "node reconcile on a job whose deadline was 50s out: proven=false, detail 'remote state unknown (...); watchdog lease releases in 70s' (60s skew included)",
+    "lease_expired": "after expiry: proven=true, proof=watchdog-lease-expired, quarantine cleared, job requeued",
+    "retry_never_reuses_the_old_worker": "the requeued job ended failed with 'no eligible worker: dead: already attempted this job; retries only switch workers' - non-empty reason and no second attempt on the same worker",
+    "running_job_is_skipped": "a job still in phase running is not inspected at all: checked=0, cleanup_confirmed stays null, so a not-yet-created container cannot be misread as 'proven absent'"
+  },
+  "automated_rules_added_after_the_live_run": {
+    "running_job_is_skipped": "tests/api.rs::reconcile_never_claims_cleanup_for_a_running_job - a job in phase running is not inspected at all (checked=0, cleanup_confirmed stays null), so a not-yet-created container cannot be misread as 'proven absent'",
+    "retry_never_reuses_the_old_worker": "src/runner.rs::attempted_nodes_include_attempts_without_a_recorded_outcome covers the crashed-controller record (outcome=null) that the live rerun exposed; the live rerun itself showed 'no eligible worker: dead: already attempted this job; retries only switch workers'"
+  }
+}

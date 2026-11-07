@@ -69,6 +69,19 @@ impl Client {
         Self::response(response).await?;
         Ok(())
     }
+    /// 在线核对未确认清理；只返回证据结果，不在客户端做任何推断。
+    pub async fn reconcile_node(&self, name: Option<&str>) -> Result<serde_json::Value> {
+        let path = match name {
+            Some(name) => format!("/v1/nodes/{name}/reconcile"),
+            None => "/v1/nodes/reconcile".into(),
+        };
+        Ok(
+            Self::response(self.request(reqwest::Method::POST, &path).send().await?)
+                .await?
+                .json()
+                .await?,
+        )
+    }
     pub async fn cancel(&self, id: Uuid) -> Result<()> {
         Self::response(
             self.request(reqwest::Method::POST, &format!("/v1/jobs/{id}/cancel"))

@@ -4,7 +4,7 @@ use crate::{
     model::{Attempt, Job, Phase, now, queue_precedes},
     probe, scheduler,
     state::State,
-    transport,
+    transport, watchdog,
 };
 use anyhow::{Context, Result, bail, ensure};
 use std::{path::Path, sync::Arc, time::Duration};
@@ -17,6 +17,9 @@ use uuid::Uuid;
 fn docker(args: &[String]) -> String {
     format!("docker {}", transport::words(args))
 }
+/// 容器入口 PID1 是 `sleep timeout+租期`：SSH 掉线或控制面消失后，容器仍会自行停止。
+/// 这是唯一可以在「探测不到远端」时使用的终止证据，因此只按时间边界推断，不猜进程状态。
+/// 租期长度只在 `watchdog::LEASE_GRACE_SECS` 定义一次，创建与判定共用同一个值。
 fn container_args(id: Uuid, name: &str, build: &Build) -> Vec<String> {
     let mut args = vec![
         "create".into(),
@@ -58,7 +61,10 @@ fn container_args(id: Uuid, name: &str, build: &Build) -> Vec<String> {
         "-c".into(),
     ];
     // 主容器有独立的最长寿命；控制面掉线时，任务也不会无限运行。
-    args.push(format!("sleep {}", build.timeout_secs + 180));
+    args.push(format!(
+        "sleep {}",
+        build.timeout_secs + watchdog::LEASE_GRACE_SECS
+    ));
     args
 }
 
@@ -249,6 +255,12 @@ async fn attempt(
         20,
     )
     .await?;
+    // 容器 PID1 只是 `sleep timeout+grace`；把真实启动时刻换算成租约到期并立即持久化，
+    // 这样即使之后 SSH 掉线，也有一条不依赖远端连接的终止证据。
+    let deadline = watchdog::started_at(node, container)
+        .await
+        .map(|started| started.saturating_add(build.timeout_secs + watchdog::LEASE_GRACE_SECS));
+    record_watchdog_deadline(state, id, container, deadline).await?;
     let import = format!(
         "docker exec -i {} sh -c {}",
         transport::quote(container),
@@ -269,6 +281,51 @@ async fn attempt(
     };
     Ok((code, artifacts))
 }
+/// 立即发布看门狗租约；读取启动时刻失败时保持为空，等价于「暂无终止证据」。
+async fn record_watchdog_deadline(
+    state: &Arc<State>,
+    id: Uuid,
+    container: &str,
+    deadline: Result<u64>,
+) -> Result<()> {
+    let mut candidate = state
+        .jobs
+        .lock()
+        .await
+        .get(&id)
+        .cloned()
+        .context("unknown job")?;
+    let Some(attempt) = candidate
+        .attempts
+        .iter_mut()
+        .find(|attempt| attempt.container == container)
+    else {
+        return Ok(());
+    };
+    match deadline {
+        Ok(value) => attempt.watchdog_deadline = Some(value),
+        Err(error) => {
+            attempt.watchdog_deadline = None;
+            state
+                .event(id, "watchdog_unavailable", &format!("{error:#}"))
+                .await?;
+        }
+    }
+    state.checkpoint_candidate(candidate).await?;
+    Ok(())
+}
+
+/// 已经执行过本任务的 Worker；重跑只能换机器，不能回到旧机器。
+///
+/// 不按 `outcome` 过滤：控制面在容器仍运行时崩溃会留下 `outcome: None`，
+/// 那台机器同样执行过本次任务，必须继续排除。
+fn attempted_nodes(job: &Job) -> Vec<String> {
+    job.attempts
+        .iter()
+        .map(|attempt| attempt.node.clone())
+        .collect()
+}
+
 async fn mark_queue_waiting(state: &State, id: Uuid, reason: &str) -> Result<()> {
     let mut candidate = state
         .jobs
@@ -351,7 +408,17 @@ pub async fn run(state: Arc<State>, id: Uuid) -> Result<()> {
         .clone();
     let mut queue_receiver = state.queue_changed();
     let mut wait_event_recorded = false;
-    let mut tried = Vec::new();
+    // 已执行过的节点不能再次接单，否则重试额度会被绕过；
+    // 恢复后的重跑也必须继承历史，而不是从零开始计次。
+    // 不按 `outcome` 过滤：控制面在容器仍运行时崩溃会留下 `outcome: None`，
+    // 那台机器同样已经执行过本次任务，绝不能再被选中。
+    let mut tried = state
+        .jobs
+        .lock()
+        .await
+        .get(&id)
+        .map(attempted_nodes)
+        .unwrap_or_default();
     loop {
         if state.cancelled(id).await {
             return state
@@ -401,7 +468,12 @@ pub async fn run(state: Arc<State>, id: Uuid) -> Result<()> {
         let mut reasons = Vec::new();
         let mut candidates = Vec::new();
         for (node, health) in nodes.iter().zip(&health) {
+            // 重试只换机器：这台 Worker 已经执行过本次任务，不能再接单。
             if tried.contains(&node.name) {
+                reasons.push(format!(
+                    "{}: already attempted this job; retries only switch workers",
+                    node.name
+                ));
                 continue;
             }
             match scheduler::score(node, health, &build, &active) {
@@ -412,6 +484,17 @@ pub async fn run(state: Arc<State>, id: Uuid) -> Result<()> {
         candidates.sort_by(|a, b| b.1.total_cmp(&a.1));
         if earlier_ready {
             reasons.push("higher-priority queue item is eligible".into());
+        }
+        // 原因列表为空会让消息显示成「no eligible worker: 」；兜底说明必须有内容。
+        if reasons.is_empty() {
+            reasons.push(if tried.is_empty() {
+                "no workers are configured".into()
+            } else {
+                format!(
+                    "all workers already attempted ({}); reservations and quarantine still apply",
+                    tried.join(", ")
+                )
+            });
         }
         let Some((node, _)) = candidates.into_iter().next() else {
             drop(guard);
@@ -471,6 +554,9 @@ pub async fn run(state: Arc<State>, id: Uuid) -> Result<()> {
             started_at: now(),
             outcome: None,
             cleanup_confirmed: None,
+            // 容器尚未启动，还不存在可用的租约；启动后立即补写。
+            watchdog_deadline: None,
+            cleanup_proof: None,
         });
         // 创建远端容器前先达到状态 quorum；失败时仍保持未领取状态。
         state.checkpoint_candidate(assigned).await?;
@@ -524,7 +610,8 @@ pub async fn run(state: Arc<State>, id: Uuid) -> Result<()> {
                     Phase::Interrupted,
                     None,
                     format!(
-                        "{outcome}; cleanup unconfirmed: {error:#}. No retry without a remote watchdog proof"
+                        "{outcome}; cleanup unconfirmed: {error:#}. Worker quarantined until `sshpool node reconcile {}` proves the old container is gone",
+                        node.name
                     ),
                     false,
                 )
@@ -663,7 +750,24 @@ pub async fn recover(state: &Arc<State>) -> Result<()> {
                 Some(node) => remove(node, job.id, &attempt.container).await,
                 None => Err(anyhow::anyhow!("worker removed from configuration")),
             };
-            cleanups.push(cleanup);
+            // 删除失败时先看容器租约：PID1 的 `sleep` 到期即证明没有进程可以继续提交结果，
+            // 这比"重启控制面才能解隔离"更早、也更有依据。
+            cleanups.push(match cleanup {
+                Ok(()) => Ok(None),
+                Err(error) => {
+                    let proven = watchdog::decide(
+                        attempt,
+                        Err(format!("{error:#}")),
+                        now(),
+                        crate::reconcile::LEASE_CLOCK_SKEW_SECS,
+                    );
+                    if proven.proven {
+                        Ok(proven.proof)
+                    } else {
+                        Err(error)
+                    }
+                }
+            });
         }
         let confirmed = cleanups.iter().all(Result::is_ok);
         let errors = cleanups
@@ -672,10 +776,11 @@ pub async fn recover(state: &Arc<State>) -> Result<()> {
             .map(|error| format!("{error:#}"))
             .collect::<Vec<_>>();
         let message = if errors.is_empty() {
-            "controller restarted; all prior containers absent or removed".into()
+            "controller restarted; all prior containers absent, removed, or past their watchdog lease"
+                .into()
         } else {
             format!(
-                "controller restarted; cleanup unconfirmed: {}",
+                "controller restarted; cleanup unconfirmed: {}; run `sshpool node reconcile` after the watchdog lease expires",
                 errors.join("; ")
             )
         };
@@ -689,6 +794,11 @@ pub async fn recover(state: &Arc<State>) -> Result<()> {
         candidate.cleanup_confirmed = confirmed;
         for (attempt, cleanup) in candidate.attempts.iter_mut().zip(&cleanups) {
             attempt.cleanup_confirmed = Some(cleanup.is_ok());
+            attempt.cleanup_proof = cleanup
+                .as_ref()
+                .ok()
+                .and_then(|proof| *proof)
+                .map(|proof| proof.as_str().to_string());
         }
         state.checkpoint_candidate(candidate).await?;
         state
@@ -729,8 +839,53 @@ pub fn read_build(path: &Path) -> Result<Build> {
 
 #[cfg(test)]
 mod tests {
-    use super::failover_allowed;
-    use crate::config::Build;
+    use super::{attempted_nodes, failover_allowed};
+    use crate::{
+        config::Build,
+        model::{Attempt, Job, Phase},
+    };
+
+    fn job_with_attempts(attempts: Vec<Attempt>) -> Job {
+        Job {
+            id: uuid::Uuid::new_v4(),
+            revision: 0,
+            build: Build::default(),
+            phase: Phase::Interrupted,
+            created_at: 0,
+            finished_at: Some(0),
+            attempts,
+            exit_code: None,
+            message: None,
+            artifacts: false,
+            cancel_requested: false,
+            cleanup_confirmed: false,
+            queue_deadline: None,
+            source_sha256: None,
+        }
+    }
+
+    fn attempt(node: &str, outcome: Option<&str>) -> Attempt {
+        Attempt {
+            node: node.into(),
+            container: format!("sshpool-{node}-1"),
+            started_at: 0,
+            outcome: outcome.map(str::to_string),
+            cleanup_confirmed: None,
+            watchdog_deadline: None,
+            cleanup_proof: None,
+        }
+    }
+
+    /// 控制面在容器仍运行时崩溃会留下 `outcome: None`；那台机器同样执行过任务。
+    #[test]
+    fn attempted_nodes_include_attempts_without_a_recorded_outcome() {
+        let job = job_with_attempts(vec![
+            attempt("first", Some("SSH connection interrupted")),
+            attempt("second", None),
+        ]);
+        assert_eq!(attempted_nodes(&job), vec!["first", "second"]);
+        assert!(attempted_nodes(&job_with_attempts(Vec::new())).is_empty());
+    }
 
     #[test]
     fn confirmed_cleanup_is_required_before_worker_failover() {

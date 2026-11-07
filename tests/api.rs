@@ -67,6 +67,8 @@ fn active_job(node: &str) -> Job {
             started_at: 0,
             outcome: None,
             cleanup_confirmed: None,
+            watchdog_deadline: None,
+            cleanup_proof: None,
         }],
         exit_code: None,
         message: None,
@@ -536,5 +538,134 @@ async fn audit_events_survive_state_reload_without_credentials() -> Result<()> {
     assert_eq!(events[0]["kind"], "submitted");
     assert_eq!(events[1]["detail"], "worker-a");
     assert!(!text.contains(&state.token));
+    Ok(())
+}
+
+fn unconfirmed_job(node: &str, deadline: Option<u64>, retries: usize) -> Job {
+    let mut job = active_job(node);
+    job.phase = Phase::Interrupted;
+    job.finished_at = Some(1);
+    job.build = Build {
+        retries,
+        idempotent: true,
+        network: false,
+        ..Build::default()
+    };
+    job.attempts[0].outcome = Some("SSH connection interrupted".into());
+    job.attempts[0].cleanup_confirmed = Some(false);
+    job.attempts[0].watchdog_deadline = deadline;
+    job
+}
+
+/// 远端不可达时，唯一的终止证据是容器自带租约；到期前必须继续拒绝放行。
+#[tokio::test]
+async fn reconcile_waits_for_the_recorded_watchdog_lease() -> Result<()> {
+    let (_root, state) = state()?;
+    let job = unconfirmed_job("test-node", Some(now() + 3600), 0);
+    {
+        let mut jobs = state.jobs.lock().await;
+        jobs.insert(job.id, job.clone());
+    }
+    let report = sshpool::reconcile::reconcile(&state, Some("test-node")).await?;
+    assert_eq!(report.checked, 1);
+    assert_eq!(report.proven, 0);
+    assert!(report.resumed.is_empty());
+    let stored = state.jobs.lock().await.get(&job.id).cloned().unwrap();
+    assert_eq!(stored.attempts[0].cleanup_confirmed, Some(false));
+    assert!(!stored.cleanup_confirmed);
+    assert!(
+        report.attempts[0]
+            .detail
+            .contains("watchdog lease releases in")
+    );
+    Ok(())
+}
+
+/// 租约到期即证明旧容器 PID1 已退出；不需要重启控制面。
+#[tokio::test]
+async fn reconcile_proves_an_expired_lease_without_restarting() -> Result<()> {
+    let (_root, state) = state()?;
+    let job = unconfirmed_job("test-node", Some(now() - 601), 0);
+    {
+        let mut jobs = state.jobs.lock().await;
+        jobs.insert(job.id, job.clone());
+    }
+    let report = sshpool::reconcile::reconcile(&state, Some("test-node")).await?;
+    assert_eq!(report.proven, 1);
+    assert_eq!(
+        report.attempts[0].proof.as_deref(),
+        Some("watchdog-lease-expired")
+    );
+    let stored = state.jobs.lock().await.get(&job.id).cloned().unwrap();
+    assert_eq!(stored.attempts[0].cleanup_confirmed, Some(true));
+    assert_eq!(
+        stored.attempts[0].cleanup_proof.as_deref(),
+        Some("watchdog-lease-expired")
+    );
+    assert!(stored.cleanup_confirmed);
+    // 没有重试额度时只解除隔离，绝不重放已经执行过的命令。
+    assert_eq!(stored.phase, Phase::Interrupted);
+    assert!(report.resumed.is_empty());
+    Ok(())
+}
+
+/// 证明之后才允许自动重跑；重跑是排队，不代表成功。
+#[tokio::test]
+async fn reconcile_requeues_only_proven_idempotent_offline_jobs() -> Result<()> {
+    let (_root, state) = state()?;
+    state.set_node_enabled("test-node", false).await?;
+    state.set_node_enabled("second-node", false).await?;
+    let job = unconfirmed_job("test-node", Some(now() - 601), 1);
+    fs::create_dir_all(state.dir(job.id))?;
+    write_empty_source(&state, job.id)?;
+    let mut job = job;
+    job.source_sha256 = Some(source_sha256(&state, job.id)?);
+    let id = job.id;
+    {
+        let mut jobs = state.jobs.lock().await;
+        jobs.insert(id, job);
+    }
+    let report = sshpool::reconcile::reconcile(&state, Some("test-node")).await?;
+    assert_eq!(report.resumed, vec![id]);
+    let stored = wait_for_terminal(&state, id).await?;
+    // 没有可用 Worker，重跑只应停在排队/失败，不会假装成功。
+    assert_ne!(stored.phase, Phase::Succeeded);
+    // 失败原因必须点名「已执行过的 Worker 不再参与」，不能是空理由。
+    let message = stored.message.clone().unwrap_or_default();
+    assert!(
+        message.contains("test-node: already attempted this job"),
+        "{message}"
+    );
+    Ok(())
+}
+
+/// 仍在 Running 的任务由执行者自己清理；外部核对不能在容器尚未创建时宣称「已证明」。
+#[tokio::test]
+async fn reconcile_never_claims_cleanup_for_a_running_job() -> Result<()> {
+    let (_root, state) = state()?;
+    let mut job = active_job("test-node");
+    job.attempts[0].watchdog_deadline = Some(now() - 601);
+    let id = job.id;
+    {
+        let mut jobs = state.jobs.lock().await;
+        jobs.insert(id, job);
+    }
+    let report = sshpool::reconcile::reconcile(&state, Some("test-node")).await?;
+    assert_eq!(report.checked, 0);
+    assert!(report.attempts.is_empty());
+    let stored = state.jobs.lock().await.get(&id).cloned().unwrap();
+    assert_eq!(stored.attempts[0].cleanup_confirmed, None);
+    assert!(stored.attempts[0].cleanup_proof.is_none());
+    assert!(!stored.cleanup_confirmed);
+    Ok(())
+}
+
+#[tokio::test]
+async fn reconcile_requires_authentication() -> Result<()> {
+    let (_root, state) = state()?;
+    let response = sshpool::api::routes(state.clone())
+        .oneshot(Request::post("/v1/nodes/reconcile").body(Body::empty())?)
+        .await?;
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
     Ok(())
 }

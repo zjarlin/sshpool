@@ -136,3 +136,32 @@ Redis 8.10.2 使用独立容器和独立命名卷恢复，网络为 `none`。RDB
 - 没有实现 PostgreSQL 持续 WAL 归档或流复制、Redis 持续复制、写入 fencing、自动故障转移或入口 DNS 切换。
 - 应用配置与数据库虽在同一次停写窗口导出，尚未在独立演示环境完成整套 `sub2api + PostgreSQL + Redis` 恢复并接管流量，因此不能宣称生产数据库高可用。
 - `sub2api-chatgptweb` 在备份前已存在 `Restarting (137)`，本轮未把它归因于备份流程或宣称该子服务健康。
+
+
+## watchdog-cleanup-proof
+
+2026-11-07 把「清理未确认时禁止换机重跑」从一句注释变成可执行的证据链。之前的实现只会把 Worker 隔离，并要求重启控制面才能恢复接单；现在隔离状态可以在线解除，且解除依据可复现。
+
+证据来源只有三种，全部落在 `docs/evidence/watchdog-cleanup-20261107.json`：
+
+| 证据 | 含义 | 前提 |
+| --- | --- | --- |
+| `remote-absent` | 容器已不存在 | `docker inspect` 明确返回 no such object/container |
+| `remote-stopped` | 容器存在但未运行 | 标签必须与本任务 UUID 一致；`--restart=no` 不会复活 |
+| `watchdog-lease-expired` | SSH 不可达，但容器 PID1 的 `sleep` 已到期 | 启动时记录过租约；判定加 60 秒时钟偏差上界 |
+
+容器入口始终是 `sleep timeout_secs + 180`，所以任何一次执行都有确定寿命。控制面在 `docker start` 之后读取 `State.StartedAt`，把「启动时刻 + 超时 + 180 秒」写进 attempt 的 `watchdog_deadline`；读不到就留空，等价于「没有证据」，而不是「可以放行」。
+
+实测：
+
+- 真实 Worker（`okm182`，Docker 29.1.3，linux/amd64）上按 runner 完全相同的参数创建容器：`sleep 2` 前 `State.Running=true`，到期后 `false` 且 `ExitCode=0`，`--restart=no` 不复活。改动完成后同一组 `tests/watchdog_live.rs` 在另一台真实 Worker（本机 lima `sshpool`，Docker 29.1.3，linux/arm64）上重跑通过：`2 passed`。
+- 真实停止容器：`node reconcile` 返回 `remote-stopped`，删除容器并解除隔离。
+- 真实运行中的容器：即使租约已过期，`proven=false`，删除被拒绝 —— 实际状态优先于时间推断。
+- SSH 完全不可达：租约未到期时报告剩余秒数并继续拒绝；到期后 `watchdog-lease-expired` 生效。
+- 解除隔离后只有「幂等 + 禁网 + 仍有重试额度 + 未被取消」的任务重新排队；重跑继承历史 attempt，已执行过的 Worker 不会被再次选中，也不会因为重跑而多给一次额度。判据是「该 Worker 出现过 attempt」，**不按 `outcome` 过滤**：控制面在容器仍运行时崩溃会留下 `outcome: None`，那台机器同样执行过本次任务。
+- 重跑没有可用 Worker 时任务以 `failed` 结束，原因写明 `already attempted this job; retries only switch workers`，不会显示成空理由，也不会把排队当成成功。
+- 仍在 `running` 的任务不参与外部核对：执行者自己负责清理，此时容器可能尚未创建；若把这种 attempt 当待核对，`docker inspect` 的 absent 会被误写成「已证明清理」。
+
+边界：这只证明「没有进程还能继续提交结果」，不证明中断前的输出有效，也不迁移内存或进程。跨机器 CPU/内存聚合、数据库事务容灾、自动控制面接管仍未实现。
+
+排障记录：本轮改动后先在 `okm182` 上重跑这两条 live 测试，SSH 卡在 banner 交换、`docker create` 耗时 18.7 秒、`docker rm -f` 数分钟未返回 —— 是该主机磁盘/负载饱和，不是测试回归；改在另一台真实 Docker 上重跑通过，自动化规则不依赖任何远端。`okm182` 上本轮遗留的 `sshpool-live-*` / `sshpool-manual-*` 容器待主机恢复后再删除，不计入清理完成。

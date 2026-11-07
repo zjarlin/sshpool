@@ -132,6 +132,11 @@ enum NodeAction {
     Disable {
         name: String,
     },
+    /// 在线核对未确认清理并解除隔离；不重启控制面。
+    Reconcile {
+        /// 只核对这一台 Worker；省略则核对所有节点。
+        name: Option<String>,
+    },
     /// 显式准备容器镜像；此命令会增加节点镜像存储。
     Prepare {
         name: String,
@@ -484,6 +489,11 @@ async fn node_command(cli: &Cli, home: &std::path::Path, command: &NodeAction) -
             println!("Node disabled: {name}");
             return Ok(());
         }
+        NodeAction::Reconcile { name } => {
+            let report = client(cli, home)?.reconcile_node(name.as_deref()).await?;
+            println!("{}", serde_json::to_string_pretty(&report)?);
+            return Ok(());
+        }
         _ => {}
     }
     let mut config = config::read(home)?;
@@ -549,8 +559,8 @@ async fn node_command(cli: &Cli, home: &std::path::Path, command: &NodeAction) -
             config::save(home, &config)?;
             println!("Image approved for this worker. Restart the controller to apply.");
         }
-        NodeAction::Enable { .. } | NodeAction::Disable { .. } => {
-            anyhow::bail!("node state command was not dispatched")
+        NodeAction::Enable { .. } | NodeAction::Disable { .. } | NodeAction::Reconcile { .. } => {
+            anyhow::bail!("node online command was not dispatched")
         }
     }
     Ok(())

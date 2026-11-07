@@ -23,7 +23,7 @@ pub fn score(node: &Node, health: &Health, build: &Build, active: &[Job]) -> Res
                     || (attempt.cleanup_confirmed.is_none() && !job.cleanup_confirmed))
         })
     }) {
-        return Err("worker quarantined: previous container cleanup is unconfirmed; restart controller to reconcile".into());
+        return Err("worker quarantined: previous container cleanup is unconfirmed; run `sshpool node reconcile <name>` to reconcile".into());
     }
     let running: Vec<_> = active
         .iter()

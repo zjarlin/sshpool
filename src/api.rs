@@ -60,6 +60,8 @@ pub fn routes(state: Arc<State>) -> Router {
         .route("/v1/status", get(status))
         .route("/v1/nodes/{name}/enable", post(enable_node))
         .route("/v1/nodes/{name}/disable", post(disable_node))
+        .route("/v1/nodes/{name}/reconcile", post(reconcile_node))
+        .route("/v1/nodes/reconcile", post(reconcile_all))
         .route("/v1/jobs", get(jobs).post(submit))
         .route("/v1/jobs/{id}", get(job))
         .route("/v1/jobs/{id}/cancel", post(cancel))
@@ -100,6 +102,25 @@ async fn set_node_enabled(
     let node = state.set_node_enabled(&name, enabled).await?;
     Ok(axum::Json(node))
 }
+/// 只核对指定节点的未确认清理，并用远端看门狗证据解除隔离。
+async fn reconcile_node(
+    AppState(state): AppState<Arc<State>>,
+    headers: HeaderMap,
+    Path(name): Path<String>,
+) -> ApiResult<axum::Json<crate::reconcile::Report>> {
+    authorized(&headers, &state)?;
+    Ok(axum::Json(
+        crate::reconcile::reconcile(&state, Some(&name)).await?,
+    ))
+}
+async fn reconcile_all(
+    AppState(state): AppState<Arc<State>>,
+    headers: HeaderMap,
+) -> ApiResult<axum::Json<crate::reconcile::Report>> {
+    authorized(&headers, &state)?;
+    Ok(axum::Json(crate::reconcile::reconcile(&state, None).await?))
+}
+
 async fn jobs(
     AppState(state): AppState<Arc<State>>,
     headers: HeaderMap,

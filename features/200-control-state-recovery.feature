@@ -102,15 +102,20 @@ Feature: 控制面任务状态跨物理故障域恢复
     Then 先为带结果的候选达到配置 quorum
     And 未能确认 quorum 时不宣称成功或持久完成
 
-  # evidence: src/runner.rs::confirmed_cleanup_is_required_before_worker_failover
-  @partial @p0
+  # evidence: src/watchdog.rs::unreachable_remote_waits_for_the_recorded_lease
+  # evidence: src/reconcile.rs::resume_needs_a_complete_proof_and_retry_budget
+  # evidence: src/runner.rs::attempted_nodes_include_attempts_without_a_recorded_outcome
+  # evidence: tests/watchdog_live.rs::running_container_is_never_waved_through
+  @verified @automated @p0
   Scenario: 旧 Worker 清理未确认时禁止换机重跑
     Given 任务幂等、禁网且尚有重试额度
     And 旧 Worker 的实际容器状态不能证明已经停止
     When SSH 超时或删除命令失败
     Then 任务进入 interrupted 并隔离旧 Worker
     And 控制面不自动分发到另一 Worker
+    And 容器自带的有界寿命被记录为看门狗租约
     And 只有远端看门狗证明旧容器终止后才允许后续自动重跑
+    And 远端仍在运行时租约过期也不构成证明
 
   # evidence: docs/validation.md#control-state-recovery
   @partial @manual @p0

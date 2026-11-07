@@ -16,7 +16,7 @@
 | [010-nodes.feature](010-nodes.feature) | 3 | 1 | 0 | 0 |
 | [020-scheduling.feature](020-scheduling.feature) | 6 | 0 | 1 | 0 |
 | [030-data-boundaries.feature](030-data-boundaries.feature) | 6 | 0 | 0 | 0 |
-| [040-lifecycle.feature](040-lifecycle.feature) | 3 | 2 | 0 | 0 |
+| [040-lifecycle.feature](040-lifecycle.feature) | 5 | 1 | 0 | 0 |
 | [050-build-adapters.feature](050-build-adapters.feature) | 1 | 1 | 2 | 0 |
 | [060-isolation.feature](060-isolation.feature) | 0 | 2 | 1 | 1 |
 | [070-access-network.feature](070-access-network.feature) | 2 | 0 | 3 | 0 |
@@ -32,5 +32,5 @@
 | [170-ssi-transport.feature](170-ssi-transport.feature) | 20 | 6 | 0 | 4 |
 | [180-ssi-device-order.feature](180-ssi-device-order.feature) | 1 | 1 | 0 | 4 |
 | [190-ssi-physical-storage.feature](190-ssi-physical-storage.feature) | 4 | 2 | 1 | 1 |
-| [200-control-state-recovery.feature](200-control-state-recovery.feature) | 12 | 2 | 0 | 1 |
-| 合计 | 93 | 27 | 17 | 30 |
+| [200-control-state-recovery.feature](200-control-state-recovery.feature) | 13 | 1 | 0 | 1 |
+| 合计 | 96 | 25 | 17 | 30 |

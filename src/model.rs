@@ -79,6 +79,13 @@ pub struct Attempt {
     /// 每次尝试单独记录清理结果，避免后续成功覆盖旧节点的不确定状态。
     #[serde(default)]
     pub cleanup_confirmed: Option<bool>,
+    /// 远端看门狗租约到期时刻：容器入口自带 `sleep` 寿命，到期后不可能仍有进程。
+    /// 只有 SSH 探测失败时才用它作为「旧容器一定已结束」的时间证据。
+    #[serde(default)]
+    pub watchdog_deadline: Option<u64>,
+    /// 解除「清理未确认」时使用的证据来源；为空表示从未确认。
+    #[serde(default)]
+    pub cleanup_proof: Option<String>,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Job {
