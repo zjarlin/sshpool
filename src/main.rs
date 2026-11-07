@@ -66,6 +66,12 @@ enum Action {
         #[arg(long)]
         new_dedicated_device: bool,
     },
+    /// 按真实物理故障域核算副本、写入门槛与恢复预留；只读，不改任何设备。
+    StoragePlan {
+        /// 拓扑描述 JSON（协议 1）；见 docs/ssi-physical-storage.md。
+        #[arg(long)]
+        topology: PathBuf,
+    },
     /// 从运行中的控制面读取节点状态。
     Status,
     /// 管理短期访问凭据；明文只在签发时打印一次。
@@ -333,6 +339,17 @@ async fn dispatch(cli: Cli) -> Result<i32> {
             let report = sshpool::storage::assess(device, *new_dedicated_device, probe);
             println!("{}", serde_json::to_string_pretty(&report)?);
             return Ok(if report.eligible_for_future_initialization {
+                0
+            } else {
+                2
+            });
+        }
+        Action::StoragePlan { topology } => {
+            let described = sshpool::placement::read_topology(topology)?;
+            let report = sshpool::placement::plan(&described);
+            println!("{}", serde_json::to_string_pretty(&report)?);
+            // 与 storage-admission 一致：做不到的承诺必须是非零退出码，脚本不能只看标准输出。
+            return Ok(if report.fault_tolerance_claim_allowed {
                 0
             } else {
                 2

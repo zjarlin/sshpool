@@ -325,6 +325,53 @@ Prometheus 抓取走**独立的** `metrics_listen`（`config.toml`），默认�
 
 尚未覆盖：日志后端本身（本仓库只产出 `events.jsonl` 与 `access.jsonl`，由部署者用 Loki/ELK 消费）、指标持久化与 Prometheus 抓取配置（本仓库只提供 exposition 端点）、**端点鉴权**（该端口无鉴权，因此只暴露节点名与数值，不含 SSH 目标、token、任务消息或任何自由文本，也不含按 IP 的归因）、多控制面实例的聚合。
 
+### 存储放置核算 {#storage-placement}
+
+RAID 可以不做，但「几副本、能少几个域、还剩多少可写容量」必须先算清楚再承诺。`src/placement.rs` + `sshpool storage-plan --topology <file>` 对一份**只描述事实**的拓扑做纯算术：不探测主机、不读块设备、不格式化、不创建 OSD，输出一份 JSON 与退出码。
+
+```json
+{
+  "schema": 1,
+  "replica_count": 3,
+  "min_size": 2,
+  "recovery_reserve_permille": 200,
+  "monitor_count": 3,
+  "hosts": [
+    { "name": "store-a", "failure_domain": "rack-a", "devices": [{ "name": "sda", "size_bytes": 4000000000000 }] },
+    { "name": "store-b", "failure_domain": "rack-b", "devices": [{ "name": "sdb", "size_bytes": 6000000000000 }] },
+    { "name": "store-c", "failure_domain": "rack-c", "devices": [{ "name": "sdc", "size_bytes": 8000000000000 }] }
+  ]
+}
+```
+
+```sh
+sshpool storage-plan --topology topology.json   # 可承诺：退出码 0
+                                               # 拒绝承诺：退出码 2，报告仍完整
+```
+
+核算口径：
+
+| 项 | 规则 |
+| --- | --- |
+| 故障域 | 同一 `failure_domain` 的多个 VM 合并为**一个**；`vm_of` 指向的物理宿主与其 VM 也合并 |
+| VM 自报独立域 | `vm_of` 指向 A 却写了自己的 `failure_domain` → 拒绝（不能靠改名字买到第二个域） |
+| 物理盘与 VM 盘同域 | 两代都申报磁盘 → 拒绝（容量属于哪一层不明确，会被重复计算） |
+| 副本容量 | 副本必须落在不同域；可写数据 `D` 满足 `副本数 × D ≤ Σ min(域可用容量, D)`，用整数二分求上限，不做浮点近似 |
+| 恢复预留 | 每域先扣 `recovery_reserve_permille`（千分比），**必填**；缺省成 0 等于虚报容量 |
+| 仲裁 | `monitor_count` 必须是奇数且不超过域数；`quorum = n/2 + 1`，容错 `n - quorum` |
+| 拒绝时 | `usable_after_recovery_reserve_bytes = 0`、`tolerated_domain_failures = null`，即使有人只看数字也拿不到可用容量 |
+| 输入边界 | `deny_unknown_fields`；拼错键、缺字段、类型不符在解析阶段就失败（退出码 1），不会输出半份报告 |
+
+真实二进制（macOS ARM64 release）实测两份脱敏拓扑：
+
+| 拓扑 | 结果 |
+| --- | --- |
+| 3 个物理域，盘 4/6/8 TB，3 副本、`min_size=2`、恢复预留 200‰、3 个仲裁 | 退出码 0；`distinct=3`、`raw=18.0 TB`、`reserve=3.6 TB`、可写 **3.2 TB**（受最小域 4 TB×80% 约束，不是三域平均）、`tolerated_domain_failures=1`、`monitor_quorum=2` |
+| 2 个物理域，各 1 台物理机 + 1~2 台 VM，VM 不申报磁盘 | 退出码 2；`distinct=2`、可写 **0**、`tolerated_domain_failures=null`；blocker 明说「只有 2 个故障域具备容量，放不下 3 副本」 |
+| 同域物理盘 + VM 盘 | 退出码 2；blocker 报「容量会被重复计算」 |
+
+边界：这是**规划算术**，不是存储已部署，更不是耐久性证明。它不校验 Ceph 是否真的把 OSD 分到了这些域、不测 `fsync`/崩溃恢复、不替代 [数据库恢复](#stateful-backup-recovery) 与 SSI 状态恢复。容量数字来自输入文件里申报的 `size_bytes`，不来自真实探测；盘的归属仍要先过 `storage-admission`。证据见 [evidence/storage-placement-20261107.json](evidence/storage-placement-20261107.json)。
+
 ## hardware-proof
 
 2026-11-07 起，这条链路有可复跑的 `#[ignore]` 测试：`tests/hardware_live.rs`。它在测试进程内启动临时控制面（临时 home + 回环随机端口），由 **ARM64 工作台执行真实 CLI** 通过 `host.lima.internal` 访问该控制面，再派发到独立 x86_64 Worker。

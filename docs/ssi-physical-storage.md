@@ -41,4 +41,35 @@ SSI 负责 CPU、内存和设备的跨节点语义，Ceph 负责存储副本及�
 
 新盘加入前必须按稳定硬件身份确认归属，检查分区、挂载、文件系统签名、LVM、md、ZFS 和已有业务使用情况。**检测不到文件系统不等于空盘。** 当前物理候选还有一块未挂载且文件系统类型未识别的既有分区；归属尚未确认，本轮没有格式化、挂载、创建 LVM/md/RAID、创建 OSD 或写入任何数据。初期只能使用明确新建、配额受控的实验镜像文件；这些文件不能证明真实掉盘后的持久化可靠性。
 
-Ceph 尚未部署。将来若确认既有盘或多个新增盘完全归集群所有，可以让 Ceph 直接管理独立设备而无需先组 RAID；每个物理主机作为独立故障域，并先核算三副本、仲裁和恢复预留。仅两台物理机不能冒充三故障域。实现和验收拆在 [物理主机与存储场景](../features/190-ssi-physical-storage.feature)，整体仍受 [严格 SSI](../features/110-pooled-linux.feature) 与 [数据库恢复](../features/120-stateful-recovery.feature) 的门槛约束。
+Ceph 尚未部署。将来若确认既有盘或多个新增盘完全归集群所有，可以让 Ceph 直接管理独立设备而无需先组 RAID；每个物理主机作为独立故障域，并先核算三副本、仲裁和恢复预留。仅两台物理机不能冒充三故障域。
+
+### 先核算，再承诺
+
+上面这些口径已经落成可执行的核算：`sshpool storage-plan --topology <file>`（`src/placement.rs`）只读一份拓扑 JSON，输出故障域数、原始容量、恢复预留和可写容量，并在做不到时**拒绝承诺**（退出码 2）。
+
+```json
+{
+  "schema": 1,
+  "replica_count": 3,
+  "min_size": 2,
+  "recovery_reserve_permille": 200,
+  "monitor_count": 3,
+  "hosts": [
+    { "name": "store-a", "failure_domain": "rack-a", "devices": [{ "name": "sda", "size_bytes": 4000000000000 }] },
+    { "name": "store-b", "failure_domain": "rack-b", "devices": [{ "name": "sdb", "size_bytes": 6000000000000 }] },
+    { "name": "store-c", "failure_domain": "rack-c", "devices": [{ "name": "sdc", "size_bytes": 8000000000000 }] }
+  ]
+}
+```
+
+核算规则直接对应前面几条约束：
+
+- 同一 `failure_domain` 的多个 VM 合并成一个域；`vm_of` 指向的物理宿主与其 VM 也合并。**给 VM 换个 `failure_domain` 名字不会多出故障域**，反而被拒绝。
+- 物理宿主和它的 VM 都申报磁盘时拒绝核算 —— 否则同一批容量会被算两次，可写容量虚高。
+- 可写容量不是「原始容量 ÷ 副本数」这种近似：副本必须落在不同域，上限解 `副本数 × D ≤ Σ min(域可用容量, D)`，也就是最小域会直接封顶（三块 4/6/8 TB 盘、3 副本、20% 预留时是 **3.2 TB**，不是 4.8 TB）。
+- `recovery_reserve_permille` 必填，缺省成 0 等于虚报容量；`deny_unknown_fields` 让拼错的键在解析阶段失败。
+- `monitor_count` 只接受奇数且不超过域数；仲裁与数据副本是不同约束。
+- 拒绝承诺时报告里 **可用容量是 0、容错数为 `null`**，脚本忽略布尔字段也拿不到可写数字。
+
+这是规划算术，不证明 Ceph 已按此放置、不证明掉盘后的持久性，也不能替代 `storage-admission` 对真实磁盘的归属核对。真实实测记录见 [验证文档](validation.md#storage-placement)。
+实现和验收拆在 [物理主机与存储场景](../features/190-ssi-physical-storage.feature)，整体仍受 [严格 SSI](../features/110-pooled-linux.feature) 与 [数据库恢复](../features/120-stateful-recovery.feature) 的门槛约束。

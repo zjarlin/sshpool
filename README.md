@@ -236,6 +236,7 @@ curl -s http://127.0.0.1:9100/metrics    # Prometheus 文本格式；/ 等价
 - HTTPS 只做服务端证书校验，没有客户端证书（mTLS）。改证书必须重启控制面，没有热重载或轮换；信任的 CA 需要用 `--ca-file` 指定，没有吊销列表。
 - 短期凭据只解决"能撤销"，尚未按主体限制权限：拿到任一条有效凭据就能提交、取消任务和查询全部记录。逐主体的授权见 [验证文档](docs/validation.md#access-network)。
 - 访问审计是本机 `home/access.jsonl` 上的普通追加文件，没有签名链或只追加存储：能写这个目录的人可以改写、删除或伪造记录。超过 12 MiB 的历史会被滚动丢弃，没有远程日志后端或归档；也没有按 IP/地理归因。
+- **存储冗余仍只是规划算术**：`sshpool storage-plan` 按拓扑核算副本、仲裁和恢复预留，并拒绝「两台物理机凑三故障域」这类承诺；但 Ceph 没有部署，没有掉盘、`fsync`、崩溃恢复或跨机接管验收。它也不探测真实磁盘容量——输入里的 `size_bytes` 与故障域由部署者申报，盘的归属必须先过 `storage-admission`。见 [跨物理机与无 RAID 存储边界](docs/ssi-physical-storage.md#先核算再承诺) 与 [验证记录](docs/validation.md#storage-placement)。
 - 指标端点没有鉴权：能连上 `metrics_listen` 就能读到节点名与资源水位，因此默认关闭、默认只绑回环；它只输出数值与节点名，不含 SSH 目标、token、任务消息或自由文本。指标不落盘、不带历史，重启后计数从现有任务记录重新渲染；Prometheus 配置与日志后端（Loki/ELK）由部署者自行提供。
 
 ## 开发与验证

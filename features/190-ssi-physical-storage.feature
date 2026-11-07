@@ -63,7 +63,9 @@ Feature: 物理主机准入与独立磁盘冗余
     And 只有重装完成、专用盘归属和稳定硬件身份重新确认后才可登记
     And 同一 ESXi 宿主上的多个 VM 不增加独立故障域数
 
-  @planned @p0
+  # evidence: tests/storage_placement.rs::three_real_domains_are_allowed_and_two_are_refused_without_usable_bytes
+  # evidence: docs/validation.md#storage-placement
+  @verified @automated @p0
   Scenario: 无 RAID 的冗余按真实物理主机放置
     Given 各独立磁盘直接交由分布式存储管理
     When 设置副本数写入门槛和仲裁拓扑

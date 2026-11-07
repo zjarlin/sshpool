@@ -12,6 +12,7 @@ pub mod lifecycle;
 pub mod metrics;
 pub mod mirror;
 pub mod model;
+pub mod placement;
 pub mod probe;
 pub mod reconcile;
 pub mod retention;

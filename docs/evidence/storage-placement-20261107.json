@@ -1,0 +1,147 @@
+{
+  "checked_at": "2026-11-07T21:46:16+0800",
+  "scope": "190 无 RAID 冗余按真实物理主机放置：真实 release 二进制跑脱敏拓扑，只做核算，不探测或改动任何设备",
+  "environment": {
+    "os": "Darwin arm64",
+    "binary": "target/release/sshpool（release 构建）",
+    "topology_input": "临时目录内的 JSON；容量为申报值，地址/序列号/主机名均脱敏"
+  },
+  "assertions": {
+    "allowed_exit_zero": true,
+    "allowed_distinct_domains_3": true,
+    "allowed_usable_is_3_2tb": true,
+    "allowed_tolerates_one_domain": true,
+    "allowed_monitor_quorum_2": true,
+    "two_domains_exit_two": true,
+    "two_domains_no_usable_bytes": true,
+    "two_domains_null_tolerance": true,
+    "two_domains_vms_merged": true,
+    "double_count_exit_two": true,
+    "double_count_blocked": true,
+    "private_domain_exit_two": true,
+    "private_domain_merged": true,
+    "smallest_domain_caps_200": true,
+    "misspelled_exit_one": true,
+    "misspelled_no_stdout": true,
+    "misspelled_names_unknown_field": true,
+    "oversized_exit_one": true,
+    "oversized_no_stdout": true,
+    "read_only_flag": true
+  },
+  "cases": {
+    "allowed_three_domains": {
+      "file": "allowed_three_domains.json",
+      "exit": 0,
+      "stderr": "",
+      "report": {
+        "distinct_failure_domains": 3,
+        "data_failure_domains": 3,
+        "raw_capacity_bytes": 18000000000000,
+        "recovery_reserve_bytes": 3600000000000,
+        "theoretical_usable_bytes": 3200000000000,
+        "usable_after_recovery_reserve_bytes": 3200000000000,
+        "tolerated_domain_failures": 1,
+        "monitor_quorum": 2,
+        "fault_tolerance_claim_allowed": true,
+        "blockers": [],
+        "warnings": []
+      }
+    },
+    "refused_two_domains": {
+      "file": "refused_two_domains.json",
+      "exit": 2,
+      "stderr": "",
+      "report": {
+        "distinct_failure_domains": 2,
+        "data_failure_domains": 2,
+        "raw_capacity_bytes": 8000000000000,
+        "recovery_reserve_bytes": 1600000000000,
+        "theoretical_usable_bytes": 0,
+        "usable_after_recovery_reserve_bytes": 0,
+        "tolerated_domain_failures": null,
+        "monitor_quorum": null,
+        "fault_tolerance_claim_allowed": false,
+        "blockers": [
+          "只有 2 个故障域具备容量，放不下 3 副本；同一物理机上的多个 VM 不能凑成独立故障域"
+        ],
+        "warnings": [
+          "故障域 site-a 由 3 台主机共用（含物理宿主与其 VM），容量已合并为一个域",
+          "故障域 site-b 由 2 台主机共用（含物理宿主与其 VM），容量已合并为一个域"
+        ]
+      }
+    },
+    "refused_double_count": {
+      "file": "refused_double_count.json",
+      "exit": 2,
+      "stderr": "",
+      "report": {
+        "distinct_failure_domains": 2,
+        "data_failure_domains": 2,
+        "raw_capacity_bytes": 3000,
+        "recovery_reserve_bytes": 0,
+        "theoretical_usable_bytes": 1000,
+        "usable_after_recovery_reserve_bytes": 0,
+        "tolerated_domain_failures": null,
+        "monitor_quorum": null,
+        "fault_tolerance_claim_allowed": false,
+        "blockers": [
+          "故障域 site-a 里物理宿主和它的 VM 都申报了磁盘，容量会被重复计算；必须明确只由哪一层交给分布式存储"
+        ],
+        "warnings": [
+          "故障域 site-a 由 2 台主机共用（含物理宿主与其 VM），容量已合并为一个域"
+        ]
+      }
+    },
+    "refused_private_domain": {
+      "file": "refused_private_domain.json",
+      "exit": 2,
+      "stderr": "",
+      "report": {
+        "distinct_failure_domains": 1,
+        "data_failure_domains": 1,
+        "raw_capacity_bytes": 1000,
+        "recovery_reserve_bytes": 0,
+        "theoretical_usable_bytes": 0,
+        "usable_after_recovery_reserve_bytes": 0,
+        "tolerated_domain_failures": null,
+        "monitor_quorum": null,
+        "fault_tolerance_claim_allowed": false,
+        "blockers": [
+          "主机 vm-a1 声明是 physical-a 上的 VM，却写了不同的故障域（site-a-vm vs site-a）；同一物理机的 VM 不会因此变成独立故障域",
+          "只有 1 个故障域具备容量，放不下 2 副本；同一物理机上的多个 VM 不能凑成独立故障域"
+        ],
+        "warnings": []
+      }
+    },
+    "smallest_domain_caps": {
+      "file": "smallest_domain_caps.json",
+      "exit": 0,
+      "stderr": "",
+      "report": {
+        "distinct_failure_domains": 3,
+        "data_failure_domains": 3,
+        "raw_capacity_bytes": 1200,
+        "recovery_reserve_bytes": 0,
+        "theoretical_usable_bytes": 200,
+        "usable_after_recovery_reserve_bytes": 200,
+        "tolerated_domain_failures": 1,
+        "monitor_quorum": null,
+        "fault_tolerance_claim_allowed": true,
+        "blockers": [],
+        "warnings": []
+      }
+    },
+    "misspelled_field": {
+      "file": "misspelled_field.json",
+      "exit": 1,
+      "stderr": "sshpool: 拓扑描述不是协议 1 的 JSON（未知字段、缺失字段或类型不符）: unknown field `failure_domian`, expected one of `name`, `failure_domain`, `vm_of`, `devices` at line 17 column 22",
+      "report": null
+    },
+    "oversized": {
+      "file": "oversized.json",
+      "exit": 1,
+      "stderr": "sshpool: topology exceeds 4194304 bytes",
+      "report": null
+    }
+  }
+}
