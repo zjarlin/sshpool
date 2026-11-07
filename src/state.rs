@@ -1,12 +1,26 @@
 use crate::{
     config::{self, Config},
     mirror,
-    model::{Job, Phase, now},
+    model::{Health, Job, Phase, now},
 };
 use anyhow::{Context, Result, ensure};
-use std::{collections::HashMap, fs, path::Path, path::PathBuf, sync::Arc};
-use tokio::sync::{Mutex, Semaphore, watch};
+use std::{
+    collections::HashMap,
+    fs,
+    path::Path,
+    path::PathBuf,
+    sync::Arc,
+    time::{Duration, Instant},
+};
+use tokio::sync::{Mutex, RwLock, Semaphore, watch};
 use uuid::Uuid;
+
+/// 节点健康快照的最长可用年龄。
+///
+/// 调度必须在锁外探测：一台不可达节点会让 `ssh` 一直等到 `ConnectTimeout`（5s），
+/// 而探测若在调度锁内进行，这段时间里所有任务派发都会被串行阻塞。快照带 TTL
+/// 是为了不让「刚恢复的节点」长期被旧结论挡住——过期后下一次调度会重新探测。
+pub const HEALTH_TTL: Duration = Duration::from_secs(15);
 
 /// 控制面共享状态：同一把锁同时保护节点配额与任务状态转换。
 pub struct State {
@@ -18,6 +32,11 @@ pub struct State {
     queue_changed: watch::Sender<u64>,
     pub uploads: Arc<Semaphore>,
     pub scheduling: Mutex<()>,
+    /// 最近一次锁外探测结果；锁内只读它，绝不在持锁时等待 SSH。
+    health: RwLock<Vec<(Instant, Health)>>,
+    /// 合并并发探测：同一时刻只有一次 `probe::all`，其余调用者等待并复用结果。
+    /// 任务派发与 `/v1/status` 都会触发探测，没有这把锁时一次抖动会被放大成多轮 SSH。
+    probing: Mutex<()>,
     /// 串行化所有需要跨主机确认的状态转换，避免两个候选复用同一版本。
     pub transitions: Mutex<()>,
     pub audit: Mutex<()>,
@@ -55,9 +74,81 @@ impl State {
             queue_changed,
             uploads,
             scheduling: Mutex::new(()),
+            health: RwLock::new(Vec::new()),
+            probing: Mutex::new(()),
             transitions: Mutex::new(()),
             audit: Mutex::new(()),
         }))
+    }
+
+    /// 锁内使用：只返回已知快照，绝不发起远端命令。
+    ///
+    /// 返回的向量长度与 `nodes` 一一对应；没有探测过的节点用「未探测」占位，
+    /// 调度据此拒绝分配（fail-closed），而不是把它当成资源充足。
+    pub async fn health_snapshot(&self, nodes: &[crate::config::Node]) -> Vec<Health> {
+        let cached = self.health.read().await;
+        nodes
+            .iter()
+            .map(|node| {
+                cached
+                    .iter()
+                    .find(|(_, health)| health.name == node.name)
+                    .map(|(_, health)| {
+                        let mut health = health.clone();
+                        health.enabled = node.enabled;
+                        health
+                    })
+                    .unwrap_or_else(|| Health::failed(&node.name, "health not probed yet".into()))
+            })
+            .collect()
+    }
+
+    /// 锁外探测并刷新快照；调用方不得持有 `scheduling`。
+    ///
+    /// 并发调用会排队，拿到探测锁后先看缓存是否已被前一个调用者刷成新鲜快照；
+    /// 是则直接复用，避免一次抖动被多个等待者放大成多轮 SSH。
+    pub async fn refresh_health(&self, nodes: &[crate::config::Node]) -> Vec<Health> {
+        let _probing = self.probing.lock().await;
+        self.probe_locked(nodes).await
+    }
+
+    /// 调度路径：只有快照过期才探测，避免每次派发都打一轮 SSH。
+    ///
+    /// 与 `refresh_health` 共用 `probing` 锁，因此并发调用只会产生一轮探测。
+    pub async fn ensure_health(&self, nodes: &[crate::config::Node]) -> Vec<Health> {
+        let _probing = self.probing.lock().await;
+        if !self.health_is_stale(nodes).await {
+            return self.health_snapshot(nodes).await;
+        }
+        self.probe_locked(nodes).await
+    }
+
+    /// 调用方必须持有 `probing`；探测本身在 `scheduling` 之外执行。
+    async fn probe_locked(&self, nodes: &[crate::config::Node]) -> Vec<Health> {
+        let probed = crate::probe::all(nodes).await;
+        let at = Instant::now();
+        let mut cache = self.health.write().await;
+        cache.retain(|(_, health)| nodes.iter().any(|node| node.name == health.name));
+        for health in &probed {
+            match cache
+                .iter_mut()
+                .find(|(_, entry)| entry.name == health.name)
+            {
+                Some(entry) => *entry = (at, health.clone()),
+                None => cache.push((at, health.clone())),
+            }
+        }
+        probed
+    }
+
+    /// 快照是否已过期；过期时必须先在锁外重新探测，再进入调度。
+    pub async fn health_is_stale(&self, nodes: &[crate::config::Node]) -> bool {
+        let cache = self.health.read().await;
+        nodes.iter().any(|node| {
+            !cache
+                .iter()
+                .any(|(at, health)| health.name == node.name && at.elapsed() < HEALTH_TTL)
+        })
     }
 
     /// 返回应用运行时节点开关后的配置副本，供状态查询和调度共同使用。

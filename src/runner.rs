@@ -561,9 +561,21 @@ pub async fn run(state: Arc<State>, id: Uuid) -> Result<()> {
                 .finish(id, Phase::Cancelled, None, "cancelled".into(), false)
                 .await;
         }
-        let guard = state.scheduling.lock().await;
+        // 探测必须在调度锁外完成：一台不可达节点会让 `ssh` 等到 ConnectTimeout(5s)，
+        // 若在锁内探测，这段时间里所有任务派发都会被串行阻塞。快照带 TTL，
+        // 过期后重新探测，避免刚恢复的节点被旧结论长期挡住。
         let nodes = state.nodes().await;
-        let health = probe::all(&nodes).await;
+        state.ensure_health(&nodes).await;
+        let guard = state.scheduling.lock().await;
+        // 节点开关由 `set_node_enabled` 在 scheduling 锁内修改；拿到锁后必须重新读一次，
+        // 否则「读取节点 → 管理员禁用该节点 → 拿到锁」会把任务派给刚停用的 Worker。
+        let nodes = state.nodes().await;
+        if state.health_is_stale(&nodes).await {
+            // 新加入的节点还没有快照；放锁探测后重新进入调度，绝不拿占位结果继续分配。
+            drop(guard);
+            continue;
+        }
+        let health = state.health_snapshot(&nodes).await;
         let active = state
             .jobs
             .lock()

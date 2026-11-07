@@ -20,6 +20,31 @@ scripts/check-ssh-parity.sh 2222 2223      # 入口端口、直连端口；输�
 
 2026-11-07 增加了在线 `node enable` / `node disable`。控制面在不重启时更新调度状态并原子保存配置；仍有活动任务的节点拒绝禁用。API 测试覆盖鉴权、未知节点、活动任务保护、连续切换两个节点以及重载后保留全部选择。远程探测缺少控制面 `enabled` 字段时仍可解析，避免状态查询因协议扩展失败。
 
+### 探测在调度锁外，快照有 TTL
+
+`runner::run` 原先在持有全局 `state.scheduling` 锁时执行 `probe::all`。`transport` 固定 `ConnectTimeout=5`，所以只要有一台节点不可达，**所有任务派发都会被这 5 秒串行阻塞**。实测黑洞节点（`192.0.2.1`，RFC 5737）`ssh` 恰好耗时 5.01s；正常节点一次完整探测为 `okm182-lan` 0.35s、`sshpool-anchor` 0.18s、`macmini-lan` 1.15s。
+
+现在探测在锁外完成，锁内只读内存快照：
+
+| 环节 | 行为 |
+| --- | --- |
+| 调度路径 | `ensure_health()` 仅在快照超过 `HEALTH_TTL`（15s）时探测 |
+| 状态查询 | `/v1/status` 无条件 `refresh_health()`，顺手把缓存刷成新鲜 |
+| 并发探测 | `probing` 锁合并：等待者复用前一个调用者的新鲜快照，一次抖动不会放大成多轮 SSH |
+| 无快照节点 | 返回 `health not probed yet` 占位，`scheduler::score` 据此拒绝（fail-closed） |
+| 拿到锁后 | 重新读一次节点列表，避免「读节点 → 管理员禁用 → 拿到锁」把任务派给刚停用的 Worker |
+
+回归测试 `tests/scheduling_lock.rs` 用「TCP accept 后不发 SSH banner」的本地监听器确定性复现，不需要 Docker：
+
+- `an_unreachable_worker_does_not_hold_the_scheduling_lock`：探测已连上监听器时，另一路在 1s 内拿到调度锁；任务随后走完 ConnectTimeout 并以 `no eligible worker: hangtest: ...` 失败。**在旧实现上该测试失败**（`scheduling lock is held while a worker probe is still running`），因此不是恒真断言。
+- `a_worker_without_a_health_snapshot_is_refused`：没有快照的节点被拒绝分配，且快照与节点一一对应。
+- `concurrent_probes_share_one_round_trip`：两个并发调用只产生一次 SSH，得到同一份快照。
+- `a_node_disabled_during_the_probe_is_not_assigned`：探测进行中执行 `set_node_enabled(false)`，任务必须失败且 `attempts` 为空（**去掉锁内重读后该测试失败**，证明它抓到了真实的竞态）。
+
+真实节点侧用 `tests/scheduling_live.rs`（`#[ignore]`）验证：配置一台 `priority=100` 的黑洞节点 `192.0.2.1` 与 `okm182-lan`，`/v1/status` 里黑洞节点带 `Operation timed out`、可达节点无 error，任务仍派给 `okm182-lan` 并确认清理——优先级更高的坏节点没有被误用。证据在 [evidence/scheduling-probe-lock-20261107.json](evidence/scheduling-probe-lock-20261107.json)。
+
+语义边界：**快照最多陈旧 15s**，刚被占满的节点可能在这段时间内仍被选中，兜底是容器创建后的 `isolation::verify_created` 与调度重试；探测本身仍会等满 ConnectTimeout，锁外执行只是不让阻塞扩散到其他任务。
+
 ## limited-queue
 
 有限队列默认关闭；`Build.queue_timeout_secs=0` 时无候选 Worker 仍立即失败。显式等待时，任务保存绝对截止时间和可选优先级，以 `queued` 状态持有本地源码。`limited_queue_waits_once_and_cancel_wakes_the_runner` 验证无节点时只写入一次 `queue_wait`、重复唤醒不刷审计，并验证取消后进入已确认没有远端尝试的 `cancelled` 状态。控制面重启测试验证未过期且归档合法的未领取任务保留原截止时间，而过期、缺失或损坏源码的请求进入 `interrupted`；已尝试任务仍不会重放。优先级边界、期限范围和排序由 `retry_and_path_policies_fail_closed` 与 `limited_queue_orders_priority_then_submission_time_with_stable_ids` 覆盖。

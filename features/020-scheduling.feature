@@ -19,6 +19,17 @@ Feature: 在业务预留和兼容性约束内调度
     And sshpool status 分节点报告资源快照
     And 任务记录标明实际 Worker 而非伪造合并内存
 
+  # evidence: tests/scheduling_lock.rs::an_unreachable_worker_does_not_hold_the_scheduling_lock
+  @verified @automated @p0
+  Scenario: 探测不阻塞任务派发
+    Given 一台节点 TCP 可连接但从不发送 SSH banner
+    When 控制面在探测这台节点的同时派发其他任务
+    Then 调度锁不被探测占用
+    And 探测仍按 ConnectTimeout 收敛并记录原因
+    And 并发探测只产生一轮 SSH 且共享同一份快照
+    And 没有探测快照的节点被拒绝分配
+    And 探测期间被停用的节点不会接到任务
+
   # evidence: tests/boundaries.rs::scheduler_protects_reserves_platform_and_concurrent_slots
   @verified @automated @p0
   Scenario: 资源与架构硬过滤

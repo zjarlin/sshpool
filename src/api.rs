@@ -2,7 +2,7 @@ use crate::{
     archive,
     config::Build,
     model::{Job, Phase, now},
-    probe, runner,
+    runner,
     state::State,
 };
 use anyhow::{Context, Result, ensure};
@@ -76,7 +76,8 @@ async fn status(
 ) -> ApiResult<impl IntoResponse> {
     authorized(&headers, &state)?;
     let nodes = state.nodes().await;
-    Ok(axum::Json(probe::all(&nodes).await))
+    // 状态查询本身就是一次探测：它不在调度锁内，可以让调度复用同一份新鲜快照。
+    Ok(axum::Json(state.refresh_health(&nodes).await))
 }
 async fn enable_node(
     AppState(state): AppState<Arc<State>>,

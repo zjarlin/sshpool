@@ -9,6 +9,15 @@ Feature: 显式登记异构 SSH 节点
     Then 独立报告 Linux ARM64 Linux x86_64 和 macOS 的能力
     And 单节点错误不吞掉其他节点的探测结果
 
+  # evidence: tests/scheduling_live.rs::an_unreachable_node_is_reported_but_never_chosen
+  @verified @automated @p0
+  Scenario: 单节点不可达不吞掉其他节点
+    Given 一台节点不可达且优先级高于可达节点
+    When 查询状态并提交任务
+    Then 不可达节点带着探测原因出现在状态里
+    And 可达节点的探测结果不受影响
+    And 任务仍然派给可达节点并完成清理
+
   # evidence: tests/boundaries.rs::unapproved_images_are_rejected_even_when_already_installed
   @verified @automated @p0
   Scenario: 已有业务镜像不自动授权
