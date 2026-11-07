@@ -93,6 +93,32 @@ fn project(root: &Path) -> Result<std::path::PathBuf> {
     Ok(project)
 }
 
+/// 同一轮测试里要提交多次时用不同目录：`project()` 在已存在时失败，
+/// 这是刻意的（不允许覆盖已有工程），所以这里显式命名。
+fn named_project(root: &Path, name: &str) -> Result<std::path::PathBuf> {
+    let project = root.join(name);
+    fs::create_dir(&project)?;
+    fs::write(project.join("build.sh"), "printf 'ok\\n'\n")?;
+    Ok(project)
+}
+
+/// 只取本次 `run` 新产生的那条记录。
+///
+/// `created_at` 是秒级时间戳，同一秒内提交的多个任务无法靠排序区分；
+/// 用「提交前已有的 ID 集合」做差才是可靠的判据。
+async fn new_job(client: &Client, seen: &std::collections::HashSet<uuid::Uuid>) -> Result<Job> {
+    let jobs: Vec<Job> = serde_json::from_value(client.get("/v1/jobs").await?)?;
+    jobs.into_iter()
+        .filter(|job| !seen.contains(&job.id))
+        .max_by_key(|job| job.created_at)
+        .context("the run did not record a new job")
+}
+
+async fn job_ids(client: &Client) -> Result<std::collections::HashSet<uuid::Uuid>> {
+    let jobs: Vec<Job> = serde_json::from_value(client.get("/v1/jobs").await?)?;
+    Ok(jobs.into_iter().map(|job| job.id).collect())
+}
+
 async fn platform(node: &Node) -> Result<String> {
     let arch =
         sshpool::transport::verified(node, "docker info --format '{{.Architecture}}'", 20).await?;
@@ -374,5 +400,129 @@ async fn an_over_budget_host_stops_taking_work_before_any_container_exists() -> 
         job.message
     );
     println!("budget of {measured} MiB accepted the same job");
+    Ok(())
+}
+
+/// 在线改预算必须免重启生效，而且判据是「还能不能创建容器」。
+///
+/// 三段对照：无预算 → 跑通；在线设成低于实测 swap → 拒单且 0 容器；
+/// 在线取消预算 → 同一台机器又能跑通。全程不重启控制面、不改 config.toml。
+#[tokio::test]
+#[ignore = "requires a reachable SSH worker with Docker"]
+async fn an_online_budget_update_takes_effect_without_a_restart() -> Result<()> {
+    let live = live_node()?;
+    let health = sshpool::probe::node(&live).await;
+    ensure!(
+        health.error.is_none(),
+        "the worker must probe cleanly: {:?}",
+        health.error
+    );
+    let measured = health
+        .swap_used_mib
+        .context("this host reported no swap reading, so a swap budget cannot be exercised")?;
+    println!("measured swap {measured} MiB");
+
+    let (root, state, client) = harness(vec![live.clone()]).await?;
+    let build = Build {
+        platform: platform(&live).await?,
+        command: vec!["sh".into(), "build.sh".into()],
+        memory_mib: 256,
+        scratch_mib: 64,
+        cpus: 0.5,
+        timeout_secs: 120,
+        ..Build::default()
+    };
+
+    // 1. 未设预算：必须跑通，证明这台机器本身可用。
+    let seen = job_ids(&client).await?;
+    let unbudgeted = named_project(root.path(), "unbudgeted")?;
+    let code = client.run(&unbudgeted, build.clone()).await?;
+    ensure!(code == 0, "an unbudgeted host must run: {code}");
+    println!("unbudgeted run succeeded");
+
+    // 2. 在线设成低于实测 1 MiB：不重启，下一次派发就必须拒单。
+    let patch = sshpool::config::NodePatch {
+        slo: sshpool::config::SloPatch {
+            max_swap_used_mib: Some(measured.saturating_sub(1)),
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    let applied = client.update_node("live", &patch).await?;
+    println!("applied: {}", applied["changes"]);
+    ensure!(
+        state.nodes().await[0].slo.max_swap_used_mib == Some(measured.saturating_sub(1)),
+        "the running controller must see the new budget immediately"
+    );
+
+    let refused = named_project(root.path(), "refused")?;
+    let code = client.run(&refused, build.clone()).await?;
+    ensure!(code != 0, "an over-budget host must be refused: {code}");
+    let job = new_job(&client, &seen).await?;
+    let job = &job;
+    ensure!(
+        job.phase == Phase::Failed && job.attempts.is_empty(),
+        "an online budget must refuse before an attempt exists: {:?} {:?}",
+        job.phase,
+        job.message
+    );
+    let message = job.message.as_deref().unwrap_or_default();
+    ensure!(
+        message.contains("swap used") && message.contains(&measured.saturating_sub(1).to_string()),
+        "the refusal must quote the online budget: {message}"
+    );
+    let survivors = sshpool::transport::checked(
+        &live,
+        &format!(
+            "docker ps -a --filter {} --format {{.Names}} | wc -l",
+            sshpool::transport::quote(&format!("label=io.sshpool.job={}", job.id))
+        ),
+        20,
+    )
+    .await?;
+    let count: usize = String::from_utf8_lossy(&survivors).trim().parse()?;
+    ensure!(
+        count == 0,
+        "an online refusal must create no container, found {count}"
+    );
+    println!("online budget refused with: {message}");
+
+    // 3. 在线取消预算：必须恢复接单，证明 `clear` 不是只改内存的假动作。
+    let patch = sshpool::config::NodePatch {
+        slo: sshpool::config::SloPatch {
+            clear: vec!["max_swap_used_mib".into()],
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    client.update_node("live", &patch).await?;
+    ensure!(
+        state.nodes().await[0].slo.is_empty(),
+        "clearing the budget must leave no threshold behind"
+    );
+    let stored = sshpool::config::read(root.path())?;
+    ensure!(
+        stored
+            .nodes
+            .iter()
+            .find(|node| node.name == "live")
+            .is_some_and(|node| node.slo.is_empty()),
+        "the cleared budget must also be gone from config.toml"
+    );
+    let seen = job_ids(&client).await?;
+    let restored = named_project(root.path(), "restored")?;
+    let code = client.run(&restored, build).await?;
+    ensure!(
+        code == 0,
+        "clearing the budget must restore service: {code}"
+    );
+    let job = new_job(&client, &seen).await?;
+    let job = &job;
+    ensure!(
+        job.phase == Phase::Succeeded && job.cleanup_confirmed,
+        "the restored job must run and clean up: {:?}",
+        job.message
+    );
+    println!("cleared budget restored service");
     Ok(())
 }

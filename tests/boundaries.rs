@@ -1120,3 +1120,102 @@ fn a_budget_outside_the_percentage_range_is_rejected() {
     node.slo = budgeted(Some(0), Some(100.0), Some(100.0));
     assert!(sshpool::config::validate_node(&node).is_ok());
 }
+
+// ---------------------------------------------------------------------------
+// 在线节点设置（010-nodes「在线修改调度设置」）
+//
+// 补丁语义是纯函数：省略 = 保持原值，`clear` = 取消门槛，空补丁与同字段
+// 既设又清都必须拒绝。这里不碰 State，只断言「打补丁之后是什么」。
+// ---------------------------------------------------------------------------
+
+fn patch_node() -> Node {
+    let (mut node, _) = node_and_health();
+    node.slo = budgeted(Some(1024), Some(50.0), None);
+    node
+}
+
+/// 只给出一个字段时，其余字段必须逐字保持——补丁不是整份替换。
+#[test]
+fn a_patch_only_touches_the_fields_it_names() -> Result<()> {
+    let node = patch_node();
+    let patch = sshpool::config::NodePatch {
+        max_jobs: Some(3),
+        ..Default::default()
+    };
+    let (patched, changes) = patch.apply(&node)?;
+    assert_eq!(patched.max_jobs, 3);
+    assert_eq!(patched.reserve_memory_mib, node.reserve_memory_mib);
+    assert_eq!(patched.slo, node.slo);
+    assert_eq!(changes, vec!["max_jobs: 1 -> 3"]);
+    Ok(())
+}
+
+/// 取消门槛必须与「没提到这项」区分开，否则一旦设过就再也去不掉。
+#[test]
+fn clearing_a_budget_removes_only_that_threshold() -> Result<()> {
+    let node = patch_node();
+    let patch = sshpool::config::NodePatch {
+        slo: sshpool::config::SloPatch {
+            clear: vec!["max_swap_used_mib".into()],
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    let (patched, changes) = patch.apply(&node)?;
+    assert_eq!(patched.slo.max_swap_used_mib, None);
+    assert_eq!(patched.slo.max_memory_pressure_percent, Some(50.0));
+    assert_eq!(changes, vec!["slo.max_swap_used_mib: 1024 -> unset"]);
+    Ok(())
+}
+
+/// 同一次请求里既设又清同一个字段是自相矛盾的输入，不能靠字段顺序决定结果。
+#[test]
+fn setting_and_clearing_one_field_together_is_refused() {
+    let node = patch_node();
+    let patch = sshpool::config::NodePatch {
+        slo: sshpool::config::SloPatch {
+            max_swap_used_mib: Some(2048),
+            clear: vec!["max_swap_used_mib".into()],
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    assert!(patch.apply(&node).is_err());
+}
+
+/// 拼错的门槛名若被忽略，运维会以为已经取消，实际仍在拒单。
+#[test]
+fn an_unknown_cleared_field_is_refused() {
+    let node = patch_node();
+    let patch = sshpool::config::NodePatch {
+        slo: sshpool::config::SloPatch {
+            clear: vec!["max_swap_usage".into()],
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    assert!(patch.apply(&node).is_err());
+}
+
+/// 空补丁和「值其实没变」都不能算成功：那会让审计里出现一条什么都没改的操作。
+#[test]
+fn a_patch_that_changes_nothing_is_refused() {
+    let node = patch_node();
+    assert!(sshpool::config::NodePatch::default().apply(&node).is_err());
+    let same = sshpool::config::NodePatch {
+        max_jobs: Some(node.max_jobs),
+        ..Default::default()
+    };
+    assert!(same.apply(&node).is_err());
+}
+
+/// 换节点目标与授权镜像不属于在线补丁：出现这两个字段必须被拒绝，不能被忽略。
+#[test]
+fn a_patch_cannot_change_the_node_identity_or_its_images() {
+    // `deny_unknown_fields` 让这两个字段直接解析失败，而不是被静默丢弃后
+    // 报一句「node update carries no changes」——后者会让人以为补丁生效了。
+    assert!(serde_json::from_str::<sshpool::config::NodePatch>(r#"{"ssh":"other-host"}"#).is_err());
+    assert!(
+        serde_json::from_str::<sshpool::config::NodePatch>(r#"{"images":["evil:1"]}"#).is_err()
+    );
+}

@@ -33,6 +33,9 @@ Feature: 显式登记异构 SSH 节点
     But Windows OpenSSH 的 PowerShell 环境被明确拒绝
 
   # evidence: tests/api.rs::node_switch_persists_and_rejects_an_active_job
+  # evidence: tests/api.rs::node_update_applies_to_memory_and_disk_without_a_restart
+  # evidence: tests/scheduling_live.rs::an_online_budget_update_takes_effect_without_a_restart
+  # evidence: docs/evidence/node-update-20261108.json
   @verified @automated @p1
   Scenario: 在线禁用和恢复节点
     Given 管理员需要维护某个 Worker
@@ -40,3 +43,18 @@ Feature: 显式登记异构 SSH 节点
     Then 不重启控制面也能调整接单状态
     And 仍有活动任务时拒绝禁用
     And 连续切换多个节点后重启仍保留全部选择
+
+  # evidence: tests/api.rs::node_update_applies_to_memory_and_disk_without_a_restart
+  # evidence: tests/api.rs::an_online_budget_change_reaches_the_next_scheduling_decision
+  # evidence: tests/api.rs::node_update_refuses_to_overwrite_an_external_config_edit
+  # evidence: tests/api.rs::clearing_a_budget_is_persisted_to_the_config_file
+  # evidence: tests/scheduling_live.rs::an_online_budget_update_takes_effect_without_a_restart
+  # evidence: docs/evidence/node-update-20261108.json
+  @verified @automated @p1
+  Scenario: 在线调整节点调度设置
+    Given 管理员要在业务高峰期调整某台 Worker 的资源预留或业务预算
+    When 执行 node update 提交只含要改字段的补丁
+    Then 不重启控制面也能让新设置进入下一次调度决策
+    And 新设置先原子落盘再替换内存视图
+    And 取消一项预算与保持原值必须能区分
+    But 控制面运行期间手改的配置不会被在线更新静默覆盖

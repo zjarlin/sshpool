@@ -1,0 +1,124 @@
+{
+  "checked_at": "2026-11-08T06:12:00+08:00",
+  "scope": "010 在线调整节点调度设置：让已登记 Worker 的并发槽位、内存/磁盘预留、负载上限、优先级与业务预算无需重启控制面即可生效，并且「改了什么」可核对、外部手改不会被覆盖。",
+  "entry": {
+    "offline": {
+      "tests": "tests/boundaries.rs",
+      "command": "cargo test --locked --test boundaries",
+      "why": "补丁语义是纯函数（省略=保持原值、clear=取消门槛、空补丁与同字段既设又清必须拒绝），不需要 State、Docker 或网络",
+      "selected": [
+        "a_patch_only_touches_the_fields_it_names",
+        "clearing_a_budget_removes_only_that_threshold",
+        "setting_and_clearing_one_field_together_is_refused",
+        "an_unknown_cleared_field_is_refused",
+        "a_patch_that_changes_nothing_is_refused",
+        "a_patch_cannot_change_the_node_identity_or_its_images"
+      ]
+    },
+    "api": {
+      "tests": "tests/api.rs",
+      "command": "cargo test --locked --test api",
+      "selected": [
+        "node_update_applies_to_memory_and_disk_without_a_restart",
+        "clearing_a_budget_is_persisted_to_the_config_file",
+        "node_update_refuses_to_overwrite_an_external_config_edit",
+        "node_update_rejects_inputs_that_would_apply_nothing_or_too_much",
+        "node_update_cannot_disable_a_node_that_still_owns_a_job",
+        "an_online_budget_change_reaches_the_next_scheduling_decision"
+      ],
+      "why": "判据是「重新从 config.toml 读一遍仍然一致」，以及「同一份健康读数在改预算前后给出相反的调度结论」；两条都不看命令返回值，只看状态"
+    },
+    "live": {
+      "test": "tests/scheduling_live.rs::an_online_budget_update_takes_effect_without_a_restart",
+      "command": "SSHPOOL_LIVE_NODE=okm182 cargo test --locked --test scheduling_live -- --ignored --nocapture --test-threads=1 an_online_budget",
+      "result": "1 passed in 62.97s",
+      "why": "三段对照，全程不重启控制面、不改 config.toml：无预算跑通 → 在线设成低于实测 swap 后拒单且 0 容器 → 在线清除后恢复跑通"
+    }
+  },
+  "worker": {
+    "alias": "okm182",
+    "os": "linux",
+    "arch": "x86_64",
+    "kernel": "6.8.0-147-generic",
+    "docker": "29.1.3"
+  },
+  "design": {
+    "runtime_view": "State.nodes 由 HashMap<String, bool>（只能覆盖 enabled）换成 RwLock<Vec<Node>>：任何调度字段都能在运行时表达",
+    "write_order": ["校验单节点 (validate_node)", "重读 config.toml 并逐字段比对内存", "校验整份配置 (validate)", "原子落盘 (atomic_write)", "替换内存节点视图", "wake_queue()"],
+    "lock": "整个序列在 state.scheduling 内，因此任务派发看不到半套设置",
+    "external_edit_policy": "config.toml 与内存不一致时拒绝在线更新，提示重启加载；不整份覆盖运维手改",
+    "patch_semantics": "只改显式给出的字段；取消门槛用 slo.clear（CLI: --clear-slo）",
+    "not_patchable": ["ssh（换目标等于换一台机器，需重启核对 HostKey）", "images（授权镜像必须经 node prepare 真实拉取）"],
+    "auth": "POST /v1/nodes/{name} 要求 admin scope；请求体在处理函数内读取，使无权限调用方得到 403 而不是 415/422",
+    "conflict_rejection": "同一次请求既 set 又 clear 同一字段 → 400；未知 clear 字段名 → 400（拼错不能等于「已取消」）"
+  },
+  "live_triplet": {
+    "unbudgeted": {
+      "budget": null,
+      "phase": "Succeeded",
+      "exit_code": 0,
+      "note": "证明这台主机本身可用，后续拒绝不是环境问题"
+    },
+    "online_budget_set": {
+      "measured_swap_used_mib": 32767,
+      "budget_swap_used_mib": 32766,
+      "changes": ["slo.max_swap_used_mib: unset -> 32766"],
+      "phase": "Failed",
+      "attempts": 0,
+      "message": "no eligible worker: live: business budget: swap used 32767 MiB exceeds 32766 MiB",
+      "containers_created": 0,
+      "note": "控制面未重启；同一进程内下一次派发即按新门槛拒绝"
+    },
+    "online_budget_cleared": {
+      "changes": ["slo.max_swap_used_mib: 32766 -> unset"],
+      "phase": "Succeeded",
+      "exit_code": 0,
+      "cleanup_confirmed": true,
+      "note": "同时核对 config.toml 里该项已消失，排除「只改内存、重启后复发」"
+    },
+    "container_leak_check": "docker ps -a --format '{{.Names}}' | grep -c sshpool == 0"
+  },
+  "defects_found_and_fixed": [
+    {
+      "symptom": "只读凭据打 POST /v1/nodes/{name} 得到 415 而不是 403",
+      "cause": "axum::Json 是提取器，在进入处理函数之前执行；缺少 Content-Type 或请求体不合法时会先返回 415/422，权限检查根本轮不到",
+      "impact": "把一个没有 admin 的调用方该看到「越权」变成了「你的请求体格式不对」，等于透露该路由接受什么；访问审计里也会记成格式错误而不是 denied",
+      "fix": "请求体改为在处理函数内 axum::body::to_bytes 读取，先 require(Admin) 再解析；由 tests/api.rs::a_read_only_credential_is_refused_on_every_write_route 固定"
+    },
+    {
+      "symptom": "真机测试第二轮报 File exists (os error 17)，第三段断言取到了本轮之前的任务",
+      "cause": "测试自身的 project() 拒绝覆盖已有目录（这是产品上正确的行为）；且 created_at 是秒级时间戳，同一秒内多次提交无法靠排序区分",
+      "impact": "会让人误以为是控制面缺陷或预算未生效",
+      "fix": "测试改用不同的工程目录，并按「提交前已有 ID 集合」的差集定位本次任务"
+    }
+  ],
+  "assertions": {
+    "a_patch_only_touches_the_named_fields": true,
+    "clearing_one_threshold_leaves_the_others_untouched": true,
+    "setting_and_clearing_the_same_field_is_refused": true,
+    "a_misspelled_clear_field_is_refused": true,
+    "a_patch_that_changes_nothing_is_refused": true,
+    "ssh_and_images_cannot_be_patched_online": true,
+    "an_unknown_node_is_refused": true,
+    "an_out_of_range_budget_is_refused_before_anything_is_written": true,
+    "the_config_file_is_untouched_after_every_refusal": true,
+    "memory_and_disk_views_change_together": true,
+    "other_nodes_are_not_affected_by_one_update": true,
+    "clearing_a_budget_is_persisted_to_toml": true,
+    "an_external_config_edit_is_refused_not_overwritten": true,
+    "an_online_budget_change_reaches_the_next_decision": true,
+    "a_node_that_still_owns_a_job_cannot_be_disabled_online": true,
+    "a_credential_without_admin_gets_403_before_body_parsing": true,
+    "the_refusal_quotes_the_new_threshold_and_creates_no_container": true,
+    "clearing_the_budget_restores_service_without_a_restart": true
+  },
+  "assertions_total": 18,
+  "not_implemented": [
+    "ssh 目标与授权镜像的在线修改（换目标需重新核对 HostKey、授权镜像需真实拉取）",
+    "控制面运行期间的外部 config.toml 热加载：目前检测到外部修改就拒绝在线更新，重启才能加载",
+    "全局配置（max_active_jobs、max_upload_mib、副本 quorum、TLS 路径）的在线修改",
+    "多控制面实例间的设置同步：运行时节点视图是单实例内存态",
+    "设置变更的历史审计查询接口：变更只进访问审计的 route/status 字段与 CLI 输出，没有独立的配置变更日志"
+  ],
+  "failed_assertions": []
+}

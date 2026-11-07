@@ -1093,6 +1093,15 @@ async fn a_read_only_credential_is_refused_on_every_write_route() -> Result<()> 
     }
 
     // 写：只读凭据是 403 而不是 401 —— 身份是成立的，缺的是权限。
+    // 在线更新节点设置也要 admin，且必须是 403 而不是「请求体格式不对」：
+    // 无权限的调用方不该先得到解析层的提示。
+    let response = send("POST", "/v1/nodes/test-node", reader.clone()).await?;
+    assert_eq!(
+        response.status(),
+        StatusCode::FORBIDDEN,
+        "node update needs its own scope check before body parsing"
+    );
+
     let response = send("POST", "/v1/nodes/test-node/disable", reader.clone()).await?;
     assert_eq!(response.status(), StatusCode::FORBIDDEN);
     let body = String::from_utf8(
@@ -1399,5 +1408,246 @@ async fn a_job_without_an_owner_is_only_visible_to_operators() -> Result<()> {
     let bytes = axum::body::to_bytes(response.into_body(), 1 << 20).await?;
     let jobs: Vec<Job> = serde_json::from_slice(&bytes)?;
     assert!(jobs.is_empty(), "an unknown owner must not be listed");
+    Ok(())
+}
+
+/// 在线更新节点设置：一次请求同时改槽位与业务预算，内存与磁盘必须同时生效，
+/// 且不需要重启控制面。判据是「重新从 config.toml 读一遍仍然一致」。
+#[tokio::test]
+async fn node_update_applies_to_memory_and_disk_without_a_restart() -> Result<()> {
+    let (root, state) = state()?;
+    let body = serde_json::json!({
+        "max_jobs": 4,
+        "reserve_memory_mib": 2048,
+        "slo": { "max_swap_used_mib": 512, "max_io_pressure_percent": 8.5 }
+    });
+    let response = sshpool::api::routes(state.clone())
+        .oneshot(
+            Request::post("/v1/nodes/test-node")
+                .header("authorization", format!("Bearer {}", state.token))
+                .header("content-type", "application/json")
+                .body(Body::from(serde_json::to_vec(&body)?))?,
+        )
+        .await?;
+    assert_eq!(response.status(), StatusCode::OK);
+    let bytes = axum::body::to_bytes(response.into_body(), 65536).await?;
+    let applied: serde_json::Value = serde_json::from_slice(&bytes)?;
+    let changes = applied["changes"]
+        .as_array()
+        .expect("changes must be an array")
+        .iter()
+        .filter_map(|change| change.as_str())
+        .collect::<Vec<_>>();
+    assert!(
+        changes.contains(&"max_jobs: 1 -> 4"),
+        "changes must name the applied slot count: {changes:?}"
+    );
+
+    // 内存视图立刻生效；同名的第二台节点不受影响。
+    let nodes = state.nodes().await;
+    let updated = nodes.iter().find(|node| node.name == "test-node").unwrap();
+    assert_eq!(updated.max_jobs, 4);
+    assert_eq!(updated.reserve_memory_mib, 2048);
+    assert_eq!(updated.slo.max_swap_used_mib, Some(512));
+    assert_eq!(updated.slo.max_io_pressure_percent, Some(8.5));
+    assert_eq!(updated.slo.max_memory_pressure_percent, None);
+    let untouched = nodes
+        .iter()
+        .find(|node| node.name == "second-node")
+        .unwrap();
+    assert_eq!(untouched.max_jobs, 1);
+    assert!(untouched.slo.is_empty());
+
+    // 磁盘视图同样生效：重启后读到的就是刚才那套值。
+    let reloaded = sshpool::config::read(root.path())?;
+    let stored = reloaded
+        .nodes
+        .iter()
+        .find(|node| node.name == "test-node")
+        .unwrap();
+    assert_eq!(stored, updated);
+    Ok(())
+}
+
+/// 取消门槛必须真的从配置里消失；否则「取消」只改内存、重启后又会开始拒单。
+#[tokio::test]
+async fn clearing_a_budget_is_persisted_to_the_config_file() -> Result<()> {
+    let (root, state) = state()?;
+    let body = serde_json::json!({ "slo": { "max_swap_used_mib": 700 } });
+    let response = sshpool::api::routes(state.clone())
+        .oneshot(
+            Request::post("/v1/nodes/test-node")
+                .header("authorization", format!("Bearer {}", state.token))
+                .header("content-type", "application/json")
+                .body(Body::from(serde_json::to_vec(&body)?))?,
+        )
+        .await?;
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let body = serde_json::json!({ "slo": { "clear": ["max_swap_used_mib"] } });
+    let response = sshpool::api::routes(state.clone())
+        .oneshot(
+            Request::post("/v1/nodes/test-node")
+                .header("authorization", format!("Bearer {}", state.token))
+                .header("content-type", "application/json")
+                .body(Body::from(serde_json::to_vec(&body)?))?,
+        )
+        .await?;
+    assert_eq!(response.status(), StatusCode::OK);
+    let stored = sshpool::config::read(root.path())?;
+    let node = stored
+        .nodes
+        .iter()
+        .find(|node| node.name == "test-node")
+        .unwrap();
+    assert!(
+        node.slo.is_empty(),
+        "cleared budget must not survive in TOML"
+    );
+    Ok(())
+}
+
+/// 控制面运行期间有人手改了 config.toml：在线更新必须拒绝并提示重启，
+/// 而不是把手改整份覆盖掉。
+#[tokio::test]
+async fn node_update_refuses_to_overwrite_an_external_config_edit() -> Result<()> {
+    let (root, state) = state()?;
+    let mut edited = sshpool::config::read(root.path())?;
+    edited.nodes[0].priority = 42;
+    fs::write(
+        root.path().join("config.toml"),
+        toml::to_string_pretty(&edited)?,
+    )?;
+
+    let body = serde_json::json!({ "max_jobs": 6 });
+    let response = sshpool::api::routes(state.clone())
+        .oneshot(
+            Request::post("/v1/nodes/test-node")
+                .header("authorization", format!("Bearer {}", state.token))
+                .header("content-type", "application/json")
+                .body(Body::from(serde_json::to_vec(&body)?))?,
+        )
+        .await?;
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    let bytes = axum::body::to_bytes(response.into_body(), 65536).await?;
+    let message = String::from_utf8_lossy(&bytes);
+    assert!(
+        message.contains("edited outside the controller"),
+        "the refusal must say why: {message}"
+    );
+    // 文件保持运维写下的内容，内存保持旧值；两边都没有被悄悄改动。
+    assert_eq!(sshpool::config::read(root.path())?.nodes[0].priority, 42);
+    assert_eq!(state.nodes().await[0].max_jobs, 1);
+    Ok(())
+}
+
+/// 空补丁、越界预算、未知节点都必须 400，且不能留下任何配置改动。
+#[tokio::test]
+async fn node_update_rejects_inputs_that_would_apply_nothing_or_too_much() -> Result<()> {
+    let (root, state) = state()?;
+    let original = fs::read_to_string(root.path().join("config.toml"))?;
+    for (name, body) in [
+        ("test-node", serde_json::json!({})),
+        (
+            "test-node",
+            serde_json::json!({ "slo": { "max_memory_pressure_percent": 101.0 } }),
+        ),
+        ("not-present", serde_json::json!({ "max_jobs": 2 })),
+        // 换目标不属于在线补丁：这条必须在解析阶段就被拒绝。
+        ("test-node", serde_json::json!({ "ssh": "other-host" })),
+    ] {
+        let response = sshpool::api::routes(state.clone())
+            .oneshot(
+                Request::post(format!("/v1/nodes/{name}"))
+                    .header("authorization", format!("Bearer {}", state.token))
+                    .header("content-type", "application/json")
+                    .body(Body::from(serde_json::to_vec(&body)?))?,
+            )
+            .await?;
+        assert!(
+            response.status().is_client_error(),
+            "{body} on {name} should be refused, got {}",
+            response.status()
+        );
+    }
+    assert_eq!(
+        fs::read_to_string(root.path().join("config.toml"))?,
+        original
+    );
+    assert_eq!(state.nodes().await[0].max_jobs, 1);
+    Ok(())
+}
+
+/// 禁用仍持有活动任务的节点会让那份容器失去归属；在线更新同样要拦住。
+#[tokio::test]
+async fn node_update_cannot_disable_a_node_that_still_owns_a_job() -> Result<()> {
+    let (_root, state) = state()?;
+    let job = active_job("test-node");
+    state.jobs.lock().await.insert(job.id, job);
+    let body = serde_json::json!({ "enabled": false });
+    let response = sshpool::api::routes(state.clone())
+        .oneshot(
+            Request::post("/v1/nodes/test-node")
+                .header("authorization", format!("Bearer {}", state.token))
+                .header("content-type", "application/json")
+                .body(Body::from(serde_json::to_vec(&body)?))?,
+        )
+        .await?;
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert!(state.nodes().await[0].enabled);
+    Ok(())
+}
+
+/// 在线改预算的意义只有一个：下一次调度真的按新门槛判断。
+///
+/// 这里不重启、不重新读取配置，直接把 `state.nodes()` 交给 `scheduler::score`，
+/// 用同一份健康读数分两次判断 —— 改之前放行，改成超预算之后必须拒单。
+#[tokio::test]
+async fn an_online_budget_change_reaches_the_next_scheduling_decision() -> Result<()> {
+    let (_root, state) = state()?;
+    let health = sshpool::model::Health {
+        name: "test-node".into(),
+        enabled: true,
+        os: "linux".into(),
+        arch: "x86_64".into(),
+        cpus: 8,
+        memory_available_mib: 32_000,
+        disk_available_mib: 100_000,
+        load: 0.1,
+        runtime_memory_mib: 32_000,
+        runtime_arch: "x86_64".into(),
+        swap_used_mib: Some(900),
+        memory_pressure_percent: Some(1.0),
+        io_pressure_percent: Some(1.0),
+        error: None,
+    };
+    let build = Build {
+        platform: "linux/amd64".into(),
+        ..Build::default()
+    };
+    let node = state.nodes().await.remove(0);
+    assert!(
+        sshpool::scheduler::score(&node, &health, &build, &[]).is_ok(),
+        "an unbudgeted node must take work before the change"
+    );
+
+    let body = serde_json::json!({ "slo": { "max_swap_used_mib": 899 } });
+    let response = sshpool::api::routes(state.clone())
+        .oneshot(
+            Request::post("/v1/nodes/test-node")
+                .header("authorization", format!("Bearer {}", state.token))
+                .header("content-type", "application/json")
+                .body(Body::from(serde_json::to_vec(&body)?))?,
+        )
+        .await?;
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let node = state.nodes().await.remove(0);
+    let reason = sshpool::scheduler::score(&node, &health, &build, &[])
+        .expect_err("the same host must now be refused without any restart");
+    assert!(
+        reason.contains("swap used 900 MiB exceeds 899 MiB"),
+        "the refusal must quote the new budget: {reason}"
+    );
     Ok(())
 }

@@ -241,6 +241,34 @@ enum NodeAction {
     Disable {
         name: String,
     },
+    /// 在线修改调度设置（业务预算、资源预留、槽位、负载、优先级）；不重启控制面。
+    ///
+    /// 只提交显式给出的字段：省略等于保持原值，取消一条预算用 `--clear-slo`。
+    Update {
+        name: String,
+        #[arg(long)]
+        max_jobs: Option<usize>,
+        #[arg(long)]
+        reserve_memory_mib: Option<u64>,
+        #[arg(long)]
+        reserve_disk_mib: Option<u64>,
+        #[arg(long)]
+        max_load_per_cpu: Option<f64>,
+        #[arg(long, allow_hyphen_values = true)]
+        priority: Option<i32>,
+        /// 已用 swap 上限（MiB）。
+        #[arg(long)]
+        max_swap_used_mib: Option<u64>,
+        /// 内存 PSI `some avg10` 上限（百分比，0–100）。
+        #[arg(long)]
+        max_memory_pressure_percent: Option<f64>,
+        /// IO PSI `some avg10` 上限（百分比，0–100）。
+        #[arg(long)]
+        max_io_pressure_percent: Option<f64>,
+        /// 取消某项业务预算；可重复，取值同配置字段名。
+        #[arg(long = "clear-slo", value_name = "FIELD")]
+        clear_slo: Vec<String>,
+    },
     /// 在线核对未确认清理并解除隔离；不重启控制面。
     Reconcile {
         /// 只核对这一台 Worker；省略则核对所有节点。
@@ -788,6 +816,43 @@ async fn node_command(cli: &Cli, home: &std::path::Path, command: &NodeAction) -
             println!("{}", serde_json::to_string_pretty(&report)?);
             return Ok(());
         }
+        NodeAction::Update {
+            name,
+            max_jobs,
+            reserve_memory_mib,
+            reserve_disk_mib,
+            max_load_per_cpu,
+            priority,
+            max_swap_used_mib,
+            max_memory_pressure_percent,
+            max_io_pressure_percent,
+            clear_slo,
+        } => {
+            let patch = sshpool::config::NodePatch {
+                max_jobs: *max_jobs,
+                reserve_memory_mib: *reserve_memory_mib,
+                reserve_disk_mib: *reserve_disk_mib,
+                max_load_per_cpu: *max_load_per_cpu,
+                priority: *priority,
+                slo: sshpool::config::SloPatch {
+                    max_swap_used_mib: *max_swap_used_mib,
+                    max_memory_pressure_percent: *max_memory_pressure_percent,
+                    max_io_pressure_percent: *max_io_pressure_percent,
+                    clear: clear_slo.clone(),
+                },
+                ..Default::default()
+            };
+            // 空补丁在本地就拒绝：不让一次「什么都没改」的请求进审计与配置文件。
+            ensure!(
+                !patch.is_empty(),
+                "give at least one setting to change (or --clear-slo)"
+            );
+            let applied = client(cli, home)?.update_node(name, &patch).await?;
+            for change in applied["changes"].as_array().into_iter().flatten() {
+                println!("Node {name} {}", change.as_str().unwrap_or_default());
+            }
+            return Ok(());
+        }
         _ => {}
     }
     let mut config = config::read(home)?;
@@ -861,7 +926,10 @@ async fn node_command(cli: &Cli, home: &std::path::Path, command: &NodeAction) -
             config::save(home, &config)?;
             println!("Image approved for this worker. Restart the controller to apply.");
         }
-        NodeAction::Enable { .. } | NodeAction::Disable { .. } | NodeAction::Reconcile { .. } => {
+        NodeAction::Enable { .. }
+        | NodeAction::Disable { .. }
+        | NodeAction::Reconcile { .. }
+        | NodeAction::Update { .. } => {
             anyhow::bail!("node online command was not dispatched")
         }
     }

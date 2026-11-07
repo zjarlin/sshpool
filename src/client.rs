@@ -1,6 +1,6 @@
 use crate::{
     archive,
-    config::Build,
+    config::{Build, NodePatch},
     model::{Job, Phase},
 };
 use anyhow::{Context, Result, ensure};
@@ -85,6 +85,18 @@ impl Client {
             .await?;
         Self::response(response).await?;
         Ok(())
+    }
+    /// 在线更新节点调度设置；返回控制面实际应用的节点与变化说明。
+    pub async fn update_node(&self, name: &str, patch: &NodePatch) -> Result<serde_json::Value> {
+        Ok(Self::response(
+            self.request(reqwest::Method::POST, &format!("/v1/nodes/{name}"))
+                .json(patch)
+                .send()
+                .await?,
+        )
+        .await?
+        .json()
+        .await?)
     }
     /// 在线核对未确认清理；只返回证据结果，不在客户端做任何推断。
     pub async fn reconcile_node(&self, name: Option<&str>) -> Result<serde_json::Value> {

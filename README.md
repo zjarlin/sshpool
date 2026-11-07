@@ -99,7 +99,16 @@ sshpool node prepare linux-builder alpine:3.22
 sshpool serve
 ```
 
-配置位于 `~/.sshpool/config.toml`。节点地址、token、SSH 凭据与任务数据都不应提交到 Git。新增节点或镜像后重启控制面；已有节点的 `node enable` / `node disable` 可在控制面运行时生效，仍有活动任务的节点不能被禁用。`prepare` 是显式拉取镜像操作；普通构建不会自动拉镜像。`prepare` 同时把镜像加入该节点的允许清单；已安装的业务镜像也不会自动开放给任务。
+配置位于 `~/.sshpool/config.toml`。节点地址、token、SSH 凭据与任务数据都不应提交到 Git。**新增**节点或镜像后仍需重启控制面；**已有节点**的接单状态与调度设置都可以在线改，不需要重启：
+
+```sh
+sshpool node disable linux-builder
+sshpool node update linux-builder --max-swap-used-mib 2048 --max-memory-pressure-percent 5
+sshpool node update linux-builder --max-jobs 2 --reserve-memory-mib 8192
+sshpool node update linux-builder --clear-slo max-swap-used-mib   # 取消这一项预算
+```
+
+`node update` 只改显式给出的字段，省略等于保持原值；先校验、再原子落盘、最后替换内存中的节点视图，三步都在调度锁内，所以不会出现按半套设置派发任务的中间态。仍有活动任务的节点不能被禁用。控制面运行期间手改了 `config.toml` 的话，在线更新会拒绝并提示重启加载，而不是把那处手改覆盖掉。`prepare` 是显式拉取镜像操作；普通构建不会自动拉镜像。`prepare` 同时把镜像加入该节点的允许清单；已安装的业务镜像也不会自动开放给任务。
 
 稳定 Linux 工作台可以是已有 Linux 主机，或 Mac 上无宿主目录挂载的 Lima VM。把 `ssh_backend` 指向它的 SSH 端口，客户端只连接 `ssh_listen`。默认两者为 `127.0.0.1:2223` 和 `127.0.0.1:2222`。
 
@@ -213,7 +222,7 @@ sshpool credential prune --apply                                # 只清理已�
 | `read` | `GET /v1/status`、`/v1/jobs`、任务详情、日志、事件、产物（任何 API 凭据都有；带其它 API 动作时会自动补上） |
 | `submit` | `POST /v1/jobs` 提交任务（会占用 Worker） |
 | `cancel` | `POST /v1/jobs/{id}/cancel` 请求停止任务 |
-| `admin` | 节点启用/禁用、在线核对隔离、查询 `/v1/access` 访问审计；也是唯一能越过任务属主边界的凭据 |
+| `admin` | 节点启用/禁用、在线调整节点调度设置、在线核对隔离、查询 `/v1/access` 访问审计；也是唯一能越过任务属主边界的凭据 |
 | `scrape` | 只打开 `metrics_listen` 的 `GET /metrics` 与 `GET /`，**不打开任何 `/v1/...` 路由**；只写 `--scope scrape` 时不会补 `read` |
 
 一份凭据至少要有一个入口：`read`（API）或 `scrape`（指标）。两者都没有的记录（例如只有 `admin`）是自相矛盾的，整份凭据库拒绝加载。

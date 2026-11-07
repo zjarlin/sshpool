@@ -230,6 +230,7 @@ fn authenticate(headers: &HeaderMap, state: &State) -> std::result::Result<Princ
 pub fn routes(state: Arc<State>) -> Router {
     Router::new()
         .route("/v1/status", get(status))
+        .route("/v1/nodes/{name}", post(update_node))
         .route("/v1/nodes/{name}/enable", post(enable_node))
         .route("/v1/nodes/{name}/disable", post(disable_node))
         .route("/v1/nodes/{name}/reconcile", post(reconcile_node))
@@ -420,6 +421,32 @@ async fn status(
     let nodes = state.nodes().await;
     // 状态查询本身就是一次探测：它不在调度锁内，可以让调度复用同一份新鲜快照。
     Ok(axum::Json(state.refresh_health(&nodes).await))
+}
+/// 在线更新节点调度设置：业务预算、资源预留、并发槽位、负载上限与优先级。
+///
+/// 请求体是一个补丁，不是整份节点：省略的字段保持原值，`slo.clear` 显式取消门槛。
+/// 这里不做任何「顺手重启」或「顺手改 ssh / images」——换目标与授权镜像是配置与
+/// `node prepare` 的职责，混进在线补丁会让一次运维操作同时承担两件事。
+async fn update_node(
+    AppState(state): AppState<Arc<State>>,
+    principal: Principal,
+    Path(name): Path<String>,
+    // 请求体手动读，而不是用 `Json` 提取器：提取器在进入处理器之前就执行，
+    // 没有 `admin` 的调用方会先拿到 415/422 而不是 403，等于把「这个路由收什么」
+    // 告诉了一个没有权限的人，访问审计里也会记成格式错误而不是越权。
+    request: Request,
+) -> ApiResult<impl IntoResponse> {
+    principal.require(crate::credentials::Scope::Admin)?;
+    let bytes = axum::body::to_bytes(request.into_body(), 65536)
+        .await
+        .map_err(anyhow::Error::from)?;
+    let patch: crate::config::NodePatch =
+        serde_json::from_slice(&bytes).map_err(anyhow::Error::from)?;
+    let (node, changes) = state.update_node(&name, &patch).await?;
+    Ok(axum::Json(serde_json::json!({
+        "node": node,
+        "changes": changes
+    })))
 }
 async fn enable_node(
     AppState(state): AppState<Arc<State>>,

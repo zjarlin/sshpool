@@ -1,5 +1,5 @@
 use crate::{
-    config::{self, Config},
+    config::{self, Config, Node, NodePatch},
     mirror,
     model::{Health, Job, Phase, now},
 };
@@ -28,7 +28,9 @@ pub struct State {
     pub config: Config,
     pub token: String,
     pub jobs: Mutex<HashMap<Uuid, Job>>,
-    node_overrides: Mutex<HashMap<String, bool>>,
+    /// 当前生效的节点视图。启动时来自 `config.toml`，运行时只由 `update_node` 替换，
+    /// 替换时先原子落盘再改内存，因此「状态接口看到的」与「重启后会读到的」始终一致。
+    nodes: RwLock<Vec<Node>>,
     queue_changed: watch::Sender<u64>,
     pub uploads: Arc<Semaphore>,
     pub scheduling: Mutex<()>,
@@ -69,10 +71,10 @@ impl State {
         let (queue_changed, _) = watch::channel(0);
         Ok(Arc::new(Self {
             home,
+            nodes: RwLock::new(config.nodes.clone()),
             config,
             token,
             jobs: Mutex::new(jobs),
-            node_overrides: Mutex::new(HashMap::new()),
             queue_changed,
             uploads,
             scheduling: Mutex::new(()),
@@ -154,41 +156,74 @@ impl State {
         })
     }
 
-    /// 返回应用运行时节点开关后的配置副本，供状态查询和调度共同使用。
-    pub async fn nodes(&self) -> Vec<crate::config::Node> {
-        let overrides = self.node_overrides.lock().await;
-        self.nodes_with_overrides(&overrides)
+    /// 返回当前生效的节点视图，供状态查询、指标和调度共同使用。
+    pub async fn nodes(&self) -> Vec<Node> {
+        self.nodes.read().await.clone()
+    }
+
+    /// 单节点视图；未知节点与在线更新一样按拒绝处理。
+    pub async fn node(&self, name: &str) -> Result<Node> {
+        self.nodes
+            .read()
+            .await
+            .iter()
+            .find(|node| node.name == name)
+            .cloned()
+            .context("unknown node")
     }
 
     /// 在线切换节点接单状态；已有活动任务必须先确认结束，避免维护期遗漏容器。
-    pub async fn set_node_enabled(&self, name: &str, enabled: bool) -> Result<crate::config::Node> {
+    pub async fn set_node_enabled(&self, name: &str, enabled: bool) -> Result<Node> {
+        let patch = NodePatch {
+            enabled: Some(enabled),
+            ..NodePatch::default()
+        };
+        let (node, _) = self.update_node(name, &patch).await?;
+        Ok(node)
+    }
+
+    /// 在线更新单个节点的调度设置：业务预算、资源预留、并发槽位、负载上限与优先级。
+    ///
+    /// 顺序是「校验 → 落盘 → 换内存」，三步都在 `scheduling` 锁内完成，所以不会出现
+    /// 任务按半套设置被派发的中间态。落盘前重新读一次 `config.toml` 并与内存比对：
+    /// 有人在控制面运行时手改了这台节点，就拒绝并提示重启加载，而不是把他的手改覆盖掉。
+    pub async fn update_node(&self, name: &str, patch: &NodePatch) -> Result<(Node, Vec<String>)> {
         let _scheduling = self.scheduling.lock().await;
-        let mut overrides = self.node_overrides.lock().await;
-        let mut config = self.config_with_overrides(&overrides);
-        let node = config
-            .nodes
-            .iter_mut()
-            .find(|node| node.name == name)
-            .ok_or_else(|| anyhow::anyhow!("unknown node"))?;
-        if !enabled {
-            let active = self.jobs.lock().await.values().any(|job| {
-                !job.phase.terminal()
-                    && job
-                        .attempts
-                        .last()
-                        .is_some_and(|attempt| attempt.node == name)
-            });
-            ensure!(
-                !active,
-                "node still owns an active job; wait for confirmed completion before disabling"
-            );
+        let current = self.node(name).await?;
+        let (patched, changes) = patch.apply(&current)?;
+        config::validate_node(&patched)?;
+        if !patched.enabled {
+            self.ensure_no_active_job(name).await?;
         }
-        node.enabled = enabled;
-        let changed = node.clone();
-        config::save(&self.home, &config)?;
-        overrides.insert(name.into(), enabled);
+        let mut file = config::read(&self.home)?;
+        let stored = file
+            .nodes
+            .iter()
+            .find(|node| node.name == name)
+            .cloned()
+            .context("unknown node in config.toml")?;
+        ensure!(
+            stored == current,
+            "nodes/{name} was edited outside the controller; restart the controller to load config.toml before changing it online"
+        );
+        let index = file
+            .nodes
+            .iter()
+            .position(|node| node.name == name)
+            .expect("the node was just located");
+        file.nodes[index] = patched.clone();
+        // 整份配置的不变量（唯一名字、副本 quorum 等）仍然必须成立，不能只校验这一台。
+        config::validate(&file)?;
+        config::save(&self.home, &file)?;
+        {
+            let mut nodes = self.nodes.write().await;
+            if let Some(entry) = nodes.iter_mut().find(|node| node.name == name) {
+                *entry = patched.clone();
+            }
+        }
+        // 槽位或预算可能刚刚放宽，等待中的任务应当立刻重试一次而不是等下一个 TTL。
         self.wake_queue();
-        Ok(changed)
+        Ok((patched, changes))
     }
 
     /// 订阅队列或节点容量变化；接收端可在一次探测之后等待新的调度机会。
@@ -203,18 +238,20 @@ impl State {
         });
     }
 
-    fn config_with_overrides(&self, overrides: &HashMap<String, bool>) -> Config {
-        let mut config = self.config.clone();
-        for node in &mut config.nodes {
-            if let Some(enabled) = overrides.get(&node.name) {
-                node.enabled = *enabled;
-            }
-        }
-        config
-    }
-
-    fn nodes_with_overrides(&self, overrides: &HashMap<String, bool>) -> Vec<crate::config::Node> {
-        self.config_with_overrides(overrides).nodes
+    /// 禁用一个仍持有活动任务的节点会让那份容器失去归属；必须在改动前拒绝。
+    async fn ensure_no_active_job(&self, name: &str) -> Result<()> {
+        let active = self.jobs.lock().await.values().any(|job| {
+            !job.phase.terminal()
+                && job
+                    .attempts
+                    .last()
+                    .is_some_and(|attempt| attempt.node == name)
+        });
+        ensure!(
+            !active,
+            "node still owns an active job; wait for confirmed completion before disabling"
+        );
+        Ok(())
     }
 
     pub fn dir(&self, id: Uuid) -> PathBuf {

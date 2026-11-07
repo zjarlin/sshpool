@@ -32,6 +32,47 @@ scripts/check-ssh-parity.sh 2222 2223      # 入口端口、直连端口；输�
 
 2026-11-07 增加了在线 `node enable` / `node disable`。控制面在不重启时更新调度状态并原子保存配置；仍有活动任务的节点拒绝禁用。API 测试覆盖鉴权、未知节点、活动任务保护、连续切换两个节点以及重载后保留全部选择。远程探测缺少控制面 `enabled` 字段时仍可解析，避免状态查询因协议扩展失败。
 
+### 在线调整节点设置 {#node-update}
+
+`node enable` / `node disable` 之后，其余调度字段（业务预算、内存/磁盘预留、并发槽位、负载上限、优先级）也可以在线改。根因是运行时节点视图：它原先只是一个 `HashMap<String, bool>`，只能携带 `enabled` 一个字段；现在换成 `RwLock<Vec<Node>>`，探测、`/v1/status`、指标与调度读同一份列表，一次更新对全部读取方同时生效。
+
+```sh
+sshpool node update linux-builder --max-swap-used-mib 2048 --max-memory-pressure-percent 5
+sshpool node update linux-builder --max-jobs 2 --reserve-memory-mib 8192
+sshpool node update linux-builder --priority -5
+sshpool node update linux-builder --clear-slo max-swap-used-mib
+```
+
+| 不变量 | 实现 | 自动化 |
+| --- | --- | --- |
+| 不会按半套设置派发 | 「校验 → 落盘 → 换内存 → `wake_queue()`」整段在 `state.scheduling` 内 | `node_update_applies_to_memory_and_disk_without_a_restart` |
+| 内存与磁盘同源 | 落盘后重新 `config::read` 得到的节点必须与 `state.nodes()` 逐字段相等 | 同上 |
+| 整体配置合法性仍成立 | 单节点 `validate_node` 之后还要跑整份 `config::validate`（唯一名字、副本 quorum 等） | `node_update_rejects_inputs_that_would_apply_nothing_or_too_much` |
+| 取消门槛 ≠ 保持原值 | 只有 `slo.clear` / `--clear-slo` 会清空；省略字段一律保持 | `clearing_a_budget_removes_only_that_threshold`、`clearing_a_budget_is_persisted_to_the_config_file` |
+| 拼错的名字不会被当成「已取消」 | `clear` 只接受三个配置字段名 | `an_unknown_cleared_field_is_refused` |
+| 同字段既设又清 | 拒绝，不靠字段顺序决定 | `setting_and_clearing_one_field_together_is_refused` |
+| 空补丁不产生「什么都没改」的操作 | 无实际差异就 400，配置与审计都不变 | `a_patch_that_changes_nothing_is_refused`、`the_config_file_is_untouched_after_every_refusal` |
+| 换目标与授权镜像不在补丁里 | `NodePatch` 用 `deny_unknown_fields`，出现 `ssh`/`images` 直接解析失败 | `a_patch_cannot_change_the_node_identity_or_its_images` |
+| 不覆盖运维手改 | 落盘前重读 `config.toml` 与内存比对，不一致就拒绝并提示重启 | `node_update_refuses_to_overwrite_an_external_config_edit` |
+| 活动任务保护同样适用 | 补丁里 `enabled=false` 也要先过活动任务检查 | `node_update_cannot_disable_a_node_that_still_owns_a_job` |
+| 权限先于请求体 | 请求体在处理函数内读取，未授权调用方得到 403 而不是 415/422 | `a_read_only_credential_is_refused_on_every_write_route` |
+
+「生效」的判据不是返回值好看，而是**同一份健康读数在改预算前后给出相反的调度结论**：`an_online_budget_change_reaches_the_next_scheduling_decision` 把 `state.nodes()` 直接交给 `scheduler::score`，改之前放行、设成 `max_swap_used_mib=899` 之后拒绝，理由是 `swap used 900 MiB exceeds 899 MiB`。
+
+真实链路 `tests/scheduling_live.rs::an_online_budget_update_takes_effect_without_a_restart`（`#[ignore]`，`okm182`，62.97s）做三段对照，全程不重启控制面、不改 `config.toml`：
+
+| 段 | 在线操作 | 结果 |
+| --- | --- | --- |
+| 1 | 无预算 | `Succeeded`，`exit_code=0` —— 证明主机本身可用，后续拒绝不是环境问题 |
+| 2 | 设成实测值减 1（实测 `32767` MiB → 门槛 `32766`） | `changes=["slo.max_swap_used_mib: unset -> 32766"]`；`Failed`、`attempts` 为空，消息含 `swap used 32767 MiB exceeds 32766 MiB`，**本次 0 容器** |
+| 3 | `--clear-slo max_swap_used_mib` | `Succeeded`、`cleanup_confirmed=true`；同时核对 `config.toml` 里该项已消失 |
+
+只验拒绝会漏掉「一律拒绝」，只验放行看不出门槛是否真的读了读数；第三段专门排除「只改内存、重启后复发」。三段跑完 `docker ps -a` 里 sshpool 容器数为 0。证据见 [evidence/node-update-20261108.json](evidence/node-update-20261108.json)。
+
+这一轮实测抓到一个真实缺陷：**`POST /v1/nodes/{name}` 用 `axum::Json` 提取器时，没有 `admin` 的调用方收到的是 415 而不是 403** —— 提取器在进入处理函数之前执行，权限检查根本轮不到。结果是把「越权」显示成「你的请求体格式不对」，等于向无权限者透露该路由接受什么，访问审计里也会归到格式错误而不是 `denied`。改成在处理函数内 `to_bytes` 读体、先 `require(Admin)` 再解析，并用只读凭据的写路由矩阵测试固定。
+
+边界：`ssh` 与 `images` **不能**在线改——换 SSH 目标等于换了一台机器（需重启核对 HostKey 与探测结论），授权镜像必须经 `node prepare` 真实拉取。控制面运行期间的外部 `config.toml` 修改不会热加载，只会在下一次在线更新时被检测到并拒绝。全局配置（`max_active_jobs`、上传/产物上限、副本 quorum、TLS 路径）仍是重启生效。运行时节点视图是单实例内存态，多控制面之间没有设置同步，也没有独立的配置变更日志（变更只体现在访问审计的 `route`/`status` 与 CLI 输出里）。
+
 ### 探测在调度锁外，快照有 TTL
 
 `runner::run` 原先在持有全局 `state.scheduling` 锁时执行 `probe::all`。`transport` 固定 `ConnectTimeout=5`，所以只要有一台节点不可达，**所有任务派发都会被这 5 秒串行阻塞**。实测黑洞节点（`192.0.2.1`，RFC 5737）`ssh` 恰好耗时 5.01s；正常节点一次完整探测为 `okm182-lan` 0.35s、`sshpool-anchor` 0.18s、`macmini-lan` 1.15s。

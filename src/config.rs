@@ -81,7 +81,7 @@ pub struct Replica {
     pub enabled: bool,
 }
 /// 一个 SSH 可达的容器执行节点；同一业务节点应保留足够内存。
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Node {
     pub name: String,
@@ -132,6 +132,193 @@ impl Slo {
         self.max_swap_used_mib.is_none()
             && self.max_memory_pressure_percent.is_none()
             && self.max_io_pressure_percent.is_none()
+    }
+}
+
+/// 在线修改节点调度设置的补丁：只描述要改哪些字段，不重写整份节点。
+///
+/// 刻意不包含 `ssh` 与 `images`：前者是节点身份的一部分（换目标等于换了一台机器，
+/// 必须在配置里显式写清并重启核对），后者由 `node prepare` 显式拉取并授权。
+/// `deny_unknown_fields` 让请求里出现 `ssh` 时直接 400，而不是被静默忽略。
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct NodePatch {
+    pub enabled: Option<bool>,
+    pub max_jobs: Option<usize>,
+    pub reserve_memory_mib: Option<u64>,
+    pub reserve_disk_mib: Option<u64>,
+    pub max_load_per_cpu: Option<f64>,
+    pub priority: Option<i32>,
+    pub slo: SloPatch,
+}
+
+/// 业务预算的补丁。`clear` 列出要显式清空的门槛名，用来区分「不改」与「取消门槛」。
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct SloPatch {
+    pub max_swap_used_mib: Option<u64>,
+    pub max_memory_pressure_percent: Option<f64>,
+    pub max_io_pressure_percent: Option<f64>,
+    /// 要清空的门槛字段名；与同名的设置值同时出现时拒绝。
+    pub clear: Vec<String>,
+}
+
+/// `clear` 允许的名字；写错必须报错，不能当成「什么都没改」。
+pub const SLO_FIELDS: [&str; 3] = [
+    "max_swap_used_mib",
+    "max_memory_pressure_percent",
+    "max_io_pressure_percent",
+];
+
+impl SloPatch {
+    pub fn is_empty(&self) -> bool {
+        self.max_swap_used_mib.is_none()
+            && self.max_memory_pressure_percent.is_none()
+            && self.max_io_pressure_percent.is_none()
+            && self.clear.is_empty()
+    }
+}
+
+impl NodePatch {
+    pub fn is_empty(&self) -> bool {
+        self.enabled.is_none()
+            && self.max_jobs.is_none()
+            && self.reserve_memory_mib.is_none()
+            && self.reserve_disk_mib.is_none()
+            && self.max_load_per_cpu.is_none()
+            && self.priority.is_none()
+            && self.slo.is_empty()
+    }
+
+    /// 打好补丁的节点副本；不修改原节点，校验交给调用方。
+    ///
+    /// 返回值同时列出**真正发生变化**的字段，好让调用方拒绝「看起来改了、其实没改」
+    /// 的请求，也避免把一次无效操作写进配置文件和访问审计。
+    pub fn apply(&self, node: &Node) -> Result<(Node, Vec<String>)> {
+        ensure!(!self.is_empty(), "node update carries no changes");
+        for name in &self.slo.clear {
+            // 未知名字若被静默忽略，运维会以为门槛已经取消，实际仍在拒单。
+            ensure!(
+                SLO_FIELDS.contains(&name.as_str()),
+                "unknown slo field in clear: {name}"
+            );
+            let set = match name.as_str() {
+                "max_swap_used_mib" => self.slo.max_swap_used_mib.is_some(),
+                "max_memory_pressure_percent" => self.slo.max_memory_pressure_percent.is_some(),
+                _ => self.slo.max_io_pressure_percent.is_some(),
+            };
+            ensure!(!set, "cannot both set and clear slo.{name} in one update");
+        }
+        let mut patched = node.clone();
+        let mut changed = Vec::new();
+        let mut note = |label: &str, before: String, after: String| {
+            if before != after {
+                changed.push(format!("{label}: {before} -> {after}"));
+            }
+        };
+        if let Some(enabled) = self.enabled {
+            note("enabled", node.enabled.to_string(), enabled.to_string());
+            patched.enabled = enabled;
+        }
+        if let Some(max_jobs) = self.max_jobs {
+            note("max_jobs", node.max_jobs.to_string(), max_jobs.to_string());
+            patched.max_jobs = max_jobs;
+        }
+        if let Some(reserve) = self.reserve_memory_mib {
+            note(
+                "reserve_memory_mib",
+                node.reserve_memory_mib.to_string(),
+                reserve.to_string(),
+            );
+            patched.reserve_memory_mib = reserve;
+        }
+        if let Some(reserve) = self.reserve_disk_mib {
+            note(
+                "reserve_disk_mib",
+                node.reserve_disk_mib.to_string(),
+                reserve.to_string(),
+            );
+            patched.reserve_disk_mib = reserve;
+        }
+        if let Some(load) = self.max_load_per_cpu {
+            note(
+                "max_load_per_cpu",
+                node.max_load_per_cpu.to_string(),
+                load.to_string(),
+            );
+            patched.max_load_per_cpu = load;
+        }
+        if let Some(priority) = self.priority {
+            note("priority", node.priority.to_string(), priority.to_string());
+            patched.priority = priority;
+        }
+        let describe = |value: Option<f64>| match value {
+            Some(value) => value.to_string(),
+            None => "unset".into(),
+        };
+        if let Some(limit) = self.slo.max_swap_used_mib {
+            note(
+                "slo.max_swap_used_mib",
+                match node.slo.max_swap_used_mib {
+                    Some(value) => value.to_string(),
+                    None => "unset".into(),
+                },
+                limit.to_string(),
+            );
+            patched.slo.max_swap_used_mib = Some(limit);
+        }
+        if let Some(limit) = self.slo.max_memory_pressure_percent {
+            note(
+                "slo.max_memory_pressure_percent",
+                describe(node.slo.max_memory_pressure_percent),
+                describe(Some(limit)),
+            );
+            patched.slo.max_memory_pressure_percent = Some(limit);
+        }
+        if let Some(limit) = self.slo.max_io_pressure_percent {
+            note(
+                "slo.max_io_pressure_percent",
+                describe(node.slo.max_io_pressure_percent),
+                describe(Some(limit)),
+            );
+            patched.slo.max_io_pressure_percent = Some(limit);
+        }
+        for name in &self.slo.clear {
+            match name.as_str() {
+                "max_swap_used_mib" => {
+                    note(
+                        "slo.max_swap_used_mib",
+                        match node.slo.max_swap_used_mib {
+                            Some(value) => value.to_string(),
+                            None => "unset".into(),
+                        },
+                        "unset".into(),
+                    );
+                    patched.slo.max_swap_used_mib = None;
+                }
+                "max_memory_pressure_percent" => {
+                    note(
+                        "slo.max_memory_pressure_percent",
+                        describe(node.slo.max_memory_pressure_percent),
+                        "unset".into(),
+                    );
+                    patched.slo.max_memory_pressure_percent = None;
+                }
+                _ => {
+                    note(
+                        "slo.max_io_pressure_percent",
+                        describe(node.slo.max_io_pressure_percent),
+                        "unset".into(),
+                    );
+                    patched.slo.max_io_pressure_percent = None;
+                }
+            }
+        }
+        ensure!(
+            !changed.is_empty(),
+            "node update would change nothing; the node already has these values"
+        );
+        Ok((patched, changed))
     }
 }
 
