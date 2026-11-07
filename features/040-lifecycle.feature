@@ -52,9 +52,15 @@ Feature: 可解释且谨慎的任务生命周期
     And 只有幂等禁网且仍有重试额度的任务才重新排队
     And 已执行过的 Worker 不会因为重跑被再次选中
 
-  @partial @manual @p0
+  # evidence: src/lifecycle.rs::request_stop
+  # evidence: src/runner.rs::pending_stop
+  # evidence: tests/lifecycle_live.rs::cancel_stops_the_remote_process_and_removes_the_container
+  # evidence: tests/lifecycle_live.rs::deadline_stops_the_remote_process_before_reporting_failure
+  # evidence: docs/evidence/cancel-timeout-20261107.json
+  @verified @automated @p0
   Scenario: 取消与超时
     Given 任务正在运行
     When 用户取消或超过执行期限
     Then 请求停止并核对任务容器
     And 清理无法确认时标记中断并隔离节点
+    But 只断开控制面这一侧的 SSH 客户端不算停止

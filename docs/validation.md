@@ -44,6 +44,26 @@ ARM64 的 shell 任务已完成日志、退出码、产物导出与清理闭环�
 
 恢复、取消、配额与故障切换的进一步验收结果会在本文件追加。单元和 API 测试不替代真实故障注入。
 
+### 取消与执行期限
+
+`POST /v1/jobs/{id}/cancel` 与期限到期走同一条停止路径：控制面先按任务标签确认容器身份，再发送 `docker stop --time 20`，然后重新读取状态。只有 `Absent` 与 `Stopped` 算「已停止」；`Running` 和任何 SSH 错误都不算，此时任务进入 `interrupted` 并隔离该 Worker，绝不报成 `cancelled`。
+
+这里有个容易写错的前提，已在真实 Worker 上实测：**只杀掉控制面这一侧的 SSH 客户端不会停止远端进程**。断开整个 SSH 会话后，容器仍是 `running`，容器内 `docker exec` 启动的 `sleep` 也仍在。所以取消必须显式发停止请求，而不能靠丢弃连接。
+
+| 阶段 | 行为 |
+| --- | --- |
+| 镜像检查后、`docker create` 前 | 已取消/到期则完全不创建容器（容器不存在即等于已确认不存在） |
+| `create` 后、`start` 前 | 容器停在 `Created`，没有进程可停止，直接收尾 |
+| 源码导入后、启动命令前 | 先请求停止再返回，避免白跑一次完整构建 |
+| 执行中 | 每秒检查，触发后停止并等待 `docker exec` 客户端退出 |
+
+实测（`sshpool-anchor`，linux/arm64，Docker 29.1.3，alpine:3.22）：
+
+- 取消：任务进入 `running` 后 2 秒取消 → 远端收到停止请求、`events.jsonl` 记录 `client-cancel; remote container stopped`、终态 `cancelled`、`cleanup_confirmed=true`、按 `label=io.sshpool.job=<id>` 查询容器数为 0。
+- 期限：`timeout_secs=5` 而命令是 `sleep 600` → 记录 `deadline` 原因、终态 `failed` 且消息含 `job deadline exceeded`、容器数为 0。
+
+证据在 [evidence/cancel-timeout-20261107.json](evidence/cancel-timeout-20261107.json)。语义边界要说清：`docker stop` 的 SIGTERM 发给容器 PID1（本项目是 `sleep timeout+grace`），不是容器里的业务进程，所以取消是「确定停止」而不是「优雅排空」——不给业务进程自定义清理时间，被取消的任务一律不导出产物，中间结果也不保证可用。
+
 ## isolation
 
 实际任务输出 UID 65534，工作台与容器均未挂载宿主 home。文件边界测试覆盖外部符号链接、tar 穿越/软硬链接/特殊文件、未声明产物、已有输出不覆盖、畸形/超量上传与相邻文件保护。

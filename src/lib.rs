@@ -6,6 +6,7 @@ pub mod config;
 pub mod dr;
 pub mod gateway;
 pub mod isolation;
+pub mod lifecycle;
 pub mod mirror;
 pub mod model;
 pub mod probe;

@@ -1,7 +1,7 @@
 use crate::{
     archive,
     config::{Build, Node},
-    isolation,
+    isolation, lifecycle,
     model::{Attempt, Job, Phase, now, queue_precedes},
     probe, scheduler,
     state::State,
@@ -17,6 +17,53 @@ use uuid::Uuid;
 
 fn docker(args: &[String]) -> String {
     format!("docker {}", transport::words(args))
+}
+/// `docker exec` 的结束方式；停止原因与被停止的命令分开记录。
+///
+/// `stop` 表示「我们主动请求停止」，`stop_confirmed` 才表示「远端确实停了」。
+/// 两者不能合并：请求发出但无法确认时，任务既不是成功也不是干净取消。
+struct Execution {
+    code: i32,
+    stop: Option<lifecycle::StopCause>,
+    stop_confirmed: bool,
+}
+/// 一次尝试的可审计结果。停止原因决定终态，不能靠退出码猜测。
+struct RunResult {
+    outcome: String,
+    code: Option<i32>,
+    artifacts: bool,
+    stop: Option<lifecycle::StopCause>,
+    stop_confirmed: bool,
+}
+impl RunResult {
+    fn from_execution(execution: Execution, artifacts: bool) -> Self {
+        match execution.stop {
+            Some(cause) => Self {
+                outcome: format!("{}; remote container stopped", cause.as_str()),
+                code: None,
+                artifacts: false,
+                stop: Some(cause),
+                stop_confirmed: execution.stop_confirmed,
+            },
+            None => Self {
+                outcome: format!("exit {}", execution.code),
+                code: Some(execution.code),
+                artifacts,
+                stop: None,
+                stop_confirmed: false,
+            },
+        }
+    }
+    /// 控制面自己失败（SSH 掉线、隔离校验拒绝）时没有停止原因，也不是取消。
+    fn failed(error: &anyhow::Error) -> Self {
+        Self {
+            outcome: format!("{error:#}"),
+            code: None,
+            artifacts: false,
+            stop: None,
+            stop_confirmed: false,
+        }
+    }
 }
 /// 清理确认、幂等和禁网同时成立时，才允许在另一台 Worker 上重新执行。
 fn failover_allowed(
@@ -81,7 +128,8 @@ async fn execute(
     node: &Node,
     container: &str,
     build: &Build,
-) -> Result<i32> {
+    deadline: u64,
+) -> Result<Execution> {
     let mut args = vec!["exec".into(), container.into()];
     args.extend(build.command.clone());
     let mut child = transport::spawn(node, &docker(&args))?;
@@ -104,14 +152,45 @@ async fn execute(
         Ok::<_, anyhow::Error>(status.code().unwrap_or(255))
     };
     tokio::pin!(run);
-    loop {
+    // 取消或到期时先向远端请求停止，再等 `docker exec` 客户端退出。
+    // 只杀掉本机 SSH 客户端不会停止远端进程，任务会继续占配额并继续写产物。
+    let report = loop {
         tokio::select! {
-            result = &mut run => return result,
+            result = &mut run => {
+                return Ok(Execution { code: result?, stop: None, stop_confirmed: false });
+            }
             _ = tokio::time::sleep(Duration::from_secs(1)) => {
-                if state.cancelled(id).await { bail!("cancelled by client"); }
+                let cause = if state.cancelled(id).await {
+                    lifecycle::StopCause::ClientCancel
+                } else if now() >= deadline {
+                    lifecycle::StopCause::Deadline
+                } else {
+                    continue;
+                };
+                let requested = lifecycle::request_stop(
+                    node,
+                    id,
+                    container,
+                    lifecycle::STOP_GRACE_SECS,
+                )
+                .await;
+                break (cause, lifecycle::describe(cause, &requested));
             }
         }
-    }
+    };
+    state.event(id, "stop_requested", &report.1.detail).await?;
+    let code = match tokio::time::timeout(Duration::from_secs(lifecycle::EXEC_DRAIN_SECS), &mut run)
+        .await
+    {
+        // 客户端被信号杀掉时退出码没有意义；停止结论以上一步的状态读取为准。
+        Ok(Ok(code)) => code,
+        Ok(Err(_)) | Err(_) => 143,
+    };
+    Ok(Execution {
+        code,
+        stop: Some(report.0),
+        stop_confirmed: report.1.confirmed,
+    })
 }
 async fn collect(
     state: &State,
@@ -167,13 +246,27 @@ async fn collect(
         Err(_) => bail!("artifact export timed out"),
     }
 }
+/// 在阶段边界上检查是否已经需要停止；返回原因时调用方应立即收尾。
+///
+/// 取消可能落在「容器已创建但还没启动」或「源码导入中」这些窗口里。只在
+/// `execute` 内每秒轮询会让这些窗口等到启动之后才生效，白跑一次完整构建。
+async fn pending_stop(state: &Arc<State>, id: Uuid, deadline: u64) -> Option<lifecycle::StopCause> {
+    if state.cancelled(id).await {
+        Some(lifecycle::StopCause::ClientCancel)
+    } else if now() >= deadline {
+        Some(lifecycle::StopCause::Deadline)
+    } else {
+        None
+    }
+}
 async fn attempt(
     state: &Arc<State>,
     id: Uuid,
     node: &Node,
     container: &str,
     build: &Build,
-) -> Result<(i32, bool)> {
+    deadline: u64,
+) -> Result<(Execution, bool)> {
     state.event(id, "image_check", &node.name).await?;
     // 默认只用预先准备好的镜像，避免构建请求在业务磁盘上触发无限拉取。
     let image = transport::checked(
@@ -197,12 +290,35 @@ async fn attempt(
             .is_none_or(|volumes| volumes.is_empty()),
         "images declaring VOLUME are not allowed: use a build image without persistent volumes"
     );
+    // 已经取消或到期时连容器都不必创建：省掉一次完整创建/校验往返。
+    if let Some(cause) = pending_stop(state, id, deadline).await {
+        // 容器尚未创建，等价于远端确认「不存在」，因此停止是可信的。
+        return Ok((
+            Execution {
+                code: 0,
+                stop: Some(cause),
+                stop_confirmed: true,
+            },
+            false,
+        ));
+    }
     state.event(id, "container_create", &node.name).await?;
     let args = isolation::container_args(id, container, build);
     transport::checked(node, &docker(&args), 20).await?;
     // 命令行声明可能被 Docker 改写（例如 tmpfs 默认 noexec）；启动前按真实配置复核，
     // 任何一项不满足就停在 Created 状态，由调用方的清理路径删除。
     isolation::verify_created(node, container, id, build).await?;
+    // 容器仍停在 Created：此时没有任何进程可停止，直接按「从未启动」收尾。
+    if let Some(cause) = pending_stop(state, id, deadline).await {
+        return Ok((
+            Execution {
+                code: 0,
+                stop: Some(cause),
+                stop_confirmed: true,
+            },
+            false,
+        ));
+    }
     transport::checked(
         node,
         &format!("docker start {}", transport::quote(container)),
@@ -211,10 +327,10 @@ async fn attempt(
     .await?;
     // 容器 PID1 只是 `sleep timeout+grace`；把真实启动时刻换算成租约到期并立即持久化，
     // 这样即使之后 SSH 掉线，也有一条不依赖远端连接的终止证据。
-    let deadline = watchdog::started_at(node, container)
+    let lease = watchdog::started_at(node, container)
         .await
         .map(|started| started.saturating_add(build.timeout_secs + watchdog::LEASE_GRACE_SECS));
-    record_watchdog_deadline(state, id, container, deadline).await?;
+    record_watchdog_deadline(state, id, container, lease).await?;
     let import = format!(
         "docker exec -i {} sh -c {}",
         transport::quote(container),
@@ -222,18 +338,34 @@ async fn attempt(
     );
     state.event(id, "source_import", &node.name).await?;
     transport::upload(node, &import, &state.dir(id).join("source.tar")).await?;
+    // 导入可能耗时较久（大归档）；在启动命令前再确认一次，避免白跑。
+    if let Some(cause) = pending_stop(state, id, deadline).await {
+        let requested =
+            lifecycle::request_stop(node, id, container, lifecycle::STOP_GRACE_SECS).await;
+        let report = lifecycle::describe(cause, &requested);
+        state.event(id, "stop_requested", &report.detail).await?;
+        return Ok((
+            Execution {
+                code: 0,
+                stop: Some(cause),
+                stop_confirmed: report.confirmed,
+            },
+            false,
+        ));
+    }
     state.event(id, "execution", &node.name).await?;
-    let code = execute(state, id, node, container, build).await?;
-    if code == 255 {
+    let execution = execute(state, id, node, container, build, deadline).await?;
+    if execution.code == 255 && execution.stop.is_none() {
         bail!("SSH connection interrupted; remote completion unknown");
     }
-    let artifacts = if code == 0 {
+    // 被取消或到期停止的执行不导出产物：结果已经不属于这次请求。
+    let artifacts = if execution.code == 0 && execution.stop.is_none() {
         state.event(id, "artifact_export", &node.name).await?;
         collect(state, id, node, container, build).await?
     } else {
         false
     };
-    Ok((code, artifacts))
+    Ok((execution, artifacts))
 }
 /// 立即发布看门狗租约；读取启动时刻失败时保持为空，等价于「暂无终止证据」。
 async fn record_watchdog_deadline(
@@ -516,14 +648,31 @@ pub async fn run(state: Arc<State>, id: Uuid) -> Result<()> {
         state.checkpoint_candidate(assigned).await?;
         drop(guard);
         state.event(id, "assigned", &node.name).await?;
-        let result = tokio::time::timeout(
-            Duration::from_secs(build.timeout_secs),
-            attempt(&state, id, &node, &container, &build),
+        // 执行期限从派发时刻起算；`execute` 每秒核对，到期时向远端请求停止，
+        // 而不是只杀掉本机 SSH 客户端。外层超时只是最后兜底，正常路径不会触发。
+        let deadline = now().saturating_add(build.timeout_secs);
+        let backstop = Duration::from_secs(
+            build.timeout_secs + lifecycle::STOP_GRACE_SECS + lifecycle::EXEC_DRAIN_SECS + 60,
+        );
+        let executed = tokio::time::timeout(
+            backstop,
+            attempt(&state, id, &node, &container, &build, deadline),
         )
         .await;
-        let result = match result {
-            Ok(value) => value,
-            Err(_) => Err(anyhow::anyhow!("job deadline exceeded")),
+        // 控制面侧失败（SSH 掉线、隔离校验拒绝）与被停止的执行都收敛成同一种记录，
+        // 区别只体现在 `stop`：有停止原因时终态由原因决定，没有时才可能换机重试。
+        let (result, failure) = match executed {
+            Ok(Ok((execution, artifacts))) => {
+                (RunResult::from_execution(execution, artifacts), false)
+            }
+            Ok(Err(error)) => (RunResult::failed(&error), true),
+            // 连停止请求都没能在兜底期限内完成：不能宣称远端已经停下。
+            Err(_) => (
+                RunResult::failed(&anyhow::anyhow!(
+                    "execution backstop expired; remote stop not confirmed"
+                )),
+                true,
+            ),
         };
         let cleanup = remove(&node, id, &container).await;
         state
@@ -537,10 +686,7 @@ pub async fn run(state: Arc<State>, id: Uuid) -> Result<()> {
                 },
             )
             .await?;
-        let outcome = match &result {
-            Ok((code, _)) => format!("exit {code}"),
-            Err(error) => format!("{error:#}"),
-        };
+        let outcome = result.outcome.clone();
         let mut completed = state
             .jobs
             .lock()
@@ -571,39 +717,91 @@ pub async fn run(state: Arc<State>, id: Uuid) -> Result<()> {
                 )
                 .await;
         }
-        if state.cancelled(id).await {
+        // 已确认停止就不再看退出码，也不再参与重试：停止原因本身就是终态理由。
+        let cancel_requested = state.cancelled(id).await;
+        if result.stop.is_some() && !result.stop_confirmed {
+            // 停止请求发出但没有拿到「已停止」的证据：既不能算取消成功，
+            // 也不能换机重跑，否则旧进程可能与新尝试同时提交结果。
             return state
                 .finish(
                     id,
-                    Phase::Cancelled,
+                    Phase::Interrupted,
                     None,
-                    "cancelled; remote container removed".into(),
+                    format!(
+                        "{outcome}; remote stop unconfirmed on {}; quarantine until `sshpool node reconcile {}` proves the container is gone",
+                        node.name, node.name
+                    ),
                     false,
                 )
                 .await;
         }
-        match result {
-            Ok((code, artifacts)) => {
-                return state
-                    .finish(
-                        id,
-                        if code == 0 {
-                            Phase::Succeeded
-                        } else {
-                            Phase::Failed
-                        },
-                        Some(code),
-                        outcome,
-                        artifacts,
-                    )
-                    .await;
-            }
-            Err(error) if !failover_allowed(true, true, tried.len(), &build) => {
-                return state
-                    .finish(id, Phase::Failed, None, format!("{error:#}"), false)
-                    .await;
-            }
-            Err(_) => {}
+        if let Some(cause) = result.stop {
+            return match cause {
+                lifecycle::StopCause::ClientCancel => {
+                    state
+                        .finish(
+                            id,
+                            Phase::Cancelled,
+                            None,
+                            format!("cancelled by client; {outcome} and removed"),
+                            false,
+                        )
+                        .await
+                }
+                // 期限届满是确定的失败，重试只会再烧一次同样的时间。
+                lifecycle::StopCause::Deadline => {
+                    state
+                        .finish(
+                            id,
+                            Phase::Failed,
+                            None,
+                            format!("job deadline exceeded; {outcome} and removed"),
+                            false,
+                        )
+                        .await
+                }
+            };
+        }
+        if let Some(code) = result.code {
+            // 命令在自己结束时，停止请求可能刚好晚一步到达；照实报告执行结果，
+            // 不把已经完成的任务改写成「取消」。
+            let late = if cancel_requested {
+                " (cancel arrived after the command finished)"
+            } else {
+                ""
+            };
+            return state
+                .finish(
+                    id,
+                    if code == 0 {
+                        Phase::Succeeded
+                    } else {
+                        Phase::Failed
+                    },
+                    Some(code),
+                    format!("{outcome}{late}"),
+                    result.artifacts,
+                )
+                .await;
+        }
+        // 走到这里说明没有观察到退出码：要么控制面侧失败，要么停止没能确认。
+        if cancel_requested && !failure {
+            return state
+                .finish(
+                    id,
+                    Phase::Interrupted,
+                    None,
+                    format!(
+                        "{outcome}; cancellation not confirmed on {}. Run `sshpool node reconcile {}` once the container is proven stopped",
+                        node.name, node.name
+                    ),
+                    false,
+                )
+                .await;
+        }
+        // 控制面侧失败里只有「清理已确认 + 幂等禁网 + 仍有额度」才允许换机。
+        if !failover_allowed(true, true, tried.len(), &build) {
+            return state.finish(id, Phase::Failed, None, outcome, false).await;
         }
     }
 }
@@ -793,7 +991,7 @@ pub fn read_build(path: &Path) -> Result<Build> {
 
 #[cfg(test)]
 mod tests {
-    use super::{attempted_nodes, failover_allowed};
+    use super::{Execution, RunResult, attempted_nodes, failover_allowed};
     use crate::{
         config::Build,
         model::{Attempt, Job, Phase},
@@ -828,6 +1026,60 @@ mod tests {
             watchdog_deadline: None,
             cleanup_proof: None,
         }
+    }
+
+    /// 被停止的执行没有退出码；它必须自报停止原因，否则会被当成普通失败。
+    #[test]
+    fn a_stopped_execution_reports_its_cause_and_no_exit_code() {
+        let cancelled = RunResult::from_execution(
+            Execution {
+                code: 143,
+                stop: Some(crate::lifecycle::StopCause::ClientCancel),
+                stop_confirmed: true,
+            },
+            false,
+        );
+        assert_eq!(
+            cancelled.stop,
+            Some(crate::lifecycle::StopCause::ClientCancel)
+        );
+        assert!(cancelled.stop_confirmed);
+        assert_eq!(
+            cancelled.code, None,
+            "a stopped command has no meaningful code"
+        );
+        assert!(
+            !cancelled.artifacts,
+            "a stopped job must not publish artifacts"
+        );
+
+        let expired = RunResult::from_execution(
+            Execution {
+                code: 143,
+                stop: Some(crate::lifecycle::StopCause::Deadline),
+                stop_confirmed: false,
+            },
+            false,
+        );
+        // 请求了停止但没拿到证据，必须与「已确认停止」区分开。
+        assert!(!expired.stop_confirmed);
+    }
+
+    /// 正常结束的执行没有停止原因，退出码与产物照常返回。
+    #[test]
+    fn a_normal_execution_keeps_its_exit_code() {
+        let finished = RunResult::from_execution(
+            Execution {
+                code: 0,
+                stop: None,
+                stop_confirmed: false,
+            },
+            true,
+        );
+        assert_eq!(finished.code, Some(0));
+        assert!(finished.artifacts);
+        assert!(finished.stop.is_none());
+        assert_eq!(finished.outcome, "exit 0");
     }
 
     /// 控制面在容器仍运行时崩溃会留下 `outcome: None`；那台机器同样执行过任务。

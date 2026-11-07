@@ -139,6 +139,8 @@ sshpool fetch <job-id>
 sshpool cancel <job-id>
 ```
 
+`cancel` 会让远端真正停下：控制面按任务标签确认容器身份后发送 `docker stop`，再复核状态。只断开 SSH 连接不算停止 —— 实测断开后容器仍然在跑。停止未获确认时任务记为 `interrupted` 并隔离该 Worker，而不是报成 `cancelled`。
+
 日志返回当前终端；产物由 `fetch` 解包到 `.sshpool/results/<job-id>/`。已存在的输出目录会被拒绝。私有依赖建议预先制作镜像；不要在构建参数、项目文件或镜像里放生产凭据。
 
 镜像中的编译器负责执行构建。平台必须明确匹配：`linux/amd64` 产物不能当作 `linux/arm64` 产物。Mac Worker 贡献的是 Docker Linux VM，当前不执行原生 Xcode/macOS 构建。Windows Worker 的 SSH 必须进入 WSL2，而不是 PowerShell。
