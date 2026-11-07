@@ -17,7 +17,9 @@ Feature: 部署发布和运维
     Then 仓库使用 MIT 许可且包含锁定依赖和 CI
     And 发布内容不含私钥 token 或真实节点地址
 
-  @planned @p1
+  # evidence: tests/release_assets.rs::a_single_platform_bundle_passes_but_is_not_a_complete_release
+  # evidence: docs/evidence/release-assets-20261108.json
+  @partial @automated @p1
   Scenario: 跨平台版本发布
     Given Linux 和 macOS 构建全部通过
     When 发布版本标签

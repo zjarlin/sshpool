@@ -1,0 +1,130 @@
+name: Release
+
+# 打 v* 标签即发布：三个平台各一个二进制，外加一条 sha256 汇总。
+# 标签必须与 Cargo.toml 版本完全一致；平台基线与包布局不合规就失败，不发布。
+# 演练走 workflow_dispatch（publish=false），它只上传工作流产物、不建 Release。
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: '标签名；留空则用 v<Cargo.toml 版本>。标签不存在时按当前提交演练'
+        required: false
+      publish:
+        description: '创建 GitHub Release；不勾选只产出工作流产物（演练）'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: ${{ matrix.target }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # 22.04 固定 glibc 2.35 上限；用 latest 构建会把链接器的符号要求抬到更新系统才有的版本。
+          - os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+          - os: macos-latest
+            target: aarch64-apple-darwin
+          - os: macos-latest
+            target: x86_64-apple-darwin
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: release-${{ matrix.target }}
+      - id: meta
+        name: 核对标签与版本
+        env:
+          # dispatch 且没填标签时为空，脚本回落到 v<Cargo.toml 版本>；不会把分支名当标签。
+          TAG_INPUT: ${{ inputs.tag }}
+        run: sh scripts/release-check-tag.sh | tee -a "$GITHUB_OUTPUT"
+      - run: cargo build --release --locked --target ${{ matrix.target }}
+      - name: 平台基线闸门
+        run: sh scripts/release-baseline.sh "target/${{ matrix.target }}/release/sshpool" ${{ matrix.target }}
+      - name: 打包与校验和
+        run: sh scripts/package-release.sh ${{ matrix.target }} dist
+      - name: 本机架构上的产物冒烟
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+        run: |
+          set -euo pipefail
+          if [ "$(sh scripts/release-host-target.sh)" = "${{ matrix.target }}" ]; then
+            binary="target/${{ matrix.target }}/release/sshpool"
+            test "$("$binary" --version)" = "sshpool $VERSION"
+            "$binary" --version
+          else
+            echo "跳过冒烟：${{ matrix.target }} 不是本机架构"
+          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sshpool-${{ matrix.target }}
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 30
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # 发布 job 要核对标签指向，必须拿到全部标签。
+          ref: ${{ inputs.tag || github.ref }}
+          fetch-depth: 0
+      - id: meta
+        name: 复算标签与演练标记
+        env:
+          TAG_INPUT: ${{ inputs.tag }}
+        run: sh scripts/release-check-tag.sh | tee -a "$GITHUB_OUTPUT"
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: sshpool-*
+          merge-multiple: true
+          path: dist
+      - name: 汇总并复核三个产物
+        env:
+          TAG: ${{ steps.meta.outputs.tag }}
+        run: |
+          set -euo pipefail
+          cd dist
+          cat ./*.tar.gz.sha256 > SHA256SUMS
+          rm ./*.tar.gz.sha256
+          cd ..
+          sh scripts/check-release-assets.sh dist "$TAG" --all
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sshpool-release-assets
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 90
+      - name: 发布
+        if: (github.event_name == 'push' || inputs.publish) && steps.meta.outputs.rehearsal == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.meta.outputs.tag }}
+        run: |
+          set -euo pipefail
+          notes="docs/release-notes/${TAG}.md"
+          args=(--verify-tag --prerelease --title "sshpool ${TAG}")
+          if [ -f "$notes" ]; then
+            args+=(--notes-file "$notes")
+          else
+            args+=(--generate-notes)
+          fi
+          gh release create "$TAG" dist/sshpool-*.tar.gz dist/SHA256SUMS "${args[@]}"

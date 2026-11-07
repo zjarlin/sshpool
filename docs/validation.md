@@ -496,6 +496,41 @@ macOS ARM64 Worker 本次只完成资源探测：可用内存约 2.7 GiB，小�
 
 本地 Rust 测试、格式检查、Clippy 和 release build 通过；具体数量随版本增长，以对应提交的 CI 为准。工作台客户端与 Mac 控制面均已更新，但公开源码不代表生产可用或全部验收场景通过。CI 运行结果见 [GitHub Actions](https://github.com/zjarlin/sshpool/actions)。
 
+### 跨平台二进制发布 {#release-assets}
+
+2026-11-08 补齐「打标签就出三个平台二进制 + 校验和 + 支持版本说明」的流水线，并在本机把三个目标全部真实构建、打包、量基线、跑起来。脱敏记录见 [release-assets-20261108.json](evidence/release-assets-20261108.json)。
+
+| 产物 | 构建环境 | 实测基线 | 真实运行 |
+| --- | --- | --- | --- |
+| `x86_64-unknown-linux-gnu` | Ubuntu 22.04 容器（glibc 2.35） | 最高只引用 `GLIBC_2.34` | 22.04 与 24.04 均 `sshpool 0.1.0`；20.04（glibc 2.31）按预期拒绝并列出缺的 `GLIBC_2.32/2.33/2.34` |
+| `aarch64-apple-darwin` | macOS runner | `minos 11.0`，与声明一致 | 本机原生 `sshpool 0.1.0` |
+| `x86_64-apple-darwin` | macOS runner | `minos 10.12`，不高于声明的 11.0 | 本机经 Rosetta `sshpool 0.1.0` |
+
+基线不是写死在脚本里的一句话：`scripts/release-baseline.sh` 读真实产物——Linux 取 `.gnu.version_r` 里的 GLIBC 版本需求（有 `readelf` 就用它，没有则用只读同名段的 `scripts/glibc-symbol-version.py`），macOS 取 `LC_BUILD_VERSION/minos`，老式 x86_64 目标回落到 `LC_VERSION_MIN_MACOSX/version`。超出承诺版本就以退出码 2 失败，CI 里因此不可能发布一个跑不起来的产物。
+
+这一轮实测拦下了三个真实缺陷，都不是靠读代码得到的：
+
+| 现象 | 原因 | 处理 |
+| --- | --- | --- |
+| 在 Ubuntu 24.04 上构建的 Linux 产物在 22.04 上起不来（`GLIBC_2.39 not found`，符号为 `pidfd_getpid`、`pidfd_spawnp`） | 链接器只引用构建机已有的 glibc 符号 | Linux 目标固定在 22.04 构建，并让基线闸门把这条约束变成硬失败 |
+| `sha256sum -c --quiet` 对格式错误的行只打 warning，仍返回 0 | 一条坏行被静默跳过，等于校验没做 | 检查脚本先用正则钉死每行格式（64 位小写十六进制 + 两个空格 + 声明目标文件名），再交给 `sha256sum --strict` |
+| 二进制从别的路径打包时，包内成员名跟着源文件名走，`check` 找不到 `…/sshpool` | 打包脚本直接 `cp` 未改名 | 统一装成 `<bundle>/sshpool` |
+
+校验与拒绝路径（同一份 `scripts/check-release-assets.sh`，用户下载后也可直接用）：
+
+| 场景 | 结果 |
+| --- | --- |
+| 三个产物齐全 | 通过，并逐条打印 `sha256 ok, 布局 ok, magic …` |
+| 改一个字节 | 失败（`FAILED`） |
+| 摘要行里混一条 `deadbee` | 失败，`SHA256SUMS 有 1 行格式不符` |
+| 只上传两个目标，仍要求 `--all` | 失败，`缺少目标 aarch64-apple-darwin 的产物` |
+| 混进未声明的第四个目标 | 失败，`…不属于声明目标` |
+| 包内出现绝对路径或 `../` | 失败，`含可疑路径`（单元测试覆盖） |
+
+自动化侧新增 `tests/release_assets.rs`（6 个测试）：合规单平台包通过但 `--all` 拒绝、篡改/坏行/大写摘要被拒、未声明目标与路径逃逸被拒、缺二进制时不产出半成品、基线闸门量出真实基线且拒绝外来格式（退出码必须是 2）、标签核对（无标签走演练、版本不符退出 2、标签指向别的提交退出 2——最后一条用临时 git 仓库造出「两个提交、标签打在旧的那个上」）。流水线本体是 `.github/workflows/release.yml`：`v*` 标签触发三个目标并行构建 → 基线闸门 → 打包 → 汇总 `SHA256SUMS` → `--all` 复核 → 建 Release；`workflow_dispatch` 在同一套步骤上演练，标签不存在时只在日志里标明「按提交 … 演练」并跳过发布。
+
+尚未覆盖：没有代码签名与公证（macOS 是 ad-hoc 签名，需要用户自行处理 quarantine），`SHA256SUMS` 与压缩包放在同一个 Release 里所以只防传输损坏、不防篡改，没有 Linux aarch64 与静态 musl 变体，也没有真正打过 `v*` 标签或创建过 GitHub Release（本轮证据里 `no_git_tag_exists_so_nothing_was_published` 为真）。这些边界写进了 [版本发布](release.md#已知限制)。
+
 ## control-state-recovery
 
 2026-11-07 在两个独立物理故障域完成非业务演示任务的 quorum-2 双向恢复：先隔离一个远端并从另一个恢复完整任务归档，再交换隔离方向重复验证。恢复结果保留任务 ID、源码 SHA-256、队列状态、revision、事件和提交回执。脱敏记录见 [control-state-recovery-20261107.json](evidence/control-state-recovery-20261107.json)。

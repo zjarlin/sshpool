@@ -18,6 +18,16 @@ jobs:
       - run: cargo clippy --locked --all-targets -- -D warnings
       - run: cargo test --locked
       - run: python3 scripts/feature-status.py --check
+      # 发布脚本是 shell 写的，语法错误只能在真正打标签时暴露，所以在这里先挡一次。
+      - run: |
+          set -e
+          for script in scripts/check-release-assets.sh scripts/package-release.sh \
+                        scripts/release-baseline.sh scripts/release-check-tag.sh \
+                        scripts/release-host-target.sh scripts/release-version.sh \
+                        scripts/rehearse-release.sh; do
+            sh -n "$script"
+          done
+          PYTHONDONTWRITEBYTECODE=1 python3 -m py_compile scripts/glibc-symbol-version.py
       - run: python3 -m unittest discover -s scripts/ssi-lab -p 'test_*.py'
       - if: runner.os == 'Linux'
         run: |

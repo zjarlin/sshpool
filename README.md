@@ -292,6 +292,7 @@ scrape_configs:
 - 短期凭据按五项白名单（`read`/`submit`/`cancel`/`admin`/`scrape`）授权，并有主体范围：默认只能看到、只能取消自己提交的任务。但粒度仍然有限 —— 没有按节点、按项目分权，也没有「只读某个项目的任务」；`admin` 是越过属主边界的唯一凭据，所以它仍然等价于运维权限，不能只是「多一个查询权限」随手借出。归属记在任务记录里，旧任务没有属主时只有运维主体能看；混跑旧版本二进制时，旧版落盘会丢掉不认识的 `owner` 字段，任务会退化成“归属未知”（仍然只有运维主体能看，是收紧而不是放宽）。改权限要重新签发。见 [验证文档](docs/validation.md#access-network)。
 - 访问审计是本机 `home/access.jsonl` 上的普通追加文件，没有签名链或只追加存储：能写这个目录的人可以改写、删除或伪造记录。超过 12 MiB 的历史会被滚动丢弃，没有远程日志后端或归档；也没有按 IP/地理归因。
 - **存储冗余仍只是规划算术**：`sshpool storage-plan` 按拓扑核算副本、仲裁和恢复预留，并拒绝「两台物理机凑三故障域」这类承诺；但 Ceph 没有部署，没有掉盘、`fsync`、崩溃恢复或跨机接管验收。它也不探测真实磁盘容量——输入里的 `size_bytes` 与故障域由部署者申报，盘的归属必须先过 `storage-admission`。见 [跨物理机与无 RAID 存储边界](docs/ssi-physical-storage.md#先核算再承诺) 与 [验证记录](docs/validation.md#storage-placement)。
+- **发布物是预发布二进制，不是生产承诺**：`v*` 标签会构建 Linux x86_64（glibc ≥ 2.35）与 macOS arm64/x86_64 三个产物并附 `SHA256SUMS`，但 macOS 只有 ad-hoc 签名、没有公证（首次运行要自己处理 quarantine），Linux 是动态链接（Alpine 跑不了），校验和与压缩包放在同一个 Release 里所以只防传输损坏、不防篡改。没有 Linux aarch64 与静态 musl 变体。见 [版本发布](docs/release.md#已知限制)。
 - 指标抓取凭据只解决「可撤销、不给 API」：`scrape` 是**全有或全无**，没有按节点或按指标过滤，任何一把 scrape 凭据都能看到全部节点名与资源水位。抓取也不进访问审计（15 秒一次会冲掉有界日志），所以「谁抓过」只能靠网络层或 Prometheus 自身的日志。它只输出数值与节点名，不含 SSH 目标、token、任务消息或自由文本。指标不落盘、不带历史，重启后计数从现有任务记录重新渲染；Prometheus 配置与日志后端（Loki/ELK）由部署者自行提供。
 
 ## 开发与验证
@@ -301,6 +302,8 @@ cargo fmt --check
 cargo clippy --all-targets -- -D warnings
 cargo test
 ```
+
+发布流程与产物校验见 [版本发布](docs/release.md)：`scripts/rehearse-release.sh` 能在一台机器上把三个目标按 CI 的顺序重建、过基线闸门、打包并复核，`scripts/check-release-assets.sh` 下载后也能独立验。
 
 从 `src/main.rs` 看 CLI，再看 `src/api.rs` 的任务接收，最后看 `src/runner.rs` 的容器生命周期。`src/scheduler.rs` 负责资源选择，`src/archive.rs` 负责文件边界。架构、验证范围与未来方向见 [docs/architecture.md](docs/architecture.md)。
 

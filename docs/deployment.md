@@ -1,5 +1,23 @@
 # 部署
 
+## 安装方式
+
+两种都可以，产物等价：
+
+```sh
+# 预编译（发布页或 CI 产物）；先在解包前验一遍校验和
+mkdir -p /tmp/sshpool && cd /tmp/sshpool
+gh release download v0.1.0 -R zjarlin/sshpool
+sh /path/to/repo/scripts/check-release-assets.sh . v0.1.0 --all
+tar -xzf sshpool-v0.1.0-x86_64-unknown-linux-gnu.tar.gz
+install -m 755 sshpool-v0.1.0-x86_64-unknown-linux-gnu/sshpool ~/.local/bin/
+
+# 或从源码
+cargo install --git https://github.com/zjarlin/sshpool --locked
+```
+
+预编译产物只覆盖 Linux x86_64（glibc ≥ 2.35）与 macOS（≥ 11.0 / Intel ≥ 10.12）；其他平台从源码构建。签名、公证与校验和的强度边界见 [版本发布](release.md#已知限制)。
+
 ## 稳定宿主：macOS + Lima
 
 ```sh

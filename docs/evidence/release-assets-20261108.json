@@ -1,0 +1,129 @@
+{
+  "checked_at": "2026-11-08T00:11:00+0800",
+  "scope": "090 跨平台版本发布：Linux x86_64 与 macOS arm64/x86_64 三个产物、各自的 sha256、真实基线测量（glibc / macOS minos）与在各系统上的实际运行结果",
+  "assets": {
+    "tag": "v0.1.0",
+    "version_from_cargo_toml": "0.1.0",
+    "bundles": {
+      "aarch64-apple-darwin": "sshpool-v0.1.0-aarch64-apple-darwin.tar.gz",
+      "x86_64-apple-darwin": "sshpool-v0.1.0-x86_64-apple-darwin.tar.gz",
+      "x86_64-unknown-linux-gnu": "sshpool-v0.1.0-x86_64-unknown-linux-gnu.tar.gz"
+    },
+    "archive_bytes": {
+      "aarch64-apple-darwin": 4551073,
+      "x86_64-apple-darwin": 4888286,
+      "x86_64-unknown-linux-gnu": 5011011
+    },
+    "checksum_lines": 3,
+    "sha256": {
+      "sshpool-v0.1.0-aarch64-apple-darwin.tar.gz": "a20a6ab65d9d8eb223f5041d187d7d1ba5eea434d09373fc34490a50fd4ed88a",
+      "sshpool-v0.1.0-x86_64-apple-darwin.tar.gz": "0f11b799a60311ef64f1672cca4ec2c16e38fdac2967da16a997d71aea844ed0",
+      "sshpool-v0.1.0-x86_64-unknown-linux-gnu.tar.gz": "a38a5f794b94edb45a7874395abc7d3f420527512f30e2a0016ca67bdbd782e0"
+    },
+    "checker_output": [
+      "checksums: ok (3 条)",
+      "  aarch64-apple-darwin: sha256 ok, 布局 ok, magic cffaedfe, 本机运行 sshpool 0.1.0",
+      "  x86_64-apple-darwin: sha256 ok, 布局 ok, magic cffaedfe",
+      "  x86_64-unknown-linux-gnu: sha256 ok, 布局 ok, magic 7f454c46",
+      "release assets: ok (v0.1.0)"
+    ],
+    "baseline_observed": {
+      "aarch64-apple-darwin": "aarch64-apple-darwin: macos 11.0 (baseline 11.0)",
+      "x86_64-apple-darwin": "x86_64-apple-darwin: macos 10.12 (baseline 11.0)",
+      "x86_64-unknown-linux-gnu": "x86_64-unknown-linux-gnu: glibc 2.34 (baseline 2.35)"
+    }
+  },
+  "runs": {
+    "macos_arm64_native": {
+      "command": "target/aarch64-apple-darwin/release/sshpool --version",
+      "exit": 0,
+      "stdout": "sshpool 0.1.0"
+    },
+    "macos_x86_64_via_rosetta": {
+      "command": "arch -x86_64 …/x86_64-apple-darwin/release/sshpool --version",
+      "exit": 0,
+      "stdout": "sshpool 0.1.0"
+    },
+    "glibc_2.35_ubuntu_22_04": {
+      "image": "ubuntu:22.04",
+      "exit": 0,
+      "output": [
+        "ldd (Ubuntu GLIBC 2.35-0ubuntu3.15) 2.35",
+        "sshpool 0.1.0"
+      ]
+    },
+    "glibc_2.39_ubuntu_24_04": {
+      "image": "ubuntu:24.04",
+      "exit": 0,
+      "output": [
+        "ldd (Ubuntu GLIBC 2.39-0ubuntu8.9) 2.39",
+        "sshpool 0.1.0"
+      ]
+    },
+    "glibc_2.31_ubuntu_20_04": {
+      "image": "ubuntu:20.04",
+      "exit": 1,
+      "output": [
+        "ldd (Ubuntu GLIBC 2.31-0ubuntu9.17) 2.31",
+        "/bin/sshpool: /lib/x86_64-linux-gnu/libc.so.6: version `GLIBC_2.32' not found (required by /bin/sshpool)",
+        "/bin/sshpool: /lib/x86_64-linux-gnu/libc.so.6: version `GLIBC_2.33' not found (required by /bin/sshpool)",
+        "/bin/sshpool: /lib/x86_64-linux-gnu/libc.so.6: version `GLIBC_2.34' not found (required by /bin/sshpool)"
+      ]
+    }
+  },
+  "refusals": {
+    "one_byte_tampered": {
+      "exit": 1,
+      "mentions_failure": true
+    },
+    "malformed_checksum_line": {
+      "exit": 1,
+      "reason": "SHA256SUMS 有 1 行格式不符"
+    },
+    "missing_targets_with_all": {
+      "exit": 1,
+      "reason": "缺少目标 aarch64-apple-darwin 的产物"
+    },
+    "undeclared_target": {
+      "exit": 1,
+      "reason": "SHA256SUMS 里的 sshpool-v0.1.0-riscv64gc-unknown-linux-gnu.tar.gz 不属于声明目标"
+    }
+  },
+  "version_agreement": {
+    "cargo_toml": "0.1.0",
+    "binary_reports": "sshpool 0.1.0",
+    "expected_tag": "v0.1.0",
+    "script_and_binary_agree": true,
+    "no_git_tag_exists_yet": true
+  },
+  "assertions_total": 26,
+  "failed_assertions": [],
+  "assertions": {
+    "three_bundles_present": true,
+    "checksum_lines_equal_three": true,
+    "checker_accepts_complete_release": true,
+    "checker_reports_layout_and_magic": true,
+    "bundle_layout_ok": true,
+    "macos_arm64_baseline_is_11_0": true,
+    "macos_x86_64_within_baseline": true,
+    "linux_baseline_is_glibc_2_34_or_older": true,
+    "linux_gate_passed": true,
+    "macos_arm64_runs_natively": true,
+    "macos_x86_64_runs_on_this_machine": true,
+    "linux_runs_at_declared_baseline": true,
+    "linux_runs_on_newer_glibc": true,
+    "linux_refuses_below_baseline": true,
+    "refusal_names_the_missing_versions": true,
+    "each_binary_reports_the_packaged_version": true,
+    "tampered_byte_is_refused": true,
+    "malformed_checksum_line_is_refused": true,
+    "malformed_line_failure_is_explicit": true,
+    "missing_targets_are_refused": true,
+    "missing_target_failure_names_it": true,
+    "undeclared_target_is_refused": true,
+    "undeclared_target_failure_is_explicit": true,
+    "binary_and_tag_agree": true,
+    "no_git_tag_exists_so_nothing_was_published": true,
+    "no_privkey_or_token_in_evidence": true
+  }
+}
