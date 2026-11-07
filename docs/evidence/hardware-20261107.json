@@ -1,0 +1,70 @@
+{
+  "checked_at": "2026-11-07T23:40:00+08:00",
+  "scope": "ARM64 工作台经统一入口提交 linux/amd64 任务；工作台指标与计算池能力分开报告",
+  "entry": {
+    "test": "tests/hardware_live.rs",
+    "command": "scripts/prepare-live-workbench.sh sshpool-anchor && SSHPOOL_LIVE_WORKBENCH=sshpool-anchor SSHPOOL_LIVE_WORKER=okm182-lan SSHPOOL_LIVE_WORKBENCH_BIN=/tmp/sshpool-src/target/release/sshpool cargo test --test hardware_live -- --ignored --test-threads=1",
+    "topology": "工作台执行真实 CLI → 测试进程内的回环控制面（经 host.lima.internal 从工作台访问）→ Worker 上的 Docker",
+    "why": "提交、跟随、回取都发生在工作台上，测试进程只读结果；不是同机自问自答"
+  },
+  "roles": {
+    "workbench": {
+      "host": "sshpool-anchor",
+      "uname": "Linux aarch64",
+      "runtime_arch": "aarch64",
+      "cpus": 4,
+      "mem_total_mib": 5902
+    },
+    "worker": {
+      "host": "okm182-lan",
+      "runtime_arch": "x86_64",
+      "cpus": 32,
+      "mem_available_mib": 25603,
+      "docker": "29.1.3"
+    }
+  },
+  "offload": {
+    "job": "596ccb1d-44f9-4e80-b40e-3b1a39aa6ada",
+    "requested_platform": "linux/amd64",
+    "container": "sshpool-596ccb1d-44f9-4e80-b40e-3b1a39aa6ada-1",
+    "worker_evidence": "该 Worker 的 `docker top <container>` 中有 build.sh（5 行），容器名与任务标签一致",
+    "workbench_evidence": "同一时刻按 `label=io.sshpool.job` 查询工作台 Docker，容器数为 0",
+    "attempt": "worker（1 次尝试；工作台从未收到该 amd64 尝试）",
+    "artifact": {
+      "arch": "x86_64",
+      "sum": 40000,
+      "expected": 40000,
+      "expected_formula": "等差数列 1..=200000 之和 mod 1000003"
+    },
+    "terminal": "succeeded / exit_code=0 / cleanup_confirmed=true",
+    "cleanup_check": "任务结束后按标签查询 Worker 与工作台，均为空；工作台的 job 容器总数回到提交前"
+  },
+  "separation": {
+    "job": "606769ed-58e4-4f68-984e-0bece43cef0c",
+    "uname_via_workbench": "Linux aarch64",
+    "nproc_via_workbench": 4,
+    "mem_total_via_workbench_mib": 5902,
+    "status_entries": {
+      "workbench": { "arch": "aarch64", "cpus": 4, "runtime_arch": "aarch64" },
+      "worker": { "arch": "x86_64", "cpus": 32, "runtime_arch": "x86_64" }
+    },
+    "asserted": [
+      "统一入口的 uname/nproc 报工作台自身内核与 CPU（Linux aarch64 / 4）",
+      "sshpool status 走控制面，每个节点一份独立快照；工作台与 Worker 的 arch 不同，内存各自报数不相加",
+      "客户端进度行打印 worker=worker platform=linux/amd64，与实际派发一致",
+      "任务记录的 attempt.node 是 worker，而不是 workbench"
+    ]
+  },
+  "regression_found": {
+    "symptom": "第一次运行得到 `controller: unauthorized`：工作台登录环境里有 SSHPOOL_TOKEN_FILE 指向生产控制面",
+    "root_cause": "CLI 的 --home 只改目录，token 仍按 clap 的 env 回退解析；测试只传 --home 与 --endpoint 时用了生产 token",
+    "fix": "测试在工作台侧显式传 --token-file 指向一次性目录；这是真实误连风险，不只是测试洁癖",
+    "also": "提交子进程提前退出时必须立刻报错，而不是等到 90s 超时后说「没提交任务」"
+  },
+  "boundaries": [
+    "Worker 上没有 rust:1.93-alpine，本条只验证 alpine:3.22 上的脚本构建，不重复 shim_live 的 Rust 编译验收",
+    "工作台的 CONTROL 不是生产控制面：测试自建临时 home + 回环随机端口，未写入 ~/.sshpool",
+    "macOS Worker 仍因低于业务预留不参与；WSL2 未实机验证",
+    "跨架构执行的仍是整任务调度，不是同一进程/内存的 SSI 合并"
+  ]
+}

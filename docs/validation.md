@@ -178,6 +178,31 @@ Mac 上已安装专用 LaunchAgent，读取私有状态目录并启动独立 Lim
 
 ## hardware-proof
 
+2026-11-07 起，这条链路有可复跑的 `#[ignore]` 测试：`tests/hardware_live.rs`。它在测试进程内启动临时控制面（临时 home + 回环随机端口），由 **ARM64 工作台执行真实 CLI** 通过 `host.lima.internal` 访问该控制面，再派发到独立 x86_64 Worker。
+
+```sh
+scripts/prepare-live-workbench.sh sshpool-anchor     # 把当前源码构建到工作台，只用测试二进制
+SSHPOOL_LIVE_WORKBENCH=sshpool-anchor \
+SSHPOOL_LIVE_WORKER=okm182-lan \
+SSHPOOL_LIVE_WORKBENCH_BIN=/tmp/sshpool-src/target/release/sshpool \
+  cargo test --test hardware_live -- --ignored --test-threads=1
+```
+
+| 断言 | 实测（任务 `596ccb1d-…`） |
+| --- | --- |
+| 角色先核对 | 工作台 `linux/aarch64`、4 CPU、5902 MiB；Worker `x86_64`、32 CPU |
+| 平台不匹配优先于优先级 | 工作台 `priority=100` 且登记了 `alpine:3.22`，但 `linux/amd64` 任务只派给 Worker，`attempts` 只有一条 |
+| Worker 上确实在跑 | 该 Worker 的 `docker top sshpool-<id>-1` 含 `build.sh`（5 行），容器标签与任务 ID 一致 |
+| 工作台没有执行 | 同一时刻按 `label=io.sshpool.job` 查工作台 Docker，容器数 0 |
+| 产物回工作台 | 工作台执行 `sshpool fetch`，解出 `arch=x86_64`、`sum=40000`，与等差数列公式独立复算一致 |
+| 清理 | 任务结束后 Worker 与工作台按标签查询均为空，工作台 job 容器总数回到提交前 |
+
+`workbench_and_pool_capabilities_are_reported_separately`（任务 `606769ed-…`）验证「指标不合并」：统一入口的 `uname -sm` 是 `Linux aarch64`、`nproc` 是 4、`/proc/meminfo` 是工作台自己的 5902 MiB；而同一次 `sshpool status` 返回两条独立快照（`aarch64/4` 与 `x86_64/32`，内存各自报数），任务记录的 `attempt.node` 是 `worker`，客户端进度行也打印 `worker=worker platform=linux/amd64`。
+
+跑这条测试时抓到一个真实误连：工作台登录环境里有 `SSHPOOL_TOKEN_FILE` 指向生产控制面，而 CLI 的 `--home` 只换目录、token 仍按 env 回退解析，于是客户端拿着**生产 token** 去打临时控制面并得到 `unauthorized`。测试现在显式传 `--token-file`；这也说明「换一个 home 就等于换一套凭据」是错的。证据在 [evidence/hardware-20261107.json](evidence/hardware-20261107.json)。
+
+### 手工记录（2026-11-05）
+
 2026-11-05 的独立硬件验收：统一入口的 `uname -m` 为 `aarch64`，任务 `298b9c97-748f-4a28-a291-e31aba0efa0d` 声明 `linux/amd64`，调度到独立 Linux Worker。只上传新建演示目录的公开输入与脚本，没有使用公司文件。
 
 | 证据 | 实测 |

@@ -1,8 +1,8 @@
 Feature: 在业务预留和兼容性约束内调度
   首版分派整个构建，不把多个节点内存加给单进程。
 
-  # evidence: docs/validation.md#hardware-proof
-  @verified @manual @p0
+  # evidence: tests/hardware_live.rs::an_arm64_workbench_offloads_an_amd64_build_to_an_independent_worker
+  @verified @automated @p0
   Scenario: 使用工作台之外的真实硬件
     Given 入口工作台为 ARM64 且独立 Linux Worker 为 x86_64
     When 从同一 SSH 入口提交 linux/amd64 任务
@@ -10,8 +10,8 @@ Feature: 在业务预留和兼容性约束内调度
     And 工作台没有执行该任务的容器
     And 计算结果回传后校验一致且远端清理得到确认
 
-  # evidence: docs/validation.md#hardware-proof
-  @verified @manual @p0
+  # evidence: tests/hardware_live.rs::workbench_and_pool_capabilities_are_reported_separately
+  @verified @automated @p0
   Scenario: 工作台指标与计算池能力分开报告
     Given 客户端只连接统一 SSH 工作台
     When 执行 uname free 或 top
