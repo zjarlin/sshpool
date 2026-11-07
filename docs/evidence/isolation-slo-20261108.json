@@ -16,7 +16,8 @@
         "one_over_budget_worker_does_not_take_the_pool_down",
         "a_failed_probe_reports_no_measurements_at_all",
         "an_old_probe_payload_loads_with_unmeasured_pressure",
-        "a_budget_outside_the_percentage_range_is_rejected"
+        "a_budget_outside_the_percentage_range_is_rejected",
+        "disk_water_level_is_enforced_as_an_available_floor"
       ]
     },
     "metrics": {
@@ -50,7 +51,8 @@
     "io_pressure_percent": "/proc/pressure/io 的 some avg10",
     "missing_reading": "null，不是 0",
     "fail_closed": "配了门槛却拿不到读数 → 拒绝接单（`was not measured`），不按 0 放行",
-    "where": "scheduler::score 末尾的硬过滤（business_budget_allows），排在平台检查之后、排序之前"
+    "where": "scheduler::score 末尾的硬过滤（business_budget_allows），排在平台检查之后、排序之前",
+    "disk_available_mib": "docker root 所在文件系统的可用空间（shutil.disk_usage）；它不放进 slo：既有 `reserve_disk_mib` 已经是「至少还要剩这么多」的下限，语义相同就不再重复一套"
   },
   "refusal_reasons": [
     "business budget: swap used {used} MiB exceeds {limit} MiB",
@@ -115,13 +117,16 @@
     "over_budget_refusal_creates_no_container": true,
     "within_budget_host_still_runs_the_same_job": true,
     "ready_and_business_budget_are_independent_gauges": true,
-    "unmeasured_series_are_absent_not_zero": true
+    "unmeasured_series_are_absent_not_zero": true,
+    "disk_water_level_is_a_hard_floor_not_a_measurement": true,
+    "available_disk_exactly_at_the_floor_passes": true,
+    "a_failed_probe_cannot_satisfy_the_disk_floor": true,
+    "a_measured_fast_worker_cannot_bypass_the_disk_floor": true
   },
-  "assertions_total": 13,
+  "assertions_total": 17,
   "not_implemented": [
     "业务延迟（需要业务侧埋点或入口侧观测，本仓库没有业务流量的定义）",
     "业务错误率（同上）",
-    "磁盘水位的独立预算（仍有 min_free_disk_mib 一类硬过滤，但没有按业务水位配置的门槛）",
     "主动压测：探测只读采样，不会为了判断预算去制造峰值负载",
     "PSI 之外的 cgroup v2 细分（memory.high / io.latency 等业务侧限流）",
     "非 Linux 主机（Darwin 没有 PSI，也没有 swap 的等价读数；配了门槛就是拒单）"

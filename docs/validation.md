@@ -247,13 +247,14 @@ SSHPOOL_LIVE_NODE=okm182-lan \
 
 ## isolation-slo {#isolation-slo}
 
-业务 SLO 这一节只回答一个问题：**这台机器现在还该不该再接一单**。因此只做「可测量 + 可强制」的三项，其余明确不算实现。
+业务 SLO 这一节只回答一个问题：**这台机器现在还该不该再接一单**。因此只做「可测量 + 可强制」的项，其余明确不算实现。
 
 | 指标 | 来源 | 门槛字段 | 缺读数时 |
 | --- | --- | --- | --- |
 | 已用 swap | `/proc/meminfo` 的 `SwapTotal − SwapFree` | `slo.max_swap_used_mib` | `swap usage was not measured` → 拒单 |
 | 内存压力 | `/proc/pressure/memory` 的 `some avg10` | `slo.max_memory_pressure_percent` | `was not measured (no PSI support?)` → 拒单 |
 | IO 压力 | `/proc/pressure/io` 的 `some avg10` | `slo.max_io_pressure_percent` | 同上 → 拒单 |
+| 磁盘水位 | docker root 所在文件系统的可用空间 | `reserve_disk_mib`（既有字段） | 探测失败时可用空间为 0 → 拒单 |
 
 三条约定决定了它是「预算」而不是「建议」：
 
@@ -263,7 +264,7 @@ SSHPOOL_LIVE_NODE=okm182-lan \
 
 拒绝文案会带上具体数字，例如 `live: business budget: swap used 32765 MiB exceeds 32764 MiB`，出现在任务的 `no eligible worker` 与 `/v1/status` 的对照里；指标侧另有 `sshpool_node_business_budget`（1/0），与 `sshpool_node_ready` 故意分开——前者答「还能不能再接一单」，后者答「探测成功且被启用」，合并会让「在线但已过载」显示成「掉线」。
 
-离线侧 `tests/boundaries.rs` 10 条覆盖边界值放行 / 超一单位拒绝、缺测量拒绝、老载荷反序列化、失败探测零测量、旧 `machine()` 无预算时行为不变、单台超预算不拖垮整池、百分比越界（101 / -0.1 / NaN）被 `validate_node` 拒绝。`tests/metrics.rs` 另有一条 `a_measured_but_over_budget_node_stays_ready_and_loses_business_budget` 固定「ready=1 且 business_budget=0」。
+离线侧 `tests/boundaries.rs` 11 条覆盖边界值放行 / 超一单位拒绝、缺测量拒绝、老载荷反序列化、失败探测零测量、旧 `machine()` 无预算时行为不变、单台超预算不拖垮整池、百分比越界（101 / -0.1 / NaN）被 `validate_node` 拒绝。`tests/metrics.rs` 另有一条 `a_measured_but_over_budget_node_stays_ready_and_loses_business_budget` 固定「ready=1 且 business_budget=0」。
 
 真实链路 `tests/scheduling_live.rs::an_over_budget_host_stops_taking_work_before_any_container_exists`（`#[ignore]`）在 `okm182` 上把**实测值本身**当门槛基准，做双向对照：
 
@@ -276,7 +277,9 @@ SSHPOOL_LIVE_NODE=okm182-lan \
 
 `okm182` 当次实测：`SwapTotal 33554428 KiB`、`SwapFree 2644 KiB` → **已用 32765 MiB，几乎耗尽**；内存 PSI `some avg10=0.00`；IO PSI `some avg10=0.17`；内核 `6.8.0-147-generic`（PSI 可用）。这三者并不矛盾，它们回答不同问题：swap 记的是历史堆积，PSI 记的是**此刻**有多少时间在等资源。所以「swap 快满了但内存 PSI 仍是 0」是正常状态——如果只配 swap 门槛，这台机器几乎永远拒单；真正想表达「业务被挤压就停」应配 memory / io PSI。
 
-边界：**业务延迟与错误率没有实现**，那需要业务侧埋点或入口侧观测，本仓库没有定义业务流量，写一个「延迟预算」只会是自欺。磁盘水位仍只有既有的 `min_free_disk_mib` 一类硬过滤，没有独立的按业务水位配置的门槛。探测只读采样，不会为了判断预算去制造峰值负载，所以它也不能证明「所有业务峰值下 SLO 达标」——它只保证超预算时不再加码。macOS 没有 PSI 也没有等价 swap 读数，配了门槛就是拒单（这是期望行为，不是缺陷）。
+磁盘水位没有另起一套 `slo` 字段，因为 `reserve_disk_mib` 表达的正是同一件事——「至少要剩这么多」——而且早就在硬过滤里生效：`disk_available_mib < reserve_disk_mib` 就拒绝接单，恰好等于下限时放行，探测失败（可用空间 0）同样出局，有再好的实测也越不过去（`disk_water_level_is_enforced_as_an_available_floor`）。另起一个同义字段只会让人以为两处门槛谁先谁后是随机的。
+
+边界：**业务延迟与错误率没有实现**，那需要业务侧埋点或入口侧观测，本仓库没有定义业务流量，写一个「延迟预算」只会是自欺。探测只读采样，不会为了判断预算去制造峰值负载，所以它也不能证明「所有业务峰值下 SLO 达标」——它只保证超预算时不再加码。macOS 没有 PSI 也没有等价 swap 读数，配了门槛就是拒单（这是期望行为，不是缺陷）。
 
 ## deployment
 

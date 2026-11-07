@@ -1077,6 +1077,36 @@ fn an_old_probe_payload_loads_with_unmeasured_pressure() -> Result<()> {
     Ok(())
 }
 
+/// 磁盘水位是同一个「还接不接单」问题：`reserve_disk_mib` 就是可用空间的下限。
+///
+/// 它没有单独放进 `slo`，因为语义已经存在且被强制；这里把它与预算放在一起断言，
+/// 是为了让「磁盘水位」不被当成尚未实现的一项。
+#[test]
+fn disk_water_level_is_enforced_as_an_available_floor() {
+    let (mut node, health) = node_and_health();
+    let build = Build {
+        platform: "linux/amd64".into(),
+        ..Build::default()
+    };
+    // 默认快照有 50000 MiB 可用：下限设到 50001 就必须拒绝。
+    node.reserve_disk_mib = 50_001;
+    assert!(scheduler::score(&node, &health, &build, &[]).is_err());
+    node.reserve_disk_mib = 50_000;
+    let mut ok = health.clone();
+    ok.disk_available_mib = 50_000;
+    assert!(scheduler::score(&node, &ok, &build, &[]).is_ok());
+    ok.disk_available_mib = 49_999;
+    let reason = scheduler::score(&node, &ok, &build, &[]).unwrap_err();
+    assert!(reason.contains("disk reserve"), "{reason}");
+    // 探测失败时可用空间是 0，同样出局：读不到不等于「还有很多」。
+    let failed = Health::failed("worker", "ssh: connect timeout".into());
+    assert!(scheduler::score(&node, &failed, &build, &[]).is_err());
+    // 它是硬过滤：有再好的实测也越不过去。
+    let jobs = history("worker", &build, 5, 1);
+    let evidence = scheduler::Evidence::collect(&jobs, &build);
+    assert!(scheduler::rank(&node, &ok, &build, &jobs, &evidence).is_err());
+}
+
 /// 预算数值本身要校验：百分比写 101 只会变成一个永远不触发的门槛。
 #[test]
 fn a_budget_outside_the_percentage_range_is_rejected() {

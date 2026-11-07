@@ -29,6 +29,7 @@ Feature: 运行时与资源隔离
   # evidence: src/scheduler.rs::business_budget_allows
   # evidence: tests/boundaries.rs::swap_usage_above_the_budget_stops_new_work
   # evidence: tests/boundaries.rs::a_kernel_without_psi_cannot_satisfy_a_pressure_budget
+  # evidence: tests/boundaries.rs::disk_water_level_is_enforced_as_an_available_floor
   # evidence: tests/boundaries.rs::an_over_budget_node_is_excluded_by_the_hard_filter_not_outranked
   # evidence: tests/metrics.rs::a_measured_but_over_budget_node_stays_ready_and_loses_business_budget
   # evidence: tests/scheduling_live.rs::an_over_budget_host_stops_taking_work_before_any_container_exists
@@ -37,7 +38,7 @@ Feature: 运行时与资源隔离
   Scenario: 业务 SLO 实测
     Given 业务持续承受基线和峰值流量
     When Worker 并行执行构建
-    Then 测量 swap 用量 内存压力和 IO 压力
+    Then 测量 swap 用量 内存压力 IO 压力和磁盘水位
     And 超出预算时暂停接单
     But 业务延迟与错误率需要业务侧埋点，尚未测量
     And 只读采样，不主动压测业务峰值
