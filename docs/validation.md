@@ -92,6 +92,39 @@ scripts/check-ssh-parity.sh 2222 2223      # 入口端口、直连端口；输�
 
 边界：`okm182-lan` 上没有 Rust 工具链镜像，测试在该节点显式 `skipped` 而不是失败——缺镜像不等于 shim 有缺陷。x86_64 架构的 ELF 断言目前只在物理 Worker 的手工验收里（见 `physical-host-and-build-proof`）出现过，`shim_live` 尚未在 x86 节点实跑。
 
+### 跨工具链构建适配器 {#build-adapters}
+
+`tests/adapters_live.rs` 把 Gradle、Make、Node、Python 四类工具放进**同一条链路**：进程内起真实 `axum::serve`，用 `sshpool::client::Client` 提交归档、跟随日志、回取产物，不直接调用 `runner`，也不读控制面目录绕过 API。判据是真实产物内容，不是命令有没有拼对。
+
+```sh
+SSHPOOL_LIVE_NODE=sshpool-anchor \
+  cargo test --test adapters_live -- --ignored --test-threads=1
+```
+
+| 工具 | 镜像 | 命令 | 实测（`sshpool-anchor`，linux/arm64） |
+| --- | --- | --- | --- |
+| Gradle | `gradle:8.10-jdk21-alpine` | `gradle --offline --no-daemon -q build` | `succeeded`、`exit_code=0`；`out/probe.txt` 报 `uid=65534` 与 `os.arch`；`build/libs` 有 jar |
+| Make | `gcc:13` | `make all` | `succeeded`、`exit_code=0`；`dist/hello` 是 ELF；**回取后重新上传到 Worker 执行**，stdout 含 `sshpool-make`、退出码 0 |
+| Node | `node:22-alpine` | `npm run build --silent` | `succeeded`、`exit_code=0`；`dist/payload.txt` 报 `uid=65534`、`process.version`、`process.arch` |
+| Python | `python:3.12-alpine` | `sh build.sh` | `succeeded`、`exit_code=0`；`compileall` + `zipapp` 生成 `dist/app.pyz` 并当场运行，`dist/probe.txt` 报 `uid=65534` |
+
+四条的公共断言一致：任务终态 `Phase::Succeeded`、`job.build.command` 与提交的命令逐字相同（没有被适配器重写）、`cleanup_confirmed=true`（按任务标签查容器数为 0）。也就是说「复用相同调度和隔离链路」是被断言的，不是被声称的。
+
+这一轮实测拦下两个真实缺陷，都不是靠读代码发现的：
+
+| 现象 | 原因 | 处理 |
+| --- | --- | --- |
+| Gradle 任务在本机就被拒：`images declaring VOLUME are not allowed` | 官方 `gradle` 镜像声明 `VOLUME /home/gradle/.gradle`；旧实现一律拒绝带 `VOLUME` 的镜像，等于 Gradle 没有任何可用的标准镜像。反之若简单放行，Docker 会挂一个不受任务内存/磁盘上限约束、又不会随容器删除的匿名卷 | 镜像声明的每个卷都用**同路径、有上限**（`min(64MiB, scratch)`）、`noexec`+`nodev`、`mode=1777` 的 tmpfs 遮蔽，容器内仍是可写空目录；`docker inspect` 验证 `Mounts=[]` 且 `Tmpfs` 含该路径。卷路径必须绝对、无 `..`、无 `,`/`:`/NUL、最多 8 个，否则拒绝（fail-closed） |
+| Python 在容器里 `zipapp` 失败：`ValueError: ZIP does not support timestamps before 1980` | 源码归档为求确定性把成员 mtime 写成 0（1970-01-01），而 zip 格式最早只能表示 1980-01-01；任何把解包时间戳写进新归档的步骤（`zipapp`、Gradle `jar` 等）都会崩 | mtime 固定值改为 1980-01-01T00:00:00Z（`315532800`）。仍然固定，因此归档依旧逐字节可复算；单元测试同时断言「两次归档相同」和「header mtime 等于常量」 |
+
+第二个缺陷有直接复现：在容器里 `touch -d @0` 再跑 `zipapp`，报的正是上面那句 `ValueError`（证据里的 `mtime_zero_reproduces_zipapp_failure`）。
+
+单元测试侧新增三条确定性覆盖，不依赖 Docker：`declared_volumes_are_shadowed_by_bounded_tmpfs`（未遮蔽 / 无上限 / 可执行三种都必须被复核拒绝）、`unusable_volume_declarations_are_refused`（相对路径、`..`、分隔符、超过 8 个）、`source_archive_uses_a_zip_compatible_fixed_mtime`。
+
+证据文件：[evidence/adapters-20261108.json](evidence/adapters-20261108.json)（8 条断言全为 true，`failed_assertions` 为空）。
+
+边界：只在 **arm64 一个 Worker** 上实跑，x86_64 未验收；Gradle 用 `--offline`，所以带外部依赖的项目（要联网拉 Maven 中央仓）不在本次结论里；`shim` 目前只拦截 `cargo`/`gradle`/`make`，Node 和 Python 只能走 `sshpool run` 显式提交，因此这个场景仍记为 `@partial` 而不是 `@verified`。镜像需管理员预先准备，缺镜像时测试显式跳过而不是失败——没装工具链不等于适配器有缺陷。
+
 ## jobs
 
 ARM64 的 shell 任务已完成日志、退出码、产物导出与清理闭环。x86_64 shell 命令已实际执行并输出正确架构；曾发生远端 Docker 清理超时，控制面记录 interrupted、禁止重试并隔离节点。之后独立确认该任务容器已不存在。

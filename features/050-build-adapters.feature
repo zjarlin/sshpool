@@ -9,7 +9,9 @@ Feature: 常用构建命令接入统一工作台
     Then 编译发生在非 root 任务容器
     And 产物可被回取并执行
 
-  @partial @p1
+  # evidence: tests/adapters_live.rs::gradle_builds_in_the_same_isolated_pipeline
+  # evidence: docs/evidence/adapters-20261108.json
+  @partial @automated @p1
   Scenario: Gradle Make Node 和 Python
     Given 项目配置批准的运行镜像
     When 使用对应 shim 或 run 显式提交构建

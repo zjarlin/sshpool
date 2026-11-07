@@ -54,7 +54,7 @@ async fn declared_isolation_holds_on_a_real_container() -> Result<()> {
         scratch_mib: 64,
         ..Build::default()
     };
-    let args = isolation::container_args(id, &container, &build);
+    let args = isolation::container_args(id, &container, &build, &[]);
 
     let created =
         sshpool::transport::checked(&node, &format!("docker {}", transport::words(&args)), 60)
@@ -62,7 +62,7 @@ async fn declared_isolation_holds_on_a_real_container() -> Result<()> {
     let result = async {
         created?;
         // 创建后、启动前的真实配置必须与声明一致。
-        isolation::verify_created(&node, &container, id, &build).await?;
+        isolation::verify_created(&node, &container, id, &build, &[]).await?;
         sshpool::transport::checked(
             &node,
             &format!("docker start {}", transport::quote(&container)),
@@ -123,7 +123,7 @@ async fn tampered_container_is_refused_before_start() -> Result<()> {
     let created = sshpool::transport::checked(&node, &script, 60).await;
     let result = async {
         created?;
-        let checked = isolation::verify_created(&node, &container, id, &build).await;
+        let checked = isolation::verify_created(&node, &container, id, &build, &[]).await;
         ensure!(
             checked.is_err(),
             "a container with a writable root fs and full capabilities must be refused"

@@ -8,6 +8,14 @@ use std::{
     path::{Component, Path, PathBuf},
 };
 
+/// 源码归档里每个成员的统一 mtime：1980-01-01T00:00:00Z。
+///
+/// 用固定时间是为了让同一份源码产出逐字节相同的归档（可复算 SHA-256）。值不能取 0：
+/// 1970 早于 ZIP 格式能表示的最早时间（1980-01-01），而构建过程里生成 zip/jar 的
+/// 中文工具链会把解包出来的文件时间戳原样写进新归档 —— Python 的 `zipapp` 会直接报
+/// `ZIP does not support timestamps before 1980`，Gradle 的 jar 任务同理。
+pub const SOURCE_MTIME: u64 = 315_532_800;
+
 /// 快照结果同时提供归档内源码字节数和归档 SHA-256，供任务记录与传输双方核对。
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Snapshot {
@@ -204,7 +212,7 @@ fn write_archive(root: &Path, destination: &Path, max_bytes: u64) -> Result<u64>
         let mut header = tar::Header::new_gnu();
         header.set_size(metadata.len());
         header.set_mode(if executable(&metadata) { 0o755 } else { 0o644 });
-        header.set_mtime(0);
+        header.set_mtime(SOURCE_MTIME);
         header.set_cksum();
         let file = File::open(&path)?;
         let before = file.metadata()?;
@@ -347,9 +355,38 @@ pub fn unpack_new(archive: &Path, destination: &Path, limit: u64) -> Result<()> 
 
 #[cfg(test)]
 mod tests {
-    use super::snapshot_inner;
+    use super::{SOURCE_MTIME, snapshot, snapshot_inner};
     use anyhow::{Context, Result};
     use std::fs;
+
+    /// 归档里的 mtime 必须落在 ZIP 能表达的范围内，并且固定不变。
+    ///
+    /// 这条不是「风格」：mtime=0 会让容器里生成的 zip/jar 直接失败
+    /// （Python `zipapp` 报 `ZIP does not support timestamps before 1980`）。
+    #[test]
+    fn source_archive_uses_a_zip_compatible_fixed_mtime() -> Result<()> {
+        anyhow::ensure!(SOURCE_MTIME >= 315_532_800, "mtime predates 1980");
+        let root = tempfile::tempdir()?;
+        fs::write(root.path().join("a.txt"), "a")?;
+        let first = tempfile::NamedTempFile::new()?;
+        let second = tempfile::NamedTempFile::new()?;
+        snapshot(root.path(), first.path(), 1048576)?;
+        snapshot(root.path(), second.path(), 1048576)?;
+        // 固定时间戳的直接结果：同一份源码两次归档逐字节相同。
+        anyhow::ensure!(
+            fs::read(first.path())? == fs::read(second.path())?,
+            "the archive is not deterministic"
+        );
+        let file = fs::File::open(first.path())?;
+        let mut archive = tar::Archive::new(file);
+        let entry = archive.entries()?.next().context("no archive entry")??;
+        anyhow::ensure!(
+            entry.header().mtime()? == SOURCE_MTIME,
+            "unexpected mtime {}",
+            entry.header().mtime()?
+        );
+        Ok(())
+    }
 
     #[test]
     fn source_snapshot_rejects_visible_concurrent_changes() -> Result<()> {

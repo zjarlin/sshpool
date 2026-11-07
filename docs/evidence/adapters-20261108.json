@@ -1,0 +1,120 @@
+{
+  "checked_at": "2026-11-08T01:15:17+08:00",
+  "scope": "050 Gradle / Make / Node / Python 四类构建工具在统一入口与同一隔离链路上的真实兼容性验收",
+  "entry": {
+    "test": "tests/adapters_live.rs",
+    "command": "SSHPOOL_LIVE_NODE=sshpool-anchor cargo test --test adapters_live -- --ignored --test-threads=1",
+    "why": "四类工具都经 Client::run 走真实 HTTP 入口提交，不直接调用 runner；判据是真实产物内容，不是命令拼装"
+  },
+  "worker": {
+    "alias": "sshpool-anchor",
+    "arch": "aarch64",
+    "docker": "29.1.3"
+  },
+  "adapters": [
+    {
+      "name": "gradle",
+      "image": "gradle:8.10-jdk21-alpine",
+      "command": [
+        "gradle",
+        "--offline",
+        "--no-daemon",
+        "-q",
+        "build"
+      ],
+      "asserted": [
+        "任务 succeeded 且 exit_code=0",
+        "out/probe.txt 报告 uid=65534",
+        "build/libs 有 jar 产物",
+        "原命令逐字下发",
+        "容器清理已确认"
+      ]
+    },
+    {
+      "name": "make",
+      "image": "gcc:13",
+      "command": [
+        "make",
+        "all"
+      ],
+      "asserted": [
+        "任务 succeeded 且 exit_code=0",
+        "dist/hello 是 ELF",
+        "回取后上传到 Worker 真跑，stdout 含 sshpool-make 且 exit:0",
+        "原命令逐字下发",
+        "容器清理已确认"
+      ]
+    },
+    {
+      "name": "node",
+      "image": "node:22-alpine",
+      "command": [
+        "npm",
+        "run",
+        "build",
+        "--silent"
+      ],
+      "asserted": [
+        "任务 succeeded 且 exit_code=0",
+        "dist/payload.txt 报告 uid=65534 与 arch",
+        "原命令逐字下发",
+        "容器清理已确认"
+      ]
+    },
+    {
+      "name": "python",
+      "image": "python:3.12-alpine",
+      "command": [
+        "sh",
+        "build.sh"
+      ],
+      "asserted": [
+        "任务 succeeded 且 exit_code=0",
+        "zipapp 生成 dist/app.pyz 并实际运行",
+        "dist/probe.txt 报告 uid=65534",
+        "原命令逐字下发",
+        "容器清理已确认"
+      ]
+    }
+  ],
+  "defects_found_and_fixed": [
+    {
+      "symptom": "Gradle 用官方镜像时任务在本机就被拒绝：images declaring VOLUME are not allowed",
+      "cause": "官方 gradle 镜像声明 VOLUME /home/gradle/.gradle；runner 一律拒绝带 VOLUME 的镜像，等于 Gradle 没有任何可用标准镜像。而若简单放行，Docker 会挂一个不受任务内存/磁盘上限约束、也不会随容器删除的匿名卷。",
+      "fix": "把镜像声明的每个 VOLUME 用同路径、有上限（min(64MiB, scratch)）、noexec 的 tmpfs 遮蔽；容器内仍是可写空目录，docker inspect 的 Mounts 保持为空。卷路径非绝对、含 .. 或逗号、超过 8 个则拒绝。",
+      "evidence": "docker inspect 显示 Mounts=[] 且 Tmpfs 含 /home/gradle/.gradle；单元测试 declared_volumes_are_shadowed_by_bounded_tmpfs 覆盖未遮蔽/无上限/可执行三种拒绝"
+    },
+    {
+      "symptom": "Python 项目在容器里生成 zipapp 时失败：ValueError: ZIP does not support timestamps before 1980",
+      "cause": "源码归档把每个成员 mtime 写成 0（1970-01-01）以求确定性。zip 格式最早只能表示 1980-01-01，任何把解包文件时间戳写进新归档的步骤都会失败（python zipapp、Gradle jar 等）。",
+      "fix": "固定 mtime 改为 1980-01-01T00:00:00Z（315532800）。仍然固定，因此归档逐字节可复现；单元测试同时断言确定性与 mtime 值。",
+      "evidence_key": "mtime_zero_reproduces_zipapp_failure"
+    }
+  ],
+  "acceptance": {
+    "four_adapters_ran_on_the_same_pipeline": true,
+    "same_isolation_as_cargo_shim": true,
+    "artifacts_were_fetched_and_inspected": true,
+    "make_artifact_was_executed_on_the_worker": true,
+    "no_container_survived": true
+  },
+  "images": [
+    "gradle:8.10-jdk21-alpine {\"/home/gradle/.gradle\":{}}",
+    "node:22-alpine null",
+    "python:3.12-alpine null",
+    "gcc:13 null"
+  ],
+  "mtime_zero_reproduces_zipapp_failure": "ValueError: ZIP does not support timestamps before 1980",
+  "assertions": {
+    "gradle_succeeded": true,
+    "make_succeeded": true,
+    "node_succeeded": true,
+    "python_succeeded": true,
+    "gradle_image_declares_volume": true,
+    "volume_shadowing_verified_by_inspect": true,
+    "mtime_zero_breaks_zip": true,
+    "no_real_paths_or_tokens": true
+  },
+  "assertions_total": 8,
+  "failed_assertions": []
+}

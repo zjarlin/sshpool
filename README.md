@@ -158,6 +158,8 @@ cargo build --release
 
 包装器支持 `cargo build/test/check/clippy`、`gradle`、`make`，只在有 `sshpool.toml` 的项目根目录中分发；版本查询、Cargo 元数据等仍走本地工具。它不会劫持任意 shell 命令。`./gradlew` 不经过 PATH，使用 `sshpool run -- ./gradlew build`。Node.js、Python、其他构建工具也可以用 `run -- ...`，只需相应容器镜像。
 
+这四类工具（Gradle、Make、Node、Python）都有真实产物的兼容性验收，不是只验证命令能被拼出来：任务走同一条调度与隔离链路、构建产物被回取并检查内容，Make 的二进制还会被重新上传到 Worker 执行。结果与边界见 [验证记录](docs/validation.md#build-adapters)。
+
 ### Linux 工作台连接 Mac 控制面
 
 客户端二进制支持：
@@ -293,6 +295,8 @@ scrape_configs:
 - 访问审计是本机 `home/access.jsonl` 上的普通追加文件，没有签名链或只追加存储：能写这个目录的人可以改写、删除或伪造记录。超过 12 MiB 的历史会被滚动丢弃，没有远程日志后端或归档；也没有按 IP/地理归因。
 - **存储冗余仍只是规划算术**：`sshpool storage-plan` 按拓扑核算副本、仲裁和恢复预留，并拒绝「两台物理机凑三故障域」这类承诺；但 Ceph 没有部署，没有掉盘、`fsync`、崩溃恢复或跨机接管验收。它也不探测真实磁盘容量——输入里的 `size_bytes` 与故障域由部署者申报，盘的归属必须先过 `storage-admission`。见 [跨物理机与无 RAID 存储边界](docs/ssi-physical-storage.md#先核算再承诺) 与 [验证记录](docs/validation.md#storage-placement)。
 - **发布物是预发布二进制，不是生产承诺**：`v*` 标签会构建 Linux x86_64（glibc ≥ 2.35）与 macOS arm64/x86_64 三个产物并附 `SHA256SUMS`，但 macOS 只有 ad-hoc 签名、没有公证（首次运行要自己处理 quarantine），Linux 是动态链接（Alpine 跑不了），校验和与压缩包放在同一个 Release 里所以只防传输损坏、不防篡改。没有 Linux aarch64 与静态 musl 变体。见 [版本发布](docs/release.md#已知限制)。
+- 官方镜像声明的 `VOLUME`（例如 `gradle` 的 `/home/gradle/.gradle`）不会被拒绝，而是逐个用同路径、`min(64 MiB, 工作区)` 且有上限的 tmpfs 遮蔽，所以容器里能看到一个可写的空缓存目录，但不可能借此绕开任务的内存/磁盘上限；`docker inspect` 的 `Mounts` 必须为空。代价是这类缓存不会跨任务保留——每次构建都要重新下载依赖，离线构建仍然要求镜像里已经带好依赖。
+- 源码归档的成员 mtime 固定为 1980-01-01（zip 能表达的最早时间）。它让归档逐字节可复算，但也意味着容器里的构建工具看不到真实源码修改时间：依赖「源码比产物新」的增量构建在容器内会退化成全量构建。
 - 指标抓取凭据只解决「可撤销、不给 API」：`scrape` 是**全有或全无**，没有按节点或按指标过滤，任何一把 scrape 凭据都能看到全部节点名与资源水位。抓取也不进访问审计（15 秒一次会冲掉有界日志），所以「谁抓过」只能靠网络层或 Prometheus 自身的日志。它只输出数值与节点名，不含 SSH 目标、token、任务消息或自由文本。指标不落盘、不带历史，重启后计数从现有任务记录重新渲染；Prometheus 配置与日志后端（Loki/ELK）由部署者自行提供。
 
 ## 开发与验证

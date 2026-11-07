@@ -319,12 +319,9 @@ async fn attempt(
         build.platform == format!("linux/{}", probe::platform_arch(arch)),
         "image architecture does not match requested platform"
     );
-    ensure!(
-        image["Config"]["Volumes"]
-            .as_object()
-            .is_none_or(|volumes| volumes.is_empty()),
-        "images declaring VOLUME are not allowed: use a build image without persistent volumes"
-    );
+    // 镜像声明的 VOLUME 不再整体拒绝：Gradle 之类的官方镜像就带一个缓存目录。
+    // 它们会被同路径的 tmpfs 遮蔽，见 `isolation::container_args`。
+    let volumes = isolation::declared_volumes(image)?;
     // 已经取消或到期时连容器都不必创建：省掉一次完整创建/校验往返。
     // 取消经常落在这段窗口里，所以即便没有远端动作也要留审计记录。
     if let Some(cause) = pending_stop(state, id, deadline).await {
@@ -342,11 +339,11 @@ async fn attempt(
         ));
     }
     state.event(id, "container_create", &node.name).await?;
-    let args = isolation::container_args(id, container, build);
+    let args = isolation::container_args(id, container, build, &volumes);
     transport::checked(node, &docker(&args), 20).await?;
     // 命令行声明可能被 Docker 改写（例如 tmpfs 默认 noexec）；启动前按真实配置复核，
     // 任何一项不满足就停在 Created 状态，由调用方的清理路径删除。
-    isolation::verify_created(node, container, id, build).await?;
+    isolation::verify_created(node, container, id, build, &volumes).await?;
     // 容器仍停在 Created：此时没有任何进程可停止，直接按「从未启动」收尾。
     if let Some(cause) = pending_stop(state, id, deadline).await {
         let report = lifecycle::describe_pre_start(cause, "before start");
