@@ -28,21 +28,57 @@ sshpool state-audit --inventory examples/state-audit/sub2api.json --probe /tmp/p
 - Redis 口令只从容器自己的 `Cmd` 里取（它本来就在那里），用完即弃，绝不进入输出。
 - 报告只带事实与判断，不带密码、连接串、业务行。
 
-自动化测试：`tests/state_audit.rs`（6 条，离线跑在 CI 上）验证退出码与拒绝语义；`tests/state_audit_live.rs`（3 条，`#[ignore]`）在真实主机上跑同一份清单，其中一条是阳性对照 —— 只有把声明改成与事实相符才应通过。
+自动化测试：`tests/state_audit.rs`（7 条，离线跑在 CI 上）验证退出码与拒绝语义；`tests/state_audit_live.rs`（3 条，`#[ignore]`）在真实主机上跑同一份清单，其中一条是阳性对照 —— 只有把声明改成与事实相符才应通过。
 
 ## 三态备份：为什么 `manual` 是 `null` 而不是一个大数
 
 `Backup` 只有三种形态：
 
 ```json
-{ "kind": "scheduled", "interval_seconds": 3600 }
+{ "kind": "scheduled", "interval_seconds": 3600, "evidence": "cron.d:pg-backup#9f2c81d6a4b70e13" }
 { "kind": "manual" }
 { "kind": "none" }
 ```
 
-没有「随便填一个秒数」的入口。人工备份没有可证明的节奏，所以 `rpo_bound()` 返回 `None`；没有备份同样是 `None`。这个 `None` 会一路传到 `SurfaceReport.achievable_rpo_seconds` 与 `Report.achievable_rpo_seconds`，含义是**RPO 没有上界**。
+`evidence` 不是给人看的备注，而是**要在探针结果里对上号的宿主调度来源**。探针会记录三类任务：
+
+| 来源写法 | 对应 |
+| --- | --- |
+| `crontab:root` | `crontab -l` 里的一行（探针只以 root 身份读，其他用户的 crontab 看不到） |
+| `cron.d:<文件名>` | `/etc/cron.d/` 下的某个文件里的一行（行首的用户字段已去掉） |
+| `systemd-timer:<单元名>` | `systemctl list-timers --all` 里的一个 `.timer` 单元 |
+
+只有 `scheduled` 才有 `interval_seconds`；人工备份没有可证明的节奏，没有备份更是如此，两者都返回 `None`。这个 `None` 会一路传到 `SurfaceReport.achievable_rpo_seconds` 与 `Report.achievable_rpo_seconds`，含义是**RPO 没有上界**。
 
 这不是抠字眼：把「说不清多久备份一次」写成 86400，就等于凭空承诺「最多丢一天」，而审核并没有证据支撑这句话。所以报告里出现 `null` 时，正确读法是「按现有事实给不出上界」，而不是「0」或「很大」。
+
+## 定时备份的声明不能自己证明自己
+
+`scheduled` 是**主张**，不是证据。审核要求主机上确实存在能指认的定时任务，否则按「没有定时备份」计 RPO。三条判定：
+
+| code | 触发 | 后果 |
+| --- | --- | --- |
+| `backup_schedule_unverified` | 探针在 crontab / `cron.d` / systemd timer 里都找不到 `evidence` 命中的任务 | 该面上界退回 `null` |
+| `backup_schedule_ambiguous` | `evidence` 命中了**多条**任务 | 同上：挑不出「哪条是备份」，任何一条都不算数 |
+| `backup_schedule_unparsed` | 命中了唯一一条，但周期无法从表达式解析 | 同上：「说不清多久一次」换不来上界 |
+
+**为什么要求唯一命中。** 只写来源是没有指向性的：`crontab:root` 里通常还躺着 `sysstat` 之类的琐碎任务，正好每 10 分钟跑一次。如果「来源对上就算数」，那么主机上有一条每 10 分钟的任务，就能让任意清单拿到「RPO ≤ 10 分钟」——这正是本工具要防的自我保证。所以当同一来源下有多条任务时，`evidence` 必须补 `#<命令摘要>` 精确指向其中一条：
+
+```json
+{ "kind": "scheduled", "interval_seconds": 3600,
+  "evidence": "cron.d:pg-backup#9f2c81d6a4b70e13" }
+```
+
+摘要就在探针结果的 `backup_schedules[].command_digest` 里（命令行的 `sha256` 前 16 位）。命令行原文不进报告，避免把连接串或口令带进仓库。
+
+上界成立时，该状态面的 `detail` 会写明**信的是哪一条**（例如「只能回到最近一次逻辑备份（间隔 ≤ 3600 秒）（证据 `cron.d:pg-backup#9f2c81d6a4b70e13`）」）。只报一个秒数的话，评审者无法判断 `systemd-timer:sysstat-collect.timer` 这类明显不是备份的任务有没有被误当成证据；点名之后这种错误一眼可见。
+
+**周期只认观测值。** 即使清单写 600 秒、主机上的任务实际每 3600 秒一次，报告也按 3600 秒计 —— 声明的数字不能覆盖实测的数字。解析规则：
+
+- 只有「每天重复」的形态（`分 时 * * *`）才给周期；限定了某日/某月/某星期时触发时刻不固定，回答 `null`。
+- 周期取相邻触发时刻的**最大**间隔，因为 RPO 关心的是「最久要等多久」。`* */2 * * *`（只在偶数小时每分钟）因此是 3660 秒，不是 60 秒。
+- 支持 `@daily` / `@hourly` 等宏与 `a-b`、`a,b`、`*/n` 字段；解析不了就是无上界，不猜。
+- systemd timer 只读 `OnUnitActiveSec`；只写 `OnCalendar` 的单元目前给不出周期。
 
 ## 判定规则
 
@@ -71,6 +107,8 @@ sshpool state-audit --inventory examples/state-audit/sub2api.json --probe /tmp/p
 | `rpo_claim_unachievable` | 声明 RPO 小于按事实算出的最差状态面 | 结论被拒 |
 | `rto_full_stack_unproven` | 声称整套栈的 RTO 已演练 | 只读审核没有切入口、没有打断长连接 |
 | `failure_domain_claim_refused` | 宣称状态面在独立故障域，但探到的设备号相同 | 同盘不能算独立域 |
+
+定时备份的三条判定（`backup_schedule_unverified` / `backup_schedule_ambiguous` / `backup_schedule_unparsed`）属于违背项，后果都是「该面上界退回 `null`」，见上一节。
 
 **提示项（warnings，不阻塞）**：`no_wal_archive`（`archive_mode=off`，无法做时间点恢复）、`rto_scope_data_layer`（RTO 只对数据层成立）、`undeclared_database_containers`（主机上还有别的数据库容器不在本次范围）、`writable_binds_outside_scope`（声明的状态面之外还有别的可写挂载）、`unlogged_table`、`declared_table_without_primary_key`、`failure_domain_unknown`、`redis_all_databases_empty`（报了库但全 0 键，要确认探针连对了实例）。
 

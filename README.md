@@ -293,7 +293,8 @@ sshpool state-audit --inventory examples/state-audit/sub2api.json --probe probe.
 
 清单由人维护（版本、镜像摘要、RPO/RTO、每个状态面、关键表、去重索引、Redis 承担的角色），探针只读地到主机上核对，报告里给出逐项结论。三条硬性约定：
 
-- 备份只有 `scheduled{interval_seconds}` / `manual` / `none` 三态，没有「随便填一个秒数」。人工备份与没有备份的 RPO 是**没有上界**（`null`），不是 0，也不是一个大数。
+- 备份只有 `scheduled{interval_seconds, evidence}` / `manual` / `none` 三态，没有「随便填一个秒数」。人工备份与没有备份的 RPO 是**没有上界**（`null`），不是 0，也不是一个大数。
+- `scheduled` 的声明不能自己证明自己：`evidence` 必须唯一命中主机上的一个 crontab 行 / `cron.d` 行 / systemd timer；查不到、命中多条或周期解析不出来，都按「没有定时备份」计，且周期以观测值为准。
 - 声明 Redis 只是可丢弃缓存，却探到超过允许值的无 TTL 键，则声明被拒，并按权威状态计算 RPO。
 - 声明与事实冲突时**降级声明**，不改数字凑通过。
 

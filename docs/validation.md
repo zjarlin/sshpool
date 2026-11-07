@@ -653,6 +653,7 @@ SSHPOOL_LIVE_NODE=okm182 cargo test --test state_audit_live -- --ignored --nocap
 | 关键表 | 会话、计费、后台任务共 6 张 | 全部存在（库共 116 表、78 序列、482 索引、95 外键） | 通过 |
 | 去重索引 | `usage_billing_dedup(request_id, api_key_id)` 唯一 | `idx_usage_billing_dedup_request_api_key` 覆盖这两列 | 通过 |
 | PostgreSQL RPO | 清单声明 3600 秒 | `archive_mode=off`、0 副本、只有人工备份 | **无上界**（`null`） |
+| 定时备份证据 | 声明无（三态里是 `manual`） | `crontab -l`、`/etc/cron.d`、systemd timers 里都没有备份任务 | **无上界**；若写成 `scheduled` 会因查不到任务而判 `backup_schedule_unverified` |
 | Redis 定位 | 声明 `derived`（可丢弃缓存） | AOF `everysec`、3 个库、**4346 个无 TTL 键** | **声明被拒 → 按权威状态计** |
 | 应用卷 RPO | 清单声明 3600 秒 | `/app/data` 2976.2 MiB、只有人工备份 | **无上界** |
 | 故障域 | 不宣称独立 | 应用卷与两份数据库目录同为设备 2049 | 一致（同盘） |
@@ -662,10 +663,12 @@ SSHPOOL_LIVE_NODE=okm182 cargo test --test state_audit_live -- --ignored --nocap
 两条测试都以同一份清单为输入：
 
 - `the_declared_contract_is_checked_against_the_host` 断言现状被拒，并逐项核对表、唯一索引、设备号、`archive_mode`。
-- `a_contract_that_matches_the_facts_is_approved` 是**阳性对照**：把备份节奏与 `cache_persistent_allowance` 改成与事实相符的值后，工具必须给出通过且 `achievable_rpo_seconds == 3600`。没有这条，工具只会永远说「不行」，证明不了任何事。
+- `a_contract_that_matches_the_facts_is_approved` 是**阳性对照**：把备份节奏与 `cache_persistent_allowance` 改成与事实相符的值后，工具必须给出通过且 `achievable_rpo_seconds == 3600`。**它同时给探针事实补了一条 `crontab:root#…` 的定时任务**：因为现场没有真备份，若不补，这条对照验证的就只是「清单说自己有备份」这一句自我保证，而不是工具能否识别真证据。没有这条，工具只会永远说「不行」，证明不了任何事。
 - `the_binary_exits_two_and_prints_one_report` 走真实二进制，断言退出码 2 且 `--output` 是一份 JSON。
 
-探针只跑 `docker inspect` / `docker exec ... psql|redis-cli` 与 `stat`/`du`，**没有创建容器、卷、网络，也没有改任何配置**。证据见 [evidence/state-admission-20261108.json](evidence/state-admission-20261108.json)（12 条断言全为 true）。
+离线侧（CI 上跑）另有 10 条测试覆盖定时备份证据：查不到任务、只写来源却命中多条、补摘要精确指向唯一一条、摘要指向不存在、周期解析不出来、观测周期覆盖声明周期、`evidence` 为空被 `validate` 拒绝、明细必须点名所信任务，以及端到端的退出码与「同来源多条 → 摘要消歧后放行」。
+
+探针只跑 `docker inspect` / `docker exec ... psql|redis-cli` 与 `stat`/`du`，**没有创建容器、卷、网络，也没有改任何配置**。证据见 [evidence/state-admission-20261108.json](evidence/state-admission-20261108.json)（15 条断言全为 true）。
 
 边界：这是**清单核对**，不是迁移演练，也不是 RPO 实测。上界按配置推算（AOF `everysec` → 1 秒、备份间隔 → 间隔、WAL 归档 → 段切换）；`fsync` 是否真的落盘、盘是否真的持久，这条链路不证明。主机上另有 3 个未声明的数据库容器（minio、mysql、pg252r）与 63 处范围外可写挂载，不在本次结论内。协议与全部判定码见 [应用状态与持久化约定审核](state-audit.md)。
 

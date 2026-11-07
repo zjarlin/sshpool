@@ -53,7 +53,7 @@ fn inventory() -> Value {
             "container": "pg",
             "database": "app",
             "user": "app",
-            "backup": { "kind": "scheduled", "interval_seconds": 600 },
+            "backup": { "kind": "scheduled", "interval_seconds": 600, "evidence": "crontab:root" },
             "groups": { "billing": ["charge"] },
             "dedup": [{ "purpose": "重试不得重复计费", "table": "charge",
                         "columns": ["request_id", "api_key_id"] }]
@@ -61,7 +61,7 @@ fn inventory() -> Value {
         "redis": [{
             "container": "cache",
             "disposition": "derived",
-            "backup": { "kind": "scheduled", "interval_seconds": 600 },
+            "backup": { "kind": "scheduled", "interval_seconds": 600, "evidence": "crontab:root" },
             "required_prefixes": ["sched:"],
             "cache_persistent_allowance": 0
         }],
@@ -69,7 +69,7 @@ fn inventory() -> Value {
             "container": "app",
             "destination": "/app/data",
             "disposition": "authoritative",
-            "backup": { "kind": "scheduled", "interval_seconds": 600 }
+            "backup": { "kind": "scheduled", "interval_seconds": 600, "evidence": "crontab:root" }
         }],
         "failure_domains": { "claim_independent": false }
     })
@@ -110,6 +110,9 @@ fn facts() -> Value {
               "destination": "/var/lib/postgresql/data", "read_only": false,
               "bytes": 8192, "device": "2049" }
         ],
+        "backup_schedules": [{ "source": "crontab:root",
+                               "command_digest": "0123456789abcdef",
+                               "interval_seconds": 600 }],
         "errors": []
     })
 }
@@ -141,6 +144,52 @@ fn a_consistent_inventory_exits_zero_and_reports_read_only() -> Result<()> {
     assert_eq!(report["surfaces"].as_array().map(Vec::len), Some(3));
     assert!(codes(&report, "blockers").is_empty());
     assert!(codes(&report, "violations").is_empty());
+    Ok(())
+}
+
+#[test]
+fn a_declared_backup_without_a_host_schedule_exits_two() -> Result<()> {
+    let root = tempfile::tempdir()?;
+    let inventory = write(root.path(), "inventory.json", &inventory())?;
+    let mut bare = facts();
+    bare["backup_schedules"] = json!([]);
+    let probe = write(root.path(), "probe.json", &bare)?;
+    let (code, report, _) = audit(&inventory, &probe)?;
+
+    // 「每 600 秒备份一次」是清单自己的说法，主机上找不到对应任务就不能兑现。
+    assert_eq!(code, 2, "{report}");
+    assert_eq!(report["migration_plan_approved"], false);
+    assert_eq!(report["achievable_rpo_seconds"], Value::Null);
+    assert!(
+        codes(&report, "violations").contains(&"backup_schedule_unverified".to_string()),
+        "{report}"
+    );
+
+    // 同一来源下出现多条任务时没有指向性，同样不算证据。
+    let mut crowded = facts();
+    crowded["backup_schedules"] = json!([
+        { "source": "crontab:root", "command_digest": "0123456789abcdef",
+          "interval_seconds": 600 },
+        { "source": "crontab:root", "command_digest": "fedcba9876543210",
+          "interval_seconds": 86400 }
+    ]);
+    let probe = write(root.path(), "crowded.json", &crowded)?;
+    let (code, report, _) = audit(&inventory, &probe)?;
+    assert_eq!(code, 2, "{report}");
+    assert!(
+        codes(&report, "violations").contains(&"backup_schedule_ambiguous".to_string()),
+        "{report}"
+    );
+
+    // 补上摘要指向唯一一条后，同一个宿主事实就能支持这个声明。
+    let mut declared: Value = serde_json::from_slice(&fs::read(&inventory)?)?;
+    for surface in ["postgres", "redis", "volumes"] {
+        declared[surface][0]["backup"]["evidence"] = json!("crontab:root#0123456789abcdef");
+    }
+    let pinned = write(root.path(), "pinned.json", &declared)?;
+    let (code, report, _) = audit(&pinned, &probe)?;
+    assert_eq!(code, 0, "{report}");
+    assert_eq!(report["achievable_rpo_seconds"], 600);
     Ok(())
 }
 

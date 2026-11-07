@@ -59,11 +59,17 @@ pub enum Rehearsal {
 ///
 /// 不提供「随便填个秒数」的入口：只有人工备份时，RPO 根本没有上界，
 /// 写成一个大数字会让人误以为「最坏也就丢这么多」。
-#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum Backup {
     /// 定时备份，间隔秒数。
-    Scheduled { interval_seconds: u64 },
+    ///
+    /// `evidence` 是**探针能核对到的**宿主侧调度来源（见 `Probe.backup_schedules`）。
+    /// 不填就等于「没人证实这个定时任务存在」，该声明不给 RPO 上界。
+    Scheduled {
+        interval_seconds: u64,
+        evidence: String,
+    },
     /// 只有人工触发的备份：没有固定间隔，RPO 无上界。
     Manual,
     /// 完全没有备份。
@@ -71,18 +77,91 @@ pub enum Backup {
 }
 
 impl Backup {
-    /// 回到最近一次可用副本所需的最长等待；`None` 表示没有上界。
-    fn rpo_bound(self) -> Option<u64> {
-        match self {
-            Backup::Scheduled { interval_seconds } => Some(interval_seconds),
-            Backup::Manual | Backup::None => None,
-        }
-    }
-    fn describe(self) -> &'static str {
+    /// 人读的形态描述，用于报告里的「为什么没有上界」。
+    ///
+    /// 刻意不提供「按声明算出上界」的入口：声明能否成立只能由 `proven_bound`
+    /// 对着探针判定，没有证据的定时备份等于人工备份。
+    fn describe(&self) -> &'static str {
         match self {
             Backup::Scheduled { .. } => "定时备份",
             Backup::Manual => "只有人工备份",
             Backup::None => "没有备份",
+        }
+    }
+
+    /// 对着探针核对「定时备份」是否真实存在，并返回**有证据的上界**。
+    ///
+    /// 声明本身不算证据：清单里写 `scheduled` 只是提出主张，必须有一个能被唯一
+    /// 指认的宿主定时任务被观测到。判定分三种：
+    ///
+    /// - 一个都对不上 → 违背项 `backup_schedule_unverified`，上界退回 `None`；
+    /// - 对上了不止一个 → 违背项 `backup_schedule_ambiguous`，同样不给上界：
+    ///   `crontab:root` 往往同时挂着 sysstat 之类的琐碎任务，随便挑一条都能
+    ///   「证明」备份存在，那就等于没有证据；
+    /// - 恰好一个，但周期解析不出来 → 违背项 `backup_schedule_unparsed`。
+    ///
+    /// 周期一律以**观测到的**为准，不用清单写的那个数。
+    fn proven_bound(
+        &self,
+        probe: &Probe,
+        surface: &str,
+        violations: &mut Vec<Finding>,
+    ) -> Option<u64> {
+        let Backup::Scheduled {
+            interval_seconds,
+            evidence,
+        } = self
+        else {
+            return None;
+        };
+        let matched = probe
+            .backup_schedules
+            .iter()
+            .filter(|schedule| schedule.answers_to(evidence))
+            .collect::<Vec<_>>();
+        match matched.as_slice() {
+            [] => {
+                violations.push(finding(
+                    "backup_schedule_unverified",
+                    format!(
+                        "{surface} 声明定时备份（每 {interval_seconds} 秒，证据 `{evidence}`），\
+                         但宿主的 crontab / cron.d / systemd timer 里都没有 `{evidence}`：\
+                         声明不能自己证明自己，该面按「没有定时备份」计 RPO"
+                    ),
+                ));
+                None
+            }
+            [observed] => match observed.interval_seconds {
+                Some(seconds) => Some(seconds),
+                None => {
+                    violations.push(finding(
+                        "backup_schedule_unparsed",
+                        format!(
+                            "{surface} 的证据 `{evidence}` 确实存在（命令摘要 {}），\
+                             但周期无法从 cron/timer 表达式解析：给不出上界就按无上界处理",
+                            observed.command_digest
+                        ),
+                    ));
+                    None
+                }
+            },
+            many => {
+                let candidates = many
+                    .iter()
+                    .map(|schedule| format!("{}/{}", schedule.source, schedule.command_digest))
+                    .collect::<Vec<_>>()
+                    .join("、");
+                violations.push(finding(
+                    "backup_schedule_ambiguous",
+                    format!(
+                        "{surface} 的证据 `{evidence}` 命中了 {} 条宿主定时任务（{candidates}）：\
+                         无法断定哪一条才是备份，任何一条都不算证据。\
+                         请把证据写成 `<来源>#<命令摘要>` 只指向其中一条",
+                        many.len()
+                    ),
+                ));
+                None
+            }
         }
     }
 }
@@ -186,9 +265,42 @@ pub struct Probe {
     pub redis: Vec<RedisFacts>,
     #[serde(default)]
     pub mounts: Vec<MountFacts>,
+    /// 宿主上真实存在的定时任务；`Backup::Scheduled` 必须能在这里对上号。
+    #[serde(default)]
+    pub backup_schedules: Vec<BackupSchedule>,
     /// 单个目标探测失败也要保留原因；非空即表示审核不完整。
     #[serde(default)]
     pub errors: Vec<String>,
+}
+
+/// 宿主上一次被观测到的定时任务（crontab / `/etc/cron.d` / systemd timer）。
+///
+/// 只保留任务名与命令摘要：报告要能指认「是这个任务」，但不必把命令行原文
+/// （可能含连接串或口令）带进仓库。
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct BackupSchedule {
+    /// 稳定标识，清单里的 `evidence` 就写这个值，例如 `crontab:root`、
+    /// `cron.d:pg-backup`、`systemd-timer:pg-backup.timer`。
+    pub source: String,
+    /// 命令行（或 timer 单元名）的 SHA-256 前 16 位。
+    pub command_digest: String,
+    /// 从 cron 字段或 timer 表达式解析出的周期；解析不了就是 `None`，不给上界。
+    pub interval_seconds: Option<u64>,
+}
+
+impl BackupSchedule {
+    /// 清单里的 `evidence` 是否指向这一条。
+    ///
+    /// 只写来源（`crontab:root`）在只有一条任务时才唯一；来源下有多条时必须
+    /// 补 `#<命令摘要>` 才能精确指向那一行。否则「root 的 crontab 里有东西」
+    /// 就会被当成备份证据。
+    fn answers_to(&self, evidence: &str) -> bool {
+        match evidence.split_once('#') {
+            Some((source, digest)) => self.source == source && self.command_digest == digest,
+            None => self.source == evidence,
+        }
+    }
 }
 
 /// 主机上实际在跑的容器；用来发现清单漏掉的状态面。
@@ -384,6 +496,32 @@ pub fn validate(inventory: &Inventory) -> Result<()> {
         inventory.postgres.len() + inventory.redis.len() + inventory.volumes.len() > 0,
         "no state surface is declared"
     );
+    for backup in inventory
+        .postgres
+        .iter()
+        .map(|target| &target.backup)
+        .chain(inventory.redis.iter().map(|target| &target.backup))
+        .chain(inventory.volumes.iter().map(|target| &target.backup))
+    {
+        if let Backup::Scheduled {
+            interval_seconds,
+            evidence,
+        } = backup
+        {
+            ensure!(
+                *interval_seconds > 0,
+                "a scheduled backup interval must be positive"
+            );
+            ensure!(
+                !evidence.is_empty()
+                    && evidence.len() <= 128
+                    && !evidence
+                        .chars()
+                        .any(|c| c.is_control() || c.is_whitespace()),
+                "backup evidence must name a probe-reported schedule source"
+            );
+        }
+    }
     for target in &inventory.postgres {
         validate_container(&target.container)?;
         validate_identifier(&target.database, "database")?;
@@ -597,7 +735,13 @@ pub fn assess(inventory: &Inventory, probe: &Probe) -> Report {
                         ),
                     ));
                 }
-                let (rpo, how) = postgres_rpo(target, facts);
+                let proven = target.backup.proven_bound(
+                    probe,
+                    &format!("{}::{}", target.container, target.database),
+                    &mut violations,
+                );
+                let (rpo, how) = postgres_rpo(target, facts, proven);
+                let how = name_evidence(&target.backup, proven, how);
                 if facts.archive_mode != "on" {
                     warnings.push(finding(
                         "no_wal_archive",
@@ -683,7 +827,11 @@ pub fn assess(inventory: &Inventory, probe: &Probe) -> Report {
                         ),
                     ));
                 }
-                let (rpo, how) = redis_rpo(target, facts);
+                let proven = target
+                    .backup
+                    .proven_bound(probe, &target.container, &mut violations);
+                let (rpo, how) = redis_rpo(target, facts, proven);
+                let how = name_evidence(&target.backup, proven, how);
                 let rpo = if effective == Disposition::Derived {
                     Some(0)
                 } else {
@@ -721,10 +869,21 @@ pub fn assess(inventory: &Inventory, probe: &Probe) -> Report {
                 ),
             )),
             Some(mount) => {
+                let proven = target.backup.proven_bound(
+                    probe,
+                    &format!("{}:{}", target.container, target.destination),
+                    &mut violations,
+                );
                 let rpo = if target.disposition == Disposition::Derived {
                     Some(0)
                 } else {
-                    target.backup.rpo_bound()
+                    proven
+                };
+                let evidence_note = match (&target.backup, proven) {
+                    (Backup::Scheduled { evidence, .. }, Some(_)) => {
+                        format!("；上界依据 `{evidence}`")
+                    }
+                    _ => String::new(),
                 };
                 surfaces.push(SurfaceReport {
                     kind: "volume",
@@ -733,7 +892,7 @@ pub fn assess(inventory: &Inventory, probe: &Probe) -> Report {
                     effective_disposition: target.disposition,
                     achievable_rpo_seconds: rpo,
                     detail: format!(
-                        "{}；{}；设备 {}",
+                        "{}；{}；设备 {}{evidence_note}",
                         if mount.read_only {
                             "只读挂载"
                         } else {
@@ -982,7 +1141,11 @@ fn check_failure_domains(
     }
 }
 
-fn postgres_rpo(target: &PostgresTarget, facts: &PostgresFacts) -> (Option<u64>, String) {
+fn postgres_rpo(
+    target: &PostgresTarget,
+    facts: &PostgresFacts,
+    proven: Option<u64>,
+) -> (Option<u64>, String) {
     if facts.replicas > 0 {
         return (
             Some(0),
@@ -1002,35 +1165,37 @@ fn postgres_rpo(target: &PostgresTarget, facts: &PostgresFacts) -> (Option<u64>,
         };
         return (Some(window), how);
     }
-    let bound = target.backup.rpo_bound();
-    let how = match bound {
+    let how = match proven {
         Some(seconds) => format!(
             "archive_mode={}，只能回到最近一次逻辑备份（间隔 ≤ {seconds} 秒）",
             facts.archive_mode
         ),
         None => format!(
-            "archive_mode={} 且{}：没有 WAL 归档又没有定时备份，丢多少取决于上次备份",
+            "archive_mode={} 且{}：没有 WAL 归档又没有可核实的定时备份，丢多少取决于上次备份",
             facts.archive_mode,
-            target.backup.describe()
+            backup_gap(&target.backup)
         ),
     };
-    (bound, how)
+    (proven, how)
 }
 
-fn redis_rpo(target: &RedisTarget, facts: &RedisFacts) -> (Option<u64>, String) {
+fn redis_rpo(
+    target: &RedisTarget,
+    facts: &RedisFacts,
+    proven: Option<u64>,
+) -> (Option<u64>, String) {
     if facts.replicas > 0 {
         return (Some(0), format!("{} 个副本", facts.replicas));
     }
     if !facts.appendonly {
-        let bound = target.backup.rpo_bound();
-        let how = match bound {
+        let how = match proven {
             Some(seconds) => format!("AOF 关闭，只能回到最近一次快照（间隔 ≤ {seconds} 秒）"),
             None => format!(
                 "AOF 关闭且{}：只能回到上一次快照，时刻不可预期",
-                target.backup.describe()
+                backup_gap(&target.backup)
             ),
         };
-        return (bound, how);
+        return (proven, how);
     }
     match facts.appendfsync.as_str() {
         "always" => (Some(0), "AOF + appendfsync=always（每条命令落盘）".into()),
@@ -1040,9 +1205,28 @@ fn redis_rpo(target: &RedisTarget, facts: &RedisFacts) -> (Option<u64>, String) 
             "AOF + appendfsync=no（由内核决定刷盘，按 30 秒上界估算）".into(),
         ),
         other => (
-            target.backup.rpo_bound(),
+            proven,
             format!("AOF 开启但 appendfsync={other} 未知，退回备份节奏"),
         ),
+    }
+}
+
+/// 给「这个面没有可核实上界」补一句原因，区分「没声明」和「声明了但没证据」。
+fn backup_gap(backup: &Backup) -> String {
+    match backup {
+        Backup::Scheduled { .. } => "声称的定时备份未被主机证据支持".to_string(),
+        other => other.describe().to_string(),
+    }
+}
+
+/// 上界成立时把「信的是哪个宿主任务」写进明细。
+///
+/// 只报一个秒数，评审者无法判断 `systemd-timer:sysstat-collect.timer` 这类
+/// 明显不是备份的任务是不是被误当成了证据；点名之后，这种错误一眼可见。
+fn name_evidence(backup: &Backup, proven: Option<u64>, how: String) -> String {
+    match (backup, proven) {
+        (Backup::Scheduled { evidence, .. }, Some(_)) => format!("{how}（证据 `{evidence}`）"),
+        _ => how,
     }
 }
 
@@ -1174,7 +1358,8 @@ def engine_of(image):
 spec = json.loads(base64.b64decode(os.environ['SSHPOOL_STATE_AUDIT_SPEC']).decode())
 errors = []
 probe = {'schema': 1, 'collected_at_unix': int(time.time()),
-         'discovered': [], 'postgres': [], 'redis': [], 'mounts': [], 'errors': errors}
+         'discovered': [], 'postgres': [], 'redis': [], 'mounts': [],
+         'backup_schedules': [], 'errors': errors}
 
 names = []
 code, out, err = run(['docker', 'ps', '--format', '{{.Names}}'], 30)
@@ -1466,6 +1651,135 @@ for container in sorted(engine_containers):
         if mount.get('RW') and mount.get('Destination'):
             record_mount(container, 'engine-data', mount.get('Destination'), mount)
 
+# 宿主定时任务：清单里写「每 3600 秒备份一次」必须有对应任务，否则那是自我保证。
+# 只记录来源标识、命令摘要与解析出的周期；命令行原文（可能含口令）不出现。
+def expand(field, low, high):
+    values = set()
+    for part in field.split(','):
+        step = 1
+        body = part
+        if '/' in part:
+            body, _, digits = part.partition('/')
+            if not digits.isdigit() or int(digits) <= 0:
+                return None
+            step = int(digits)
+        if body == '*':
+            start, end = low, high
+        elif '-' in body:
+            left, _, right = body.partition('-')
+            if not (left.isdigit() and right.isdigit()):
+                return None
+            start, end = int(left), int(right)
+        else:
+            if not body.isdigit():
+                return None
+            start = end = int(body)
+        if start < low or end > high or start > end:
+            return None
+        values.update(range(start, end + 1, step))
+    return values or None
+
+def cron_period(fields):
+    # 只对「每天重复」的形态给周期：限定某日/某月/某星期时周期不固定，
+    # 这时回答 None（没有可证明的上界），而不是拿最短间隔冒充周期。
+    minute, hour, dom, month, dow = fields
+    if dom != '*' or month != '*' or dow != '*':
+        return None
+    minutes = expand(minute, 0, 59)
+    hours = expand(hour, 0, 23)
+    if not minutes or not hours:
+        return None
+    instants = sorted(h * 60 + m for h in hours for m in minutes)
+    if len(instants) == 1:
+        return 86400
+    # RPO 关心的是「最久要等多久」，所以取相邻触发时刻的**最大**间隔。
+    # 取最小值或最大公约数会把 `* */2 * * *`（只在偶数小时每分钟）读成 60 秒，
+    # 而它实际上可能等 61 分钟。
+    gaps = [b - a for a, b in zip(instants, instants[1:])]
+    gaps.append(instants[0] + 1440 - instants[-1])
+    return max(gaps) * 60
+
+MACROS = {'@yearly': 31536000, '@annually': 31536000, '@monthly': 2592000,
+          '@weekly': 604800, '@daily': 86400, '@midnight': 86400, '@hourly': 3600}
+
+def add_schedule(source, command):
+    period = None
+    text = command.strip()
+    if text.startswith('@'):
+        period = MACROS.get(text.split()[0], None)
+    else:
+        fields = text.split()
+        if len(fields) >= 6:
+            try:
+                period = cron_period(fields[:5])
+            except Exception:
+                period = None
+    probe['backup_schedules'].append({
+        'source': source,
+        'command_digest': digest(text),
+        'interval_seconds': period,
+    })
+
+def cron_lines(text):
+    for line in text.splitlines():
+        line = line.strip()
+        if not line or line.startswith('#'):
+            continue
+        # 跳过环境赋值行：`SHELL=/bin/sh` 之类没有周期。
+        if '=' in line.split(None, 1)[0]:
+            continue
+        if line.split()[0].startswith('@') or len(line.split()) >= 6:
+            yield line
+
+code, out, err = run(['crontab', '-l'], 20)
+if code == 0:
+    for line in cron_lines(out):
+        add_schedule('crontab:root', line)
+
+for name in sorted(os.listdir('/etc/cron.d') if os.path.isdir('/etc/cron.d') else []):
+    path = os.path.join('/etc/cron.d', name)
+    try:
+        if not os.path.isfile(path):
+            continue
+        text = open(path, errors='replace').read()
+    except Exception as exc:
+        errors.append('cron.d %s: %s' % (name, type(exc).__name__))
+        continue
+    for line in cron_lines(text):
+        # /etc/cron.d 的行首多一个「以哪个用户运行」的字段。
+        add_schedule('cron.d:' + name, ' '.join(line.split()[1:]))
+
+code, out, err = run(['systemctl', 'list-timers', '--all', '--no-legend', '--no-pager'], 20)
+if code == 0:
+    for line in out.splitlines():
+        words = line.split()
+        units = [w for w in words if w.endswith('.timer')]
+        if not units:
+            continue
+        unit = units[0]
+        code, show, _ = run(['systemctl', 'show', unit, '-p', 'OnUnitActiveSec',
+                             '-p', 'OnCalendar'], 20)
+        period = None
+        if code == 0:
+            for entry in show.splitlines():
+                key, _, value = entry.partition('=')
+                if key == 'OnUnitActiveSec' and value.strip():
+                    seconds = 0
+                    for part in value.split():
+                        digits = ''.join(c for c in part if c.isdigit())
+                        if not digits:
+                            seconds = None
+                            break
+                        unit_scale = {'s': 1, 'min': 60, 'h': 3600, 'd': 86400}.get(
+                            ''.join(c for c in part if c.isalpha()), 1)
+                        seconds += int(digits) * unit_scale
+                    period = seconds
+        probe['backup_schedules'].append({
+            'source': 'systemd-timer:' + unit,
+            'command_digest': digest(unit),
+            'interval_seconds': period,
+        })
+
 print(json.dumps(probe, sort_keys=True))
 PY"#;
 
@@ -1491,6 +1805,7 @@ mod tests {
                 user: "app".into(),
                 backup: Backup::Scheduled {
                     interval_seconds: 600,
+                    evidence: "crontab:root".into(),
                 },
                 groups: BTreeMap::from([("billing".to_string(), vec!["charge".to_string()])]),
                 dedup: vec![Dedup {
@@ -1504,6 +1819,7 @@ mod tests {
                 disposition: Disposition::Derived,
                 backup: Backup::Scheduled {
                     interval_seconds: 600,
+                    evidence: "crontab:root".into(),
                 },
                 required_prefixes: vec!["sched:".into()],
                 cache_persistent_allowance: 0,
@@ -1514,6 +1830,7 @@ mod tests {
                 disposition: Disposition::Authoritative,
                 backup: Backup::Scheduled {
                     interval_seconds: 600,
+                    evidence: "crontab:root".into(),
                 },
             }],
             failure_domains: FailureDomains {
@@ -1601,6 +1918,12 @@ mod tests {
                     device: Some("2049".into()),
                 },
             ],
+            // 三面声明都用同一条 `crontab:root` 作为证据；探针必须能对上它。
+            backup_schedules: vec![BackupSchedule {
+                source: "crontab:root".into(),
+                command_digest: "0123456789abcdef".into(),
+                interval_seconds: Some(600),
+            }],
             errors: Vec::new(),
         }
     }
@@ -1836,6 +2159,186 @@ mod tests {
         let report = assess(&fixture_inventory(), &probe);
         assert!(codes(&report.blockers).contains(&"probe_failed"));
         assert!(!report.migration_plan_approved);
+    }
+
+    #[test]
+    fn a_scheduled_backup_without_a_host_schedule_earns_nothing() {
+        // 清单自称「每 600 秒备份一次」，但主机上没有任何定时任务：
+        // 这句声明不能自己给自己发 RPO 上界。
+        let mut probe = fixture_probe();
+        probe.backup_schedules.clear();
+        let report = assess(&fixture_inventory(), &probe);
+        assert!(
+            codes(&report.violations).contains(&"backup_schedule_unverified"),
+            "{:?}",
+            report.violations
+        );
+        assert_eq!(report.achievable_rpo_seconds, None);
+        assert!(!report.migration_plan_approved);
+        // 三个权威面都靠这条无法核实的定时任务，全部退回无上界。
+        let authoritative = report
+            .surfaces
+            .iter()
+            .filter(|surface| surface.effective_disposition == Disposition::Authoritative)
+            .collect::<Vec<_>>();
+        assert_eq!(authoritative.len(), 2, "{:?}", report.surfaces);
+        assert!(
+            authoritative
+                .iter()
+                .all(|surface| surface.achievable_rpo_seconds.is_none()),
+            "every authoritative surface relied on the same unverified schedule: {:?}",
+            report.surfaces
+        );
+        // 可丢弃缓存不需要备份：它没有隐藏的备份声明，仍然给出 0 上界。
+        let derived = report
+            .surfaces
+            .iter()
+            .find(|surface| surface.effective_disposition == Disposition::Derived)
+            .expect("fixture keeps one derived cache");
+        assert_eq!(derived.achievable_rpo_seconds, Some(0));
+    }
+
+    #[test]
+    fn only_the_named_schedule_counts_not_any_schedule_on_the_host() {
+        // 主机上确实有定时任务，但不是清单指名的那个：仍然不算证据。
+        let mut probe = fixture_probe();
+        probe.backup_schedules[0].source = "cron.d:unrelated".into();
+        let report = assess(&fixture_inventory(), &probe);
+        assert!(codes(&report.violations).contains(&"backup_schedule_unverified"));
+        assert_eq!(report.achievable_rpo_seconds, None);
+    }
+
+    #[test]
+    fn a_schedule_whose_period_cannot_be_parsed_gives_no_bound() {
+        let mut probe = fixture_probe();
+        probe.backup_schedules[0].interval_seconds = None;
+        let report = assess(&fixture_inventory(), &probe);
+        assert!(
+            codes(&report.violations).contains(&"backup_schedule_unparsed"),
+            "{:?}",
+            report.violations
+        );
+        assert_eq!(report.achievable_rpo_seconds, None);
+    }
+
+    #[test]
+    fn the_observed_period_wins_over_the_declared_one() {
+        // 清单说 600 秒，主机上的任务实际每 3600 秒一次：按实测计，不按声明计。
+        let mut probe = fixture_probe();
+        probe.backup_schedules[0].interval_seconds = Some(3600);
+        let report = assess(&fixture_inventory(), &probe);
+        assert_eq!(report.achievable_rpo_seconds, Some(3600));
+        assert!(report.violations.is_empty(), "{:?}", report.violations);
+    }
+
+    #[test]
+    fn the_bound_names_the_task_it_trusts() {
+        // 只报一个秒数，评审者看不出信的是 sysstat 还是备份任务：明细必须点名。
+        let report = assess(&fixture_inventory(), &fixture_probe());
+        let pg = report
+            .surfaces
+            .iter()
+            .find(|surface| surface.kind == "postgres")
+            .unwrap();
+        assert!(pg.detail.contains("crontab:root"), "{}", pg.detail);
+        let volume = report
+            .surfaces
+            .iter()
+            .find(|surface| surface.kind == "volume")
+            .unwrap();
+        assert!(volume.detail.contains("crontab:root"), "{}", volume.detail);
+        // 人工备份没有证据可信，也就没有可点名的任务。
+        let mut inventory = fixture_inventory();
+        inventory.postgres[0].backup = Backup::Manual;
+        let report = assess(&inventory, &fixture_probe());
+        let pg = report
+            .surfaces
+            .iter()
+            .find(|surface| surface.kind == "postgres")
+            .unwrap();
+        assert!(!pg.detail.contains("crontab:root"), "{}", pg.detail);
+    }
+
+    #[test]
+    fn a_source_that_matches_several_tasks_is_not_evidence() {
+        // root 的 crontab 里通常还有 sysstat 之类的琐事：只写来源就没有指向性，
+        // 随便挑一条都能「证明」备份存在，所以这种情况不给上界。
+        let mut probe = fixture_probe();
+        probe.backup_schedules.push(BackupSchedule {
+            source: "crontab:root".into(),
+            command_digest: "fedcba9876543210".into(),
+            interval_seconds: Some(600),
+        });
+        let report = assess(&fixture_inventory(), &probe);
+        let codes = codes(&report.violations);
+        assert!(codes.contains(&"backup_schedule_ambiguous"), "{codes:?}");
+        assert!(!codes.contains(&"backup_schedule_unverified"), "{codes:?}");
+        assert_eq!(report.achievable_rpo_seconds, None);
+    }
+
+    #[test]
+    fn a_digest_pins_the_evidence_to_one_line() {
+        // 同一个来源下有多条任务时，`来源#摘要` 才是可指认的证据。
+        let mut inventory = fixture_inventory();
+        let mut probe = fixture_probe();
+        probe.backup_schedules.push(BackupSchedule {
+            source: "crontab:root".into(),
+            command_digest: "fedcba9876543210".into(),
+            interval_seconds: Some(86400),
+        });
+        let pinned = "crontab:root#0123456789abcdef";
+        for target in &mut inventory.postgres {
+            target.backup = Backup::Scheduled {
+                interval_seconds: 600,
+                evidence: pinned.into(),
+            };
+        }
+        for target in &mut inventory.redis {
+            target.backup = Backup::Scheduled {
+                interval_seconds: 600,
+                evidence: pinned.into(),
+            };
+        }
+        for target in &mut inventory.volumes {
+            target.backup = Backup::Scheduled {
+                interval_seconds: 600,
+                evidence: pinned.into(),
+            };
+        }
+        let report = assess(&inventory, &probe);
+        assert!(report.violations.is_empty(), "{:?}", report.violations);
+        // 指向的是每 600 秒那条，不是同一来源下的 86400 秒那条。
+        assert_eq!(report.achievable_rpo_seconds, Some(600));
+        assert!(report.migration_plan_approved);
+    }
+
+    #[test]
+    fn a_digest_that_matches_nothing_is_still_unverified() {
+        let mut inventory = fixture_inventory();
+        for target in &mut inventory.postgres {
+            target.backup = Backup::Scheduled {
+                interval_seconds: 600,
+                evidence: "crontab:root#ffffffffffffffff".into(),
+            };
+        }
+        let report = assess(&inventory, &fixture_probe());
+        assert!(codes(&report.violations).contains(&"backup_schedule_unverified"));
+        assert_eq!(report.achievable_rpo_seconds, None);
+    }
+
+    #[test]
+    fn a_scheduled_backup_needs_an_evidence_name() {
+        let mut broken = fixture_inventory();
+        broken.postgres[0].backup = Backup::Scheduled {
+            interval_seconds: 600,
+            evidence: "  ".into(),
+        };
+        assert!(validate(&broken).is_err());
+        broken.postgres[0].backup = Backup::Scheduled {
+            interval_seconds: 600,
+            evidence: "crontab:root".into(),
+        };
+        assert!(validate(&broken).is_ok());
     }
 
     #[test]

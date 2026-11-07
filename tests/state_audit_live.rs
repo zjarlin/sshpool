@@ -179,7 +179,7 @@ async fn the_declared_contract_is_checked_against_the_host() -> Result<()> {
 async fn a_contract_that_matches_the_facts_is_approved() -> Result<()> {
     let ssh = node()?;
     let mut declared = inventory()?;
-    let facts = state_audit::probe(&declared, &ssh, None).await?;
+    let mut facts = state_audit::probe(&declared, &ssh, None).await?;
     ensure!(
         facts.errors.is_empty(),
         "probe reported errors: {:?}",
@@ -199,10 +199,21 @@ async fn a_contract_that_matches_the_facts_is_approved() -> Result<()> {
         })
         .unwrap_or(0);
     declared.redis[0].cache_persistent_allowance = persistent;
+
+    // 现场没有定时备份，而审核不接受「清单说自己有备份」。
+    // 阳性对照因此必须同时造出**探针事实**，否则它验证的只是自我保证。
+    // 用 `来源#摘要` 指向这一条：即使 root 的 crontab 里还有别的任务，也不会被误认。
+    let evidence = "crontab:root#00000000feedface";
+    facts.backup_schedules.push(state_audit::BackupSchedule {
+        source: "crontab:root".into(),
+        command_digest: "00000000feedface".into(),
+        interval_seconds: Some(3600),
+    });
     let schedule = state_audit::Backup::Scheduled {
         interval_seconds: 3600,
+        evidence: evidence.into(),
     };
-    declared.postgres[0].backup = schedule;
+    declared.postgres[0].backup = schedule.clone();
     declared.volumes[0].backup = schedule;
     declared.rpo_seconds = Some(3600);
 

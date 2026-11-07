@@ -30,6 +30,8 @@
 
 声明与事实冲突时**降级声明**，不要改数字凑通过。典型例子：Redis 被写成「可丢弃缓存」，但 `INFO keyspace` 里 `keys - expires` 有几千个键，那它承担的就是权威状态，RPO 必须按 AOF 配置算，而不能继续按 0 算；「说不清多久备份一次」既不是 0 也不是 86400，而是没有上界 —— 只有三态 `scheduled{interval}` / `manual` / `none` 的清单里，后两者都推出 `None`。`sshpool state-audit` 把这三条写成可执行判定，见 [应用状态与持久化约定审核](state-audit.md)。
 
+**定时备份的声明本身不是证据。** 清单写 `scheduled` 只是提出主张：主机上必须有一个能唯一指认的 crontab 行 / `cron.d` 行 / systemd timer 对得上 `evidence`，否则按「没有定时备份」计 RPO。反过来同样要防：`crontab:root` 里通常挂着 `sysstat` 这类每 10 分钟一次的琐事，如果「来源对上就算数」，任意清单都能凭空拿到「RPO ≤ 10 分钟」。所以命中多条时判 `backup_schedule_ambiguous`，必须补 `#<命令摘要>` 精确指向其中一条；周期一律以观测值为准，解析不出来就是无上界。这类「自己给自己发合格证」的写法，比写错一个数字更难被发现。
+
 数据库达到“确认事务不丢”至少需要：
 
 1. 定期 PostgreSQL 基础备份，并持续归档 WAL 到独立物理故障域。

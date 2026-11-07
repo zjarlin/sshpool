@@ -124,7 +124,8 @@
   "scheduled_backups": {
    "crontab_entries": 0,
    "cron_d_backup_entries": 0,
-   "systemd_backup_timers": 0
+   "systemd_backup_timers": 0,
+   "note": "主机上唯一的 cron.d 内容是 e2scrub_all 与 sysstat，systemd timers 里没有备份单元；因此清单写 scheduled 也无法兑现，只有 manual 与事实相符"
   }
  },
  "results": {
@@ -150,7 +151,8 @@
    "violations": [],
    "blockers": [],
    "approved": true,
-   "achievable_rpo_seconds": 3600
+   "achievable_rpo_seconds": 3600,
+   "note": "阳性对照同时向探针事实补了一条 crontab:root#00000000feedface（3600 秒）的定时任务：现场没有真备份，只改清单不改事实，验证的就只是「清单说自己有备份」这句自我保证"
   }
  },
  "assertions": {
@@ -165,14 +167,19 @@
   "refused_cache_claim_is_counted_as_authoritative": true,
   "a_matched_contract_is_approved": true,
   "binary_exits_two_for_a_refused_contract": true,
+  "scheduled_backup_requires_host_evidence": true,
+  "a_source_matching_several_tasks_is_not_evidence": true,
+  "unparsable_schedule_gives_no_bound": true,
+  "observed_period_overrides_declared": true,
   "no_containers_or_volumes_were_created": true
  },
- "assertions_total": 12,
+ "assertions_total": 16,
  "failed_assertions": [],
  "boundaries": [
   "只读审核，不执行迁移、不做备份、不切换入口，也不验证应用侧连接串",
   "RPO 上界按配置推算（AOF everysec → 1 秒、备份间隔 → 间隔、WAL 归档 → 段切换），不是压测出的丢失量，也不证明 fsync 真的落盘",
   "主机上另有 3 个未声明的数据库容器（minio、mysql、pg252r）与 63 处范围外可写挂载，本次不纳入结论",
-  "「被拒」是正确结果：清单宣称 RPO 3600 秒，但没有任何定时备份、没有 WAL 归档、没有副本"
+  "「被拒」是正确结果：清单宣称 RPO 3600 秒，但没有任何定时备份、没有 WAL 归档、没有副本",
+  "定时备份证据只做到「主机上确有该任务且周期可解析」，不验证该任务是否真的产出了可恢复的备份文件，也不验证副本内容是否可还原"
  ]
 }
