@@ -9,17 +9,46 @@ use std::{
     time::Duration,
 };
 
-fn free_port() -> Result<u16> {
-    let listener = std::net::TcpListener::bind(("127.0.0.1", 0))?;
-    Ok(listener.local_addr()?.port())
-}
-
 fn cli(home: &Path, args: &[&str]) -> Result<std::process::Output> {
     Ok(std::process::Command::new(env!("CARGO_BIN_EXE_sshpool"))
         .arg("--home")
         .arg(home)
         .args(args)
         .output()?)
+}
+
+/// 端口在这里只是「租约」：绑定后立刻持有，配置写盘后才释放，紧接着 spawn。
+///
+/// 单纯 bind→close→记下端口会留一个窗口，同一测试二进制里并行启动的另一个
+/// 控制面可能正好抢走它（CI 上真实发生过 `Address already in use`）。调用方
+/// 仍然要能容忍这次失败，因为释放与子进程 bind 之间不可能完全原子。
+struct Ports {
+    listeners: Vec<std::net::TcpListener>,
+}
+
+impl Ports {
+    fn reserve(count: usize) -> Result<Self> {
+        let mut listeners = Vec::new();
+        while listeners.len() < count {
+            let listener = std::net::TcpListener::bind(("127.0.0.1", 0))?;
+            listeners.push(listener);
+        }
+        Ok(Self { listeners })
+    }
+
+    fn ports(&self) -> Vec<u16> {
+        self.listeners
+            .iter()
+            .map(|listener| listener.local_addr().map(|address| address.port()))
+            .collect::<std::io::Result<Vec<_>>>()
+            .expect("bound listeners have addresses")
+    }
+
+    fn release(self) -> Vec<u16> {
+        let ports = self.ports();
+        drop(self.listeners);
+        ports
+    }
 }
 
 struct Controller {
@@ -32,7 +61,26 @@ struct Controller {
 }
 
 impl Controller {
+    /// 端口租约可能被别人抢走，所以整次启动最多重试三次；失败重试不会掩盖
+    /// 真正的启动缺陷，因为最后一次错误原样返回。
     fn start(enable_metrics: bool, nodes: &str) -> Result<Self> {
+        let mut last = None;
+        for _ in 0..3 {
+            match Self::start_once(enable_metrics, nodes) {
+                Ok(controller) => return Ok(controller),
+                Err(error) => {
+                    let text = format!("{error:#}");
+                    if !text.contains("Address already in use") {
+                        return Err(error);
+                    }
+                    last = Some(error);
+                }
+            }
+        }
+        Err(last.expect("the loop always runs once"))
+    }
+
+    fn start_once(enable_metrics: bool, nodes: &str) -> Result<Self> {
         let root = tempfile::tempdir()?;
         let init = cli(root.path(), &["init"])?;
         ensure!(
@@ -40,22 +88,10 @@ impl Controller {
             "init failed: {}",
             String::from_utf8_lossy(&init.stderr)
         );
-        let api = free_port()?;
-        let mut ssh_listen = free_port()?;
-        while ssh_listen == api {
-            ssh_listen = free_port()?;
-        }
-        let mut backend = free_port()?;
-        while backend == api || backend == ssh_listen {
-            backend = free_port()?;
-        }
-        let mut metrics = 0;
-        if enable_metrics {
-            metrics = free_port()?;
-            while [api, ssh_listen, backend].contains(&metrics) {
-                metrics = free_port()?;
-            }
-        }
+        let reserved = Ports::reserve(if enable_metrics { 4 } else { 3 })?;
+        let ports = reserved.ports();
+        let (api, ssh_listen, backend) = (ports[0], ports[1], ports[2]);
+        let metrics = if enable_metrics { ports[3] } else { 0 };
         let metrics_line = if enable_metrics {
             format!("metrics_listen = \"127.0.0.1:{metrics}\"\n")
         } else {
@@ -76,6 +112,12 @@ replica_min_ack = 0
 {metrics_line}"#
         );
         fs::write(root.path().join("config.toml"), config)?;
+        // 写盘完成才释放端口租约，尽量把「释放」与「子进程 bind」之间的窗口压到最小。
+        let ports = reserved.release();
+        ensure!(
+            ports.len() == if enable_metrics { 4 } else { 3 },
+            "unexpected port count"
+        );
         let log = root.path().join("serve.log");
         let child = std::process::Command::new(env!("CARGO_BIN_EXE_sshpool"))
             .arg("--home")
