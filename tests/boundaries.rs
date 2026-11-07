@@ -18,7 +18,8 @@ fn source_snapshot_respects_ignore_rules_and_excludes_credentials() -> Result<()
     fs::create_dir(root.path().join("target"))?;
     fs::write(root.path().join("target/binary"), "generated")?;
     let file = tempfile::NamedTempFile::new()?;
-    archive::snapshot(root.path(), file.path(), 1048576)?;
+    let snapshot = archive::snapshot(root.path(), file.path(), 1048576)?;
+    assert_eq!(snapshot.sha256, archive::sha256_file(file.path())?);
     let mut tar = tar::Archive::new(fs::File::open(file.path())?);
     let paths = tar
         .entries()?
@@ -30,6 +31,23 @@ fn source_snapshot_respects_ignore_rules_and_excludes_credentials() -> Result<()
     }
     Ok(())
 }
+
+#[test]
+fn source_snapshot_is_deterministic_and_records_sha256() -> Result<()> {
+    let root = tempfile::tempdir()?;
+    fs::create_dir(root.path().join("src"))?;
+    fs::write(root.path().join("src/z.rs"), "newest")?;
+    fs::write(root.path().join("src/a.rs"), "oldest")?;
+    let first = tempfile::NamedTempFile::new()?;
+    let second = tempfile::NamedTempFile::new()?;
+    let first_result = archive::snapshot(root.path(), first.path(), 1048576)?;
+    let second_result = archive::snapshot(root.path(), second.path(), 1048576)?;
+    assert_eq!(first_result, second_result);
+    assert_eq!(first_result.sha256.len(), 64);
+    assert_eq!(first_result.sha256, archive::sha256_file(first.path())?);
+    Ok(())
+}
+
 #[cfg(unix)]
 #[test]
 fn source_cannot_follow_symlink_to_company_data() -> Result<()> {
@@ -187,6 +205,7 @@ fn scheduler_protects_reserves_platform_and_concurrent_slots() {
         cancel_requested: false,
         cleanup_confirmed: false,
         queue_deadline: None,
+        source_sha256: None,
     };
     assert!(scheduler::score(&node, &health, &build, &[job]).is_err());
 }
@@ -235,6 +254,7 @@ fn limited_queue_orders_priority_then_submission_time_with_stable_ids() {
         cancel_requested: false,
         cleanup_confirmed: false,
         queue_deadline: Some(created_at + 60),
+        source_sha256: None,
     };
     let lower = make_job(0, 1);
     let earlier = make_job(1, 2);
@@ -313,6 +333,7 @@ fn uncertain_cleanup_quarantines_the_worker() {
         cancel_requested: false,
         cleanup_confirmed: false,
         queue_deadline: None,
+        source_sha256: None,
     };
     assert!(scheduler::score(&node, &health, &build, std::slice::from_ref(&job)).is_err());
     job.cleanup_confirmed = true;

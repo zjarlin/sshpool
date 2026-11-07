@@ -306,11 +306,18 @@ async fn wait_for_queue_change(receiver: &mut watch::Receiver<u64>, deadline: u6
     }
 }
 
-fn source_can_resume(state: &State, id: Uuid) -> Result<()> {
-    let source = state.dir(id).join("source.tar");
+fn source_can_resume(state: &State, job: &Job) -> Result<()> {
+    let source = state.dir(job.id).join("source.tar");
     ensure!(source.is_file(), "source archive is missing");
     let limit = state.config.max_upload_mib * 1048576;
-    archive::validate(&source, limit, None)
+    archive::validate(&source, limit, None)?;
+    let expected = job
+        .source_sha256
+        .as_deref()
+        .context("source digest is missing")?;
+    let actual = archive::sha256_file(&source)?;
+    ensure!(actual == expected, "source digest does not match");
+    Ok(())
 }
 
 pub async fn run(state: Arc<State>, id: Uuid) -> Result<()> {
@@ -578,7 +585,7 @@ pub async fn recover(state: &Arc<State>) -> Result<()> {
                 .await?;
             continue;
         }
-        let can_retain = job.queue_open_at(now()) && source_can_resume(state, job.id).is_ok();
+        let can_retain = job.queue_open_at(now()) && source_can_resume(state, &job).is_ok();
         if can_retain {
             let mut jobs = state.jobs.lock().await;
             let record = jobs.get_mut(&job.id).context("unknown job")?;

@@ -30,9 +30,18 @@ Feature: 保护源码与公司文件
     When 用户 fetch
     Then 命令失败且原文件内容不变
 
-  @planned @p1
+  # evidence: tests/boundaries.rs::source_snapshot_is_deterministic_and_records_sha256
+  @verified @automated @p1
   Scenario: 一致性快照与内容摘要
     Given 用户编辑文件同时提交构建
     When 创建源码快照
     Then 检测并发变更或使用一致性视图
     And 任务记录包含可复现的源码摘要
+
+  # evidence: tests/api.rs::source_digest_mismatch_cleans_staging_without_publishing_a_job
+  @verified @automated @p1
+  Scenario: 上传归档内容与声明摘要一致
+    Given 客户端声明源码归档摘要
+    When 控制面完成上传
+    Then 服务端独立重算并比较摘要
+    And 不匹配时删除本次暂存且不发布任务

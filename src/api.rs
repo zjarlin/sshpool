@@ -163,6 +163,22 @@ async fn submit(
     let decoded = base64::engine::general_purpose::STANDARD
         .decode(encoded)
         .map_err(anyhow::Error::from)?;
+    let expected_source_sha256 = request
+        .headers()
+        .get("x-sshpool-source-sha256")
+        .context("missing source digest")?
+        .to_str()
+        .map_err(anyhow::Error::from)?
+        .to_string();
+    if expected_source_sha256.len() != 64
+        || !expected_source_sha256
+            .bytes()
+            .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
+    {
+        return Err(
+            anyhow::anyhow!("source digest must be 64 lowercase hexadecimal characters").into(),
+        );
+    }
     let build: Build = serde_json::from_slice(&decoded).map_err(anyhow::Error::from)?;
     build.validate()?;
     let queue_timeout_secs = build.queue_timeout_secs;
@@ -189,18 +205,26 @@ async fn submit(
         }
         output.flush().await?;
         archive::validate(&source, maximum, None)?;
-        Ok::<_, anyhow::Error>(())
+        let actual = archive::sha256_file(&source)?;
+        ensure!(
+            actual == expected_source_sha256,
+            "source digest mismatch: archive was changed in transit"
+        );
+        Ok::<_, anyhow::Error>(actual)
     };
     let transfer = tokio::time::timeout(std::time::Duration::from_secs(120), transfer).await;
-    let result = match transfer {
+    let source_sha256 = match transfer {
         Ok(value) => value,
         Err(_) => Err(anyhow::anyhow!("upload timed out")),
     };
-    if let Err(error) = result {
-        // 此目录由本次请求创建且尚未发布，只删除该请求自己的部分上传。
-        fs::remove_dir_all(&directory).map_err(anyhow::Error::from)?;
-        return Err(error.into());
-    }
+    let source_sha256 = match source_sha256 {
+        Ok(value) => value,
+        Err(error) => {
+            // 此目录由本次请求创建且尚未发布，只删除该请求自己的部分上传。
+            fs::remove_dir_all(&directory).map_err(anyhow::Error::from)?;
+            return Err(error.into());
+        }
+    };
     let created_at = now();
     let queue_deadline =
         (queue_timeout_secs > 0).then_some(created_at.saturating_add(queue_timeout_secs));
@@ -217,10 +241,17 @@ async fn submit(
         cancel_requested: false,
         cleanup_confirmed: false,
         queue_deadline,
+        source_sha256: Some(source_sha256.clone()),
     };
     state.persist(&job)?;
     state.jobs.lock().await.insert(id, job.clone());
-    state.event(id, "submitted", "source validated").await?;
+    state
+        .event(
+            id,
+            "submitted",
+            &format!("source validated sha256:{source_sha256}"),
+        )
+        .await?;
     state.wake_queue();
     runner::spawn_job(state, id, permit);
     Ok((StatusCode::ACCEPTED, axum::Json(job)))

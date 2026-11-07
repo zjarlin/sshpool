@@ -86,6 +86,9 @@ pub struct Job {
     /// 新任务的有限排队绝对截止时间；旧记录缺失时不自动重放。
     #[serde(default)]
     pub queue_deadline: Option<u64>,
+    /// 客户端上传归档的 SHA-256；旧记录可能没有摘要，恢复时按谨慎语义处理。
+    #[serde(default)]
+    pub source_sha256: Option<String>,
 }
 
 /// 有限队列按优先级降序、提交时间升序和稳定任务标识排序。

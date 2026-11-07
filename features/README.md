@@ -15,7 +15,7 @@
 | [001-workspace.feature](001-workspace.feature) | 2 | 1 | 1 | 0 |
 | [010-nodes.feature](010-nodes.feature) | 3 | 1 | 0 | 0 |
 | [020-scheduling.feature](020-scheduling.feature) | 6 | 0 | 1 | 0 |
-| [030-data-boundaries.feature](030-data-boundaries.feature) | 4 | 0 | 1 | 0 |
+| [030-data-boundaries.feature](030-data-boundaries.feature) | 6 | 0 | 0 | 0 |
 | [040-lifecycle.feature](040-lifecycle.feature) | 3 | 2 | 0 | 0 |
 | [050-build-adapters.feature](050-build-adapters.feature) | 1 | 1 | 2 | 0 |
 | [060-isolation.feature](060-isolation.feature) | 0 | 2 | 1 | 1 |
@@ -32,4 +32,4 @@
 | [170-ssi-transport.feature](170-ssi-transport.feature) | 20 | 6 | 0 | 4 |
 | [180-ssi-device-order.feature](180-ssi-device-order.feature) | 1 | 1 | 0 | 4 |
 | [190-ssi-physical-storage.feature](190-ssi-physical-storage.feature) | 3 | 1 | 2 | 1 |
-| 合计 | 77 | 24 | 18 | 29 |
+| 合计 | 79 | 24 | 17 | 29 |

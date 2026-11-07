@@ -72,6 +72,7 @@ fn active_job(node: &str) -> Job {
         cancel_requested: false,
         cleanup_confirmed: false,
         queue_deadline: None,
+        source_sha256: None,
     }
 }
 
@@ -92,6 +93,7 @@ fn queued_job(queue_timeout_secs: u64, queue_deadline: Option<u64>) -> Job {
         cancel_requested: false,
         cleanup_confirmed: false,
         queue_deadline,
+        source_sha256: None,
     }
 }
 
@@ -100,6 +102,10 @@ fn write_empty_source(state: &State, id: uuid::Uuid) -> Result<()> {
     let mut archive = tar::Builder::new(file);
     archive.finish()?;
     Ok(())
+}
+
+fn source_sha256(state: &State, id: uuid::Uuid) -> Result<String> {
+    sshpool::archive::sha256_file(&state.dir(id).join("source.tar"))
 }
 
 async fn wait_for_terminal(state: &State, id: uuid::Uuid) -> Result<Job> {
@@ -203,18 +209,47 @@ async fn malformed_and_oversized_uploads_remove_only_their_own_staging() -> Resu
     for bytes in [b"not-a-tar".to_vec(), vec![0; 2 * 1048576]] {
         let encoded = base64::engine::general_purpose::STANDARD
             .encode(serde_json::to_vec(&Build::default())?);
+        let staged = tempfile::NamedTempFile::new()?;
+        fs::write(staged.path(), &bytes)?;
+        let digest = sshpool::archive::sha256_file(staged.path())?;
         let request = Request::post("/v1/jobs")
             .header(
                 "authorization",
                 "Bearer test-only-token-not-a-production-secret",
             )
             .header("x-sshpool-build", encoded)
+            .header("x-sshpool-source-sha256", digest)
             .body(Body::from(bytes))?;
         let response = sshpool::api::routes(state.clone()).oneshot(request).await?;
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
         assert_eq!(fs::read_dir(root.path().join("jobs"))?.count(), 0);
     }
     assert_eq!(fs::read_to_string(sentinel)?, "untouched");
+    Ok(())
+}
+
+#[tokio::test]
+async fn source_digest_mismatch_cleans_staging_without_publishing_a_job() -> Result<()> {
+    let (root, state) = state()?;
+    let source = tempfile::NamedTempFile::new()?;
+    let mut archive = tar::Builder::new(fs::File::create(source.path())?);
+    archive.finish()?;
+    let encoded =
+        base64::engine::general_purpose::STANDARD.encode(serde_json::to_vec(&Build::default())?);
+    let response = sshpool::api::routes(state)
+        .oneshot(
+            Request::post("/v1/jobs")
+                .header(
+                    "authorization",
+                    "Bearer test-only-token-not-a-production-secret",
+                )
+                .header("x-sshpool-build", encoded)
+                .header("x-sshpool-source-sha256", "0".repeat(64))
+                .body(Body::from(fs::read(source.path())?))?,
+        )
+        .await?;
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(fs::read_dir(root.path().join("jobs"))?.count(), 0);
     Ok(())
 }
 
@@ -231,11 +266,13 @@ async fn limited_queue_waits_once_and_cancel_wakes_the_runner() -> Result<()> {
         ..Build::default()
     };
     let encoded = base64::engine::general_purpose::STANDARD.encode(serde_json::to_vec(&build)?);
+    let digest = sshpool::archive::sha256_file(source.path())?;
     let response = sshpool::api::routes(state.clone())
         .oneshot(
             Request::post("/v1/jobs")
                 .header("authorization", format!("Bearer {}", state.token))
                 .header("x-sshpool-build", encoded)
+                .header("x-sshpool-source-sha256", &digest)
                 .body(Body::from(fs::read(source.path())?))?,
         )
         .await?;
@@ -243,6 +280,7 @@ async fn limited_queue_waits_once_and_cancel_wakes_the_runner() -> Result<()> {
     let bytes = axum::body::to_bytes(response.into_body(), 65536).await?;
     let job: Job = serde_json::from_slice(&bytes)?;
     assert!(job.queue_deadline.is_some_and(|deadline| deadline > now()));
+    assert_eq!(job.source_sha256.as_deref(), Some(digest.as_str()));
     for _ in 0..100 {
         if state
             .jobs
@@ -291,6 +329,11 @@ async fn default_zero_queue_timeout_keeps_immediate_failure_semantics() -> Resul
     };
     fs::create_dir(state.dir(job.id))?;
     write_empty_source(&state, job.id)?;
+    let digest = source_sha256(&state, job.id)?;
+    let job = Job {
+        source_sha256: Some(digest),
+        ..job
+    };
     state.persist(&job)?;
     state.jobs.lock().await.insert(job.id, job.clone());
     let permit = state
@@ -321,6 +364,11 @@ async fn restart_retains_only_a_valid_unexpired_queue_request() -> Result<()> {
     let job = queued_job(60, Some(deadline));
     fs::create_dir(state.dir(job.id))?;
     write_empty_source(&state, job.id)?;
+    let digest = source_sha256(&state, job.id)?;
+    let job = Job {
+        source_sha256: Some(digest),
+        ..job
+    };
     state.persist(&job)?;
     state.jobs.lock().await.insert(job.id, job.clone());
     sshpool::runner::recover(&state).await?;
@@ -364,6 +412,14 @@ async fn restart_interrupts_expired_or_missing_source_queue_requests() -> Result
         if let Some(bytes) = source {
             fs::write(state.dir(job.id).join("source.tar"), bytes)?;
         }
+        let digest = source
+            .filter(|_| deadline > now())
+            .map(|_| source_sha256(&state, job.id))
+            .transpose()?;
+        let job = Job {
+            source_sha256: digest,
+            ..job
+        };
         state.persist(&job)?;
         state.jobs.lock().await.insert(job.id, job.clone());
         sshpool::runner::recover(&state).await?;
@@ -411,6 +467,7 @@ async fn restart_marks_queued_work_interrupted_without_replaying_it() -> Result<
         cancel_requested: false,
         cleanup_confirmed: false,
         queue_deadline: None,
+        source_sha256: None,
     };
     fs::create_dir(state.dir(job.id))?;
     state.persist(&job)?;
@@ -442,6 +499,7 @@ async fn audit_events_survive_state_reload_without_credentials() -> Result<()> {
         cancel_requested: false,
         cleanup_confirmed: true,
         queue_deadline: None,
+        source_sha256: None,
     };
     state.persist(&job)?;
     state.event(id, "submitted", "source validated").await?;

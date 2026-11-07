@@ -20,6 +20,12 @@
 
 这些测试使用本机临时状态，不建立 Worker 连接。它们证明控制面生命周期和失败语义，不证明入口主机故障时队列仍在线，也不构成 SSI、Ceph 或数据库接管验收。
 
+## source-integrity
+
+源码快照按规范化路径排序，时间戳归零，仅把文件内容和可执行位带入归档。`source_snapshot_is_deterministic_and_records_sha256` 验证同一项目两次归档结果及摘要相同；单元回归另行验证扫描窗口中的可见修改会使快照失败。客户端随后把归档 SHA-256 放入 `x-sshpool-source-sha256`，控制面重算并写入任务记录。
+
+`source_digest_mismatch_cleans_staging_without_publishing_a_job` 验证摘要不匹配返回 400、删除本次暂存目录且不发布任务。这里的“一致性”是拒绝扫描期间可观察到的修改，不是文件系统原子快照；对无协调写入者或完全不可观察的写入，代码不会给出超出证据的保证。
+
 ## rust
 
 从统一 SSH 工作台执行 `cargo build --offline --release`，通过项目配置和 Cargo shim 提交 ARM64 Rust Alpine 镜像。任务以 UID 65534 执行，在容器内完成编译。通过 `fetch` 在全新目录回取可执行文件并实际运行，输出目标架构 aarch64。

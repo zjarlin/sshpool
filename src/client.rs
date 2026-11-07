@@ -82,13 +82,14 @@ impl Client {
         build.validate()?;
         let archive = std::env::temp_dir().join(format!("sshpool-{}.tar", Uuid::new_v4()));
         let upload = async {
-            archive::snapshot(project, &archive, 256 * 1048576)?;
+            let snapshot = archive::snapshot(project, &archive, 256 * 1048576)?;
             let file = tokio::fs::File::open(&archive).await?;
             let header =
                 base64::engine::general_purpose::STANDARD.encode(serde_json::to_vec(&build)?);
             let response = self
                 .request(reqwest::Method::POST, "/v1/jobs")
                 .header("x-sshpool-build", header)
+                .header("x-sshpool-source-sha256", snapshot.sha256)
                 .body(reqwest::Body::wrap_stream(ReaderStream::new(file)))
                 .send()
                 .await?;
