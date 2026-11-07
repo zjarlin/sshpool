@@ -244,6 +244,8 @@ mod tests {
             outcome: Some("SSH connection interrupted".into()),
             cleanup_confirmed: Some(false),
             cleanup_proof: None,
+            finished_at: None,
+            schedule: None,
             watchdog_deadline: deadline,
         }
     }

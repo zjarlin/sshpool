@@ -65,9 +65,14 @@ Feature: 在业务预留和兼容性约束内调度
     And 恢复不延长绝对截止时间
     And 过期缺失或损坏源码的任务按谨慎语义中断
 
-  @planned @p2
+  # evidence: tests/boundaries.rs::a_measured_completion_time_outranks_more_idle_cores
+  # evidence: tests/api.rs::the_reason_a_worker_was_chosen_survives_a_reload
+  # evidence: tests/scheduling_live.rs::measured_runs_become_the_next_expectation
+  # evidence: docs/evidence/scheduling-eta-20261108.json
+  @partial @automated @p2
   Scenario: 根据预计完成时间选择节点
     Given 多个节点都满足硬约束
     When 排序候选节点
-    Then 综合输入缓存网络成本工具链和历史运行时间
+    Then 综合历史运行时间排序且样本不足时明确退回静态分
     And 不仅依据静态优先级和 CPU 负载
+    But 输入缓存与网络成本尚未纳入排序

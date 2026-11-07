@@ -26,6 +26,8 @@ fn job(phase: Phase, finished_at: Option<u64>, cleanup: Option<bool>) -> Job {
             cleanup_confirmed: cleanup,
             watchdog_deadline: None,
             cleanup_proof: None,
+            finished_at: None,
+            schedule: None,
         }],
         exit_code: Some(0),
         message: Some("test".into()),

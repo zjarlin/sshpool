@@ -63,6 +63,48 @@ scripts/check-ssh-parity.sh 2222 2223      # 入口端口、直连端口；输�
 
 这些测试使用本机临时状态，不建立 Worker 连接。它们证明控制面生命周期和失败语义，不证明入口主机故障时队列仍在线，也不构成 SSI、Ceph 或数据库接管验收。
 
+## scheduling-eta {#scheduling-eta}
+
+原来的排序是 `priority × 100 + 核心数 − 负载 − 已预约核心`：一台 64 核的空机器永远压过一台 8 核但把这类构建跑快三倍的机器。这里改的是**排序依据的来源**，不是加一个调参项。
+
+判据只有一条：预期耗时必须由控制面自己观察到的完成产生 —— 同一镜像、同一命令、同一平台、同一资源申请，同一节点，`exit 0`，且 `started_at` 与 `finished_at` 都齐全；取最近 8 条里**最慢**的一次；少于 3 条一律 `None`。为此 `Attempt` 新增 `#[serde(default)] finished_at`，在写入 `outcome`、`cleanup_confirmed` 的同一处写它。旧记录缺这个字段就是「没测过」，不按 0 或 `started_at` 补齐。
+
+排序顺序（全部在硬过滤之后）：`priority` 降序 → 有实测的在前、实测短的在前 → 静态分降序 → 节点名。`priority` 仍然优先，因为那是运维写下的意图；实测只回答「同一批里谁更快」。
+
+依据有两份记录，分工不同：`attempts[].schedule` 随指派在同一次 checkpoint 落盘，是**完整**依据（选中者 + 最多 3 个被淘汰的对照，例如 `live (eta 24s from 3 runs); rejected other (no measured completion time for this build; priority 0 and load only)`），重启后可直接从 `job.json` 读；事件链里的 `schedule` 事件只有选中者那一段，方便流式查看。两份都在，任何一份都不足以单独说明「为什么没选另一台」。
+
+离线侧（`tests/boundaries.rs`，12 条）覆盖：
+
+| 测试 | 抓的是什么 |
+| --- | --- |
+| `a_measured_completion_time_outranks_more_idle_cores` | 无历史时 32 核胜出，有历史后 30 秒的那台胜出 |
+| `a_node_without_measured_history_does_not_look_fastest` | 没数据的节点不能因为「没数据」排第一，依据必须写明 |
+| `a_fast_failure_is_not_a_completion_time` | 3 秒 `exit 1` 五次也不产生预期 |
+| `an_attempt_without_a_finish_time_is_not_a_sample` | 缺 `finished_at` 与结束早于开始都不算样本 |
+| `history_of_a_different_build_is_not_evidence` | 换命令/镜像/核心数或换节点都不得复用 |
+| `fewer_than_three_samples_is_not_an_expectation` | 0–2 条 `None`，第 3 条才成立 |
+| `the_expectation_is_the_slowest_run_not_the_average` | 10/20/30 取 30，不是 20 |
+| `only_the_recent_window_decides` | 窗口外的 9999 秒异常值不再拖住节点 |
+| `explicit_priority_still_wins_over_a_shorter_measured_run` | `priority=1` 压过 5 秒的实测；同优先级时实测生效 |
+| `a_measured_eta_cannot_bypass_a_hard_filter` | 实测最快的机器槽位已满时仍选另一台，拒绝理由是 `all slots reserved` |
+| `ties_break_on_the_node_name_not_on_hash_order` | 同分同实测时按节点名，不随 HashMap 顺序变化 |
+| `one_pass_evidence_matches_per_node_lookup` | 一轮只解析一次历史，结果与逐节点查询完全一致 |
+
+`tests/api.rs::the_reason_a_worker_was_chosen_survives_a_reload` 把依据写进 `job.json` 再重新加载：重启后仍能读到「当时为什么选它」，而删掉 `schedule` / `finished_at` 字段的旧记录仍能反序列化，只是既没有依据、也不产生样本（不 panic、不按 0 补）。
+
+真实链路侧用 `tests/scheduling_live.rs` 的 `measured_runs_become_the_next_expectation`（`#[ignore]`）在 `okm182`（linux/amd64，Docker 29.1.3）跑同一个 `alpine:3.22` 任务 4 轮：
+
+| 轮次 | 事件链里的依据 | 说明 |
+| --- | --- | --- |
+| 0 | `live (no measured completion time for this build; priority 0 and load only)` | 零样本，不猜 |
+| 1 | 同上 | 一条样本，仍不足 |
+| 2 | 同上（派发后已有 3 条，`eta 24s from 3 runs`） | 样本在下一次派发才生效 |
+| 3 | `live (eta 24s from 3 runs)` | 实测上界进入决策 |
+
+每轮都断言 `attempts[0].schedule` 已落盘且内容可用，`finished_at >= started_at`，并确认 `expected_seconds` 在满 3 条之前是 `None`、之后是真值 —— 工具不会因为「跑过一次」就宣布有测量。同一轮各次测量 23–25 秒（取最慢值，所以取值会随样本变化），容器全部清理（`docker ps -a | grep -c sshpool` = 0）。
+
+边界：这只按**本控制面的历史**排序，不预测本次任务，也不考虑输入缓存命中、网络成本、镜像是否已在本地、依赖下载或瞬时业务负载；场景里「输入缓存网络成本工具链」中的缓存与网络两项**没有实现**（判据只有历史耗时与资源申请）。样本窗口是最近 8 条，改 `command` / `memory_mib` / `cpus` / `image` / `platform` 之后要重新积累。
+
 ## source-integrity
 
 源码快照按规范化路径排序，时间戳归零，仅把文件内容和可执行位带入归档。`source_snapshot_is_deterministic_and_records_sha256` 验证同一项目两次归档结果及摘要相同；单元回归另行验证扫描窗口中的可见修改会使快照失败。客户端随后把归档 SHA-256 放入 `x-sshpool-source-sha256`，控制面重算并写入任务记录。

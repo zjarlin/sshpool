@@ -102,6 +102,8 @@ async fn stopped_remote_container_is_proven_and_removed() -> Result<()> {
             cleanup_confirmed: Some(false),
             watchdog_deadline: None,
             cleanup_proof: None,
+            finished_at: None,
+            schedule: None,
         }],
         exit_code: None,
         message: None,
@@ -165,6 +167,8 @@ async fn running_container_is_never_waved_through() -> Result<()> {
             cleanup_confirmed: Some(false),
             watchdog_deadline: Some(1),
             cleanup_proof: None,
+            finished_at: None,
+            schedule: None,
         };
         let decision = watchdog::decide(
             &attempt,
@@ -211,6 +215,8 @@ async fn running_container_is_never_waved_through() -> Result<()> {
                 cleanup_confirmed: Some(false),
                 watchdog_deadline: Some(1),
                 cleanup_proof: None,
+                finished_at: None,
+                schedule: None,
             }],
             exit_code: None,
             message: None,

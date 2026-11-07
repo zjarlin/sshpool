@@ -69,6 +69,8 @@ fn active_job(node: &str) -> Job {
             cleanup_confirmed: None,
             watchdog_deadline: None,
             cleanup_proof: None,
+            finished_at: None,
+            schedule: None,
         }],
         exit_code: None,
         message: None,
@@ -571,6 +573,72 @@ async fn restart_marks_queued_work_interrupted_without_replaying_it() -> Result<
     assert!(recovered.cleanup_confirmed);
     assert!(recovered.attempts.is_empty());
     Ok(())
+}
+
+/// 调度依据随 attempt 落盘：重启后必须还能读到「当时为什么选它」。
+///
+/// 只写事件不够 —— 事件是可追加的流水，任务记录才是权威状态；把依据放在
+/// `attempts[].schedule` 里，它就和指派本身在同一次 checkpoint 内提交。
+#[tokio::test]
+async fn the_reason_a_worker_was_chosen_survives_a_reload() -> Result<()> {
+    let (_root, state) = state()?;
+    let mut job = active_job("test-node");
+    job.phase = Phase::Succeeded;
+    job.finished_at = Some(1);
+    job.exit_code = Some(0);
+    job.attempts[0].outcome = Some("exit 0".into());
+    job.attempts[0].cleanup_confirmed = Some(true);
+    job.attempts[0].finished_at = Some(9);
+    job.attempts[0].schedule = Some(
+        "test-node (eta 9s from 3 runs); rejected second-node (no measured completion time for this build; priority 0 and load only)"
+            .into(),
+    );
+    fs::create_dir(state.dir(job.id))?;
+    let mut stored = job.clone();
+    state.persist(&mut stored)?;
+    state.jobs.lock().await.insert(job.id, job.clone());
+
+    let reloaded = State::load(state.home.clone(), state.config.clone())?;
+    let recovered = reloaded
+        .jobs
+        .lock()
+        .await
+        .get(&job.id)
+        .cloned()
+        .context("the job disappeared on reload")?;
+    let attempt = &recovered.attempts[0];
+    let reason = attempt
+        .schedule
+        .as_deref()
+        .context("the scheduling basis was lost on reload")?;
+    assert!(reason.starts_with("test-node (eta 9s from 3 runs)"));
+    assert!(reason.contains("no measured completion time"));
+    assert_eq!(
+        attempt.finished_at,
+        Some(9),
+        "the sample window needs both ends"
+    );
+    // 缺字段的旧记录必须仍能读，按「没有依据、没有测量」处理。
+    let mut legacy: serde_json::Value = serde_json::to_value(&job)?;
+    attempt_field(&mut legacy, "schedule");
+    attempt_field(&mut legacy, "finished_at");
+    let legacy: Job = serde_json::from_value(legacy)?;
+    assert!(legacy.attempts[0].schedule.is_none());
+    assert!(legacy.attempts[0].finished_at.is_none());
+    assert_eq!(
+        sshpool::scheduler::expected_seconds(&[legacy], "test-node", &job.build),
+        None,
+        "a record without a finish time is not a sample"
+    );
+    Ok(())
+}
+
+/// 从序列化结果里删掉一个 attempt 字段，模拟本版本之前的记录。
+fn attempt_field(value: &mut serde_json::Value, field: &str) {
+    value["attempts"][0]
+        .as_object_mut()
+        .expect("attempts must be objects")
+        .remove(field);
 }
 
 #[tokio::test]

@@ -234,6 +234,8 @@ mod tests {
             cleanup_proof: confirmed
                 .filter(|confirmed| *confirmed)
                 .map(|_| "watchdog-lease-expired".to_string()),
+            finished_at: None,
+            schedule: None,
         }
     }
 

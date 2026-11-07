@@ -747,6 +747,8 @@ mod tests {
                 cleanup_confirmed: Some(true),
                 watchdog_deadline: None,
                 cleanup_proof: None,
+                finished_at: Some(1),
+                schedule: None,
             }],
             exit_code: Some(0),
             message: None,

@@ -86,6 +86,16 @@ pub struct Attempt {
     /// 解除「清理未确认」时使用的证据来源；为空表示从未确认。
     #[serde(default)]
     pub cleanup_proof: Option<String>,
+    /// 选中这台机器时的排序依据。写在 attempt 里而不是另写事件：它和指派记录
+    /// 在同一次 checkpoint 内落盘，不会出现「任务已派出但依据丢失」。
+    #[serde(default)]
+    pub schedule: Option<String>,
+    /// 本次尝试收尾（清理结论已写入）的时刻；旧记录没有这个字段。
+    ///
+    /// 与 `started_at` 一起才能算出「这台机器跑完这一类任务要多久」。缺失就是缺失，
+    /// 不按 `0` 或 `started_at` 补齐 —— 那会把「没有测量」伪装成「零耗时」。
+    #[serde(default)]
+    pub finished_at: Option<u64>,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Job {

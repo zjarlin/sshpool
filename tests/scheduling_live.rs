@@ -174,3 +174,99 @@ async fn an_unreachable_node_is_reported_but_never_chosen() -> Result<()> {
     );
     Ok(())
 }
+
+/// 实测来自真实执行，而不是清单声明：第一次派发没有历史，跑满样本之后
+/// 下一次派发必须带上实测上界，且每次尝试都记录了自己的收尾时刻。
+#[tokio::test]
+#[ignore = "requires a reachable SSH worker with Docker"]
+async fn measured_runs_become_the_next_expectation() -> Result<()> {
+    let live = live_node()?;
+    let (root, _state, client) = harness(vec![live.clone()]).await?;
+    let build = Build {
+        platform: platform(&live).await?,
+        command: vec!["sh".into(), "build.sh".into()],
+        memory_mib: 256,
+        scratch_mib: 64,
+        cpus: 0.5,
+        timeout_secs: 120,
+        ..Build::default()
+    };
+    let project = project(root.path())?;
+    let needed = sshpool::scheduler::MIN_SAMPLES;
+    for round in 0..=needed {
+        let code = client.run(&project, build.clone()).await?;
+        ensure!(code == 0, "round {round} reported exit code {code}");
+        let jobs: Vec<Job> = serde_json::from_value(client.get("/v1/jobs").await?)?;
+        let job = jobs
+            .iter()
+            .max_by_key(|job| job.created_at)
+            .context("the job list is empty")?;
+        let attempt = job.attempts.first().context("the job was never assigned")?;
+        let recorded = attempt
+            .schedule
+            .as_deref()
+            .with_context(|| format!("round {round} did not record why this worker was chosen"))?;
+        ensure!(
+            recorded.contains("no measured completion time") || recorded.contains("eta "),
+            "round {round} recorded an unusable basis: {recorded}"
+        );
+        let finished = attempt
+            .finished_at
+            .with_context(|| format!("round {round} has no finish time"))?;
+        ensure!(
+            finished >= attempt.started_at,
+            "round {round} finished before it started: {finished} < {}",
+            attempt.started_at
+        );
+        // 未满 3 条样本时不是预期；满样本之后必须出现实测上界。
+        let expected = sshpool::scheduler::expected_seconds(&jobs, "live", &build);
+        if round + 1 < needed {
+            ensure!(
+                expected.is_none(),
+                "round {round} claimed an expectation from {} samples",
+                round
+            );
+        } else {
+            let expected = expected.context("a full sample set must produce an expectation")?;
+            ensure!(
+                expected.samples >= needed,
+                "expected at least {needed} samples, got {}",
+                expected.samples
+            );
+            ensure!(
+                expected.seconds > 0,
+                "a real container run cannot take zero seconds"
+            );
+            println!("round {round}: {expected}");
+        }
+        // 排序依据必须写进事件链，不能只存在于内存里。
+        let events = client.get(&format!("/v1/jobs/{}/events", job.id)).await?;
+        let basis = events
+            .as_array()
+            .context("events must be an array")?
+            .iter()
+            .filter(|event| event["kind"] == "schedule")
+            .filter_map(|event| event["detail"].as_str())
+            .next_back()
+            .context("the assignment must record how the worker was chosen")?
+            .to_string();
+        ensure!(
+            basis.starts_with("live ("),
+            "the basis must name the chosen worker first: {basis}"
+        );
+        // 派发时样本不足就必须写「没有实测」，满样本之后必须写出上界。
+        if round < needed {
+            ensure!(
+                basis.contains("no measured completion time"),
+                "round {round} must not claim a measurement: {basis}"
+            );
+        } else {
+            ensure!(
+                basis.contains("eta "),
+                "round {round} must state the measured bound: {basis}"
+            );
+        }
+        println!("round {round} basis: {basis}");
+    }
+    Ok(())
+}

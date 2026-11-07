@@ -612,6 +612,8 @@ pub async fn run(state: Arc<State>, id: Uuid) -> Result<()> {
         };
         let mut reasons = Vec::new();
         let mut candidates = Vec::new();
+        // 历史只解析一次：逐节点重扫会把「任务越多越慢」带进调度锁。
+        let evidence = scheduler::Evidence::collect(&active, &build);
         for (node, health) in nodes.iter().zip(&health) {
             // 重试只换机器：这台 Worker 已经执行过本次任务，不能再接单。
             if tried.contains(&node.name) {
@@ -621,12 +623,14 @@ pub async fn run(state: Arc<State>, id: Uuid) -> Result<()> {
                 ));
                 continue;
             }
-            match scheduler::score(node, health, &build, &active) {
-                Ok(score) => candidates.push((node.clone(), score)),
+            // `active` 是全量任务集合（任务从不删除），既是资源占用也是历史样本；
+            // 预期完成时间只来自这些已落盘的实测，不接受清单声明。
+            match scheduler::rank(node, health, &build, &active, &evidence) {
+                Ok(candidate) => candidates.push(candidate),
                 Err(reason) => reasons.push(format!("{}: {reason}", node.name)),
             }
         }
-        candidates.sort_by(|a, b| b.1.total_cmp(&a.1));
+        candidates.sort_by(|a, b| a.rank_cmp(b));
         if earlier_ready {
             reasons.push("higher-priority queue item is eligible".into());
         }
@@ -641,7 +645,7 @@ pub async fn run(state: Arc<State>, id: Uuid) -> Result<()> {
                 )
             });
         }
-        let Some((node, _)) = candidates.into_iter().next() else {
+        let Some(chosen) = candidates.first().cloned() else {
             drop(guard);
             if first_attempt && queue_open {
                 if !wait_event_recorded {
@@ -688,6 +692,19 @@ pub async fn run(state: Arc<State>, id: Uuid) -> Result<()> {
             .await?;
             continue;
         }
+        let node = chosen.node.clone();
+        // 排序依据单独留痕：没有实测历史的节点必须看得见「它为什么被选中」，
+        // 否则「没数据」会被误读成「最快」。候选列表已排序，后面的就是被淘汰的对照。
+        let comparison = std::iter::once(chosen.basis())
+            .chain(
+                candidates
+                    .iter()
+                    .skip(1)
+                    .take(3)
+                    .map(|candidate| format!("rejected {}", candidate.basis())),
+            )
+            .collect::<Vec<_>>()
+            .join("; ");
         tried.push(node.name.clone());
         let container = format!("sshpool-{id}-{}", tried.len());
         let mut assigned = current;
@@ -702,11 +719,15 @@ pub async fn run(state: Arc<State>, id: Uuid) -> Result<()> {
             // 容器尚未启动，还不存在可用的租约；启动后立即补写。
             watchdog_deadline: None,
             cleanup_proof: None,
+            schedule: Some(comparison),
+            finished_at: None,
         });
         // 创建远端容器前先达到状态 quorum；失败时仍保持未领取状态。
         state.checkpoint_candidate(assigned).await?;
         drop(guard);
         state.event(id, "assigned", &node.name).await?;
+        // 事件只留一行摘要；完整依据随 attempt 落盘，重启后仍可核对。
+        state.event(id, "schedule", &chosen.basis()).await?;
         // 执行期限从派发时刻起算；`execute` 每秒核对，到期时向远端请求停止，
         // 而不是只杀掉本机 SSH 客户端。外层超时只是最后兜底，正常路径不会触发。
         let deadline = now().saturating_add(build.timeout_secs);
@@ -757,6 +778,8 @@ pub async fn run(state: Arc<State>, id: Uuid) -> Result<()> {
         if let Some(attempt) = completed.attempts.last_mut() {
             attempt.outcome = Some(outcome.clone());
             attempt.cleanup_confirmed = Some(cleanup.is_ok());
+            // 收尾时刻与 `outcome` 同时写入：只有两者都在，这次尝试才算一条可用的耗时样本。
+            attempt.finished_at = Some(now());
         }
         // 重试或终态发布前先记录本次尝试与清理结果。
         state.checkpoint_candidate(completed).await?;
@@ -1087,6 +1110,9 @@ mod tests {
             cleanup_confirmed: None,
             watchdog_deadline: None,
             cleanup_proof: None,
+            // 这里的 fixture 只关心“有没有 outcome”，不提供耗时样本。
+            finished_at: None,
+            schedule: None,
         }
     }
 

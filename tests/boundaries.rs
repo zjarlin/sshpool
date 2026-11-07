@@ -202,6 +202,8 @@ fn scheduler_protects_reserves_platform_and_concurrent_slots() {
             cleanup_confirmed: None,
             watchdog_deadline: None,
             cleanup_proof: None,
+            finished_at: None,
+            schedule: None,
         }],
         exit_code: None,
         message: None,
@@ -337,6 +339,8 @@ fn uncertain_cleanup_quarantines_the_worker() {
             cleanup_confirmed: Some(false),
             watchdog_deadline: None,
             cleanup_proof: None,
+            finished_at: None,
+            schedule: None,
         }],
         exit_code: None,
         message: None,
@@ -376,6 +380,8 @@ fn a_later_success_cannot_clear_an_older_worker_quarantine() {
                 cleanup_confirmed: Some(false),
                 watchdog_deadline: None,
                 cleanup_proof: None,
+                finished_at: None,
+                schedule: None,
             },
             Attempt {
                 node: "second-node".into(),
@@ -385,6 +391,8 @@ fn a_later_success_cannot_clear_an_older_worker_quarantine() {
                 cleanup_confirmed: Some(true),
                 watchdog_deadline: None,
                 cleanup_proof: None,
+                finished_at: None,
+                schedule: None,
             },
         ],
         exit_code: Some(0),
@@ -517,6 +525,374 @@ fn replica_namespace_cannot_escape_the_dedicated_remote_root() {
         assert!(
             sshpool::config::validate_replica(&replica).is_err(),
             "unsafe namespace was accepted: {namespace}"
+        );
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 按实测完成时间选节点
+//
+// 判据统一是「排序结果是谁」，不是「某个分数是多少」：分数是实现细节，
+// 「派给哪台」才是运维看得见的结论。
+// ---------------------------------------------------------------------------
+
+fn worker(name: &str, priority: i32) -> Node {
+    Node {
+        name: name.into(),
+        ssh: name.into(),
+        images: vec!["alpine:3.22".into()],
+        ssh_config: None,
+        enabled: true,
+        max_jobs: 1,
+        reserve_memory_mib: 0,
+        reserve_disk_mib: 0,
+        max_load_per_cpu: 0.8,
+        priority,
+    }
+}
+
+fn machine(name: &str, cpus: u32, load: f64) -> Health {
+    Health {
+        name: name.into(),
+        enabled: true,
+        os: "linux".into(),
+        arch: "x86_64".into(),
+        cpus,
+        memory_available_mib: 16384,
+        disk_available_mib: 50000,
+        load,
+        runtime_memory_mib: 16000,
+        runtime_arch: "x86_64".into(),
+        error: None,
+    }
+}
+
+fn amd64() -> Build {
+    Build {
+        platform: "linux/amd64".into(),
+        ..Build::default()
+    }
+}
+
+/// 一条已结束的尝试：`finished_at` 由调用方决定，用来覆盖「旧记录没有结束时刻」。
+fn run(node: &str, build: &Build, started_at: u64, finished_at: Option<u64>, outcome: &str) -> Job {
+    Job {
+        id: uuid::Uuid::new_v4(),
+        revision: 0,
+        build: build.clone(),
+        phase: Phase::Succeeded,
+        created_at: started_at,
+        finished_at,
+        attempts: vec![Attempt {
+            node: node.into(),
+            container: format!("sshpool-{node}-1"),
+            started_at,
+            outcome: Some(outcome.into()),
+            cleanup_confirmed: Some(true),
+            watchdog_deadline: None,
+            cleanup_proof: None,
+            schedule: None,
+            finished_at,
+        }],
+        exit_code: Some(0),
+        message: None,
+        artifacts: false,
+        cancel_requested: false,
+        cleanup_confirmed: true,
+        queue_deadline: None,
+        source_sha256: None,
+        owner: None,
+    }
+}
+
+/// 在 `node` 上跑 `count` 次、每次耗时 `seconds` 的历史。
+fn history(node: &str, build: &Build, count: usize, seconds: u64) -> Vec<Job> {
+    (0..count)
+        .map(|index| {
+            let started = 1000 + index as u64 * 10_000;
+            run(node, build, started, Some(started + seconds), "exit 0")
+        })
+        .collect()
+}
+
+/// 跑完整条排序链，返回选中的节点名。
+fn chosen(nodes: &[Node], health: &[Health], build: &Build, jobs: &[Job]) -> String {
+    let evidence = scheduler::Evidence::collect(jobs, build);
+    let mut candidates: Vec<_> = nodes
+        .iter()
+        .zip(health)
+        .filter_map(|(node, health)| scheduler::rank(node, health, build, jobs, &evidence).ok())
+        .collect();
+    candidates.sort_by(|left, right| left.rank_cmp(right));
+    candidates
+        .first()
+        .map(|candidate| candidate.node.name.clone())
+        .expect("at least one candidate must survive the hard filters")
+}
+
+/// 静态分更高（更多核心、更低负载）不代表更快：实测更短的那台必须胜出。
+#[test]
+fn a_measured_completion_time_outranks_more_idle_cores() {
+    let build = amd64();
+    let nodes = vec![worker("idle", 0), worker("busy", 0)];
+    let health = vec![machine("idle", 32, 0.1), machine("busy", 8, 5.0)];
+    let mut jobs = history("idle", &build, 3, 900);
+    jobs.extend(history("busy", &build, 3, 30));
+    // 没有历史时静态分决定：idle 更强。
+    assert_eq!(chosen(&nodes, &health, &build, &[]), "idle");
+    // 有历史时实测决定：busy 用 30 秒跑完过三次。
+    assert_eq!(chosen(&nodes, &health, &build, &jobs), "busy");
+}
+
+/// 没有实测的节点不能因为「没数据」被当成「最快」。
+#[test]
+fn a_node_without_measured_history_does_not_look_fastest() {
+    let build = amd64();
+    let nodes = vec![worker("measured", 0), worker("unknown", 0)];
+    let health = vec![machine("measured", 2, 1.0), machine("unknown", 64, 0.0)];
+    let jobs = history("measured", &build, 3, 600);
+    assert_eq!(chosen(&nodes, &health, &build, &jobs), "measured");
+    // 依据必须说清「另一台没有实测」，否则事后会以为它被判定更慢。
+    let unknown = scheduler::rank(
+        &nodes[1],
+        &health[1],
+        &build,
+        &jobs,
+        &scheduler::Evidence::collect(&jobs, &build),
+    )
+    .unwrap();
+    assert!(unknown.expected.is_none());
+    assert!(
+        unknown.basis().contains("no measured completion time"),
+        "the basis must name the missing measurement: {}",
+        unknown.basis()
+    );
+    let measured = scheduler::rank(
+        &nodes[0],
+        &health[0],
+        &build,
+        &jobs,
+        &scheduler::Evidence::collect(&jobs, &build),
+    )
+    .unwrap();
+    assert!(
+        measured.basis().contains("eta 600s from 3 runs"),
+        "the basis must show the measured bound: {}",
+        measured.basis()
+    );
+}
+
+/// 快的失败不是快的完成：3 秒就 exit 1 的尝试不能把节点算成最快的。
+#[test]
+fn a_fast_failure_is_not_a_completion_time() {
+    let build = amd64();
+    let jobs: Vec<Job> = (0..5)
+        .map(|index| {
+            let started = 1000 + index * 10;
+            run("broken", &build, started, Some(started + 3), "exit 1")
+        })
+        .collect();
+    assert!(
+        scheduler::expected_seconds(&jobs, "broken", &build).is_none(),
+        "a failing attempt is not a sample"
+    );
+    // 取而代之的是静态排序：broken 的核心更多，于是它被选中，且理由里标明没有实测。
+    let nodes = vec![worker("broken", 0), worker("slow", 0)];
+    let health = vec![machine("broken", 16, 0.0), machine("slow", 2, 1.0)];
+    assert_eq!(chosen(&nodes, &health, &build, &jobs), "broken");
+    let candidate = scheduler::rank(
+        &nodes[0],
+        &health[0],
+        &build,
+        &jobs,
+        &scheduler::Evidence::collect(&jobs, &build),
+    )
+    .unwrap();
+    assert!(candidate.expected.is_none());
+}
+
+/// 旧记录没有 `finished_at`：那是「没有测量」，不是「零耗时」。
+#[test]
+fn an_attempt_without_a_finish_time_is_not_a_sample() {
+    let build = amd64();
+    let jobs: Vec<Job> = (0..5)
+        .map(|index| run("legacy", &build, 1000 + index * 10, None, "exit 0"))
+        .collect();
+    assert!(
+        scheduler::expected_seconds(&jobs, "legacy", &build).is_none(),
+        "a missing finish time must not be read as an instant completion"
+    );
+    // 结束时刻早于开始说明时钟不可信，这类样本同样不能用。
+    let skewed = vec![run("legacy", &build, 5000, Some(4000), "exit 0")];
+    assert!(scheduler::expected_seconds(&skewed, "legacy", &build).is_none());
+}
+
+/// 只有同一类任务的历史才算证据：换了命令、镜像或资源申请就是另一回事。
+#[test]
+fn history_of_a_different_build_is_not_evidence() {
+    let build = amd64();
+    let jobs = history("worker", &build, 5, 60);
+    // 同一台机器、同样的命令，但申请了 4 倍核心：耗时不能直接套用。
+    let bigger = Build {
+        cpus: 4.0,
+        ..build.clone()
+    };
+    assert!(scheduler::expected_seconds(&jobs, "worker", &bigger).is_none());
+    let other_command = Build {
+        command: vec!["make".into(), "all".into()],
+        ..build.clone()
+    };
+    assert!(scheduler::expected_seconds(&jobs, "worker", &other_command).is_none());
+    let other_image = Build {
+        image: "rust:1.90".into(),
+        ..build.clone()
+    };
+    assert!(scheduler::expected_seconds(&jobs, "worker", &other_image).is_none());
+    // 别的节点的历史也不能算到这台头上。
+    assert!(scheduler::expected_seconds(&jobs, "someone-else", &build).is_none());
+    assert_eq!(
+        scheduler::expected_seconds(&jobs, "worker", &build)
+            .unwrap()
+            .seconds,
+        60
+    );
+}
+
+/// 少于三条样本不构成预期：一次顺利的构建不能改变以后的派发。
+#[test]
+fn fewer_than_three_samples_is_not_an_expectation() {
+    let build = amd64();
+    for count in 0..sshpool::scheduler::MIN_SAMPLES {
+        let jobs = history("worker", &build, count, 42);
+        assert!(
+            scheduler::expected_seconds(&jobs, "worker", &build).is_none(),
+            "{count} samples must not produce an expectation"
+        );
+    }
+    let jobs = history("worker", &build, sshpool::scheduler::MIN_SAMPLES, 42);
+    let expected = scheduler::expected_seconds(&jobs, "worker", &build).unwrap();
+    assert_eq!(expected.seconds, 42);
+    assert_eq!(expected.samples, sshpool::scheduler::MIN_SAMPLES);
+}
+
+/// 关心的是「最慢要等多久」，所以取最慢的一次，而不是被摊平的均值。
+#[test]
+fn the_expectation_is_the_slowest_run_not_the_average() {
+    let build = amd64();
+    let jobs = [10, 20, 30]
+        .into_iter()
+        .enumerate()
+        .map(|(index, seconds)| {
+            let started = 1000 + index as u64 * 10;
+            run("worker", &build, started, Some(started + seconds), "exit 0")
+        })
+        .collect::<Vec<_>>();
+    let expected = scheduler::expected_seconds(&jobs, "worker", &build).unwrap();
+    assert_eq!(expected.seconds, 30, "the average would have been 20");
+    assert_eq!(expected.samples, 3);
+}
+
+/// 只回看最近若干次：机器换了缓存之后，旧的慢样本不该永久拖住它。
+#[test]
+fn only_the_recent_window_decides() {
+    let build = amd64();
+    let mut jobs = vec![{
+        let started = 1;
+        run("worker", &build, started, Some(started + 9999), "exit 0")
+    }];
+    for index in 0..sshpool::scheduler::MIN_SAMPLES + 5 {
+        let started = 1000 + index as u64 * 10;
+        jobs.push(run("worker", &build, started, Some(started + 10), "exit 0"));
+    }
+    let expected = scheduler::expected_seconds(&jobs, "worker", &build).unwrap();
+    assert_eq!(
+        expected.seconds, 10,
+        "the oldest outlier is outside the window"
+    );
+    assert_eq!(
+        expected.samples,
+        sshpool::scheduler::MIN_SAMPLES + 5,
+        "the window keeps the most recent runs"
+    );
+}
+
+/// 显式优先级是运维的意图，实测不能推翻它；两者都只影响排序，不影响硬过滤。
+#[test]
+fn explicit_priority_still_wins_over_a_shorter_measured_run() {
+    let build = amd64();
+    let nodes = vec![worker("preferred", 1), worker("fast", 0)];
+    let health = vec![machine("preferred", 8, 1.0), machine("fast", 8, 1.0)];
+    let mut jobs = history("preferred", &build, 5, 900);
+    jobs.extend(history("fast", &build, 5, 5));
+    assert_eq!(chosen(&nodes, &health, &build, &jobs), "preferred");
+    // 优先级相同则回到实测。
+    let nodes = vec![worker("preferred", 0), worker("fast", 0)];
+    assert_eq!(chosen(&nodes, &health, &build, &jobs), "fast");
+}
+
+/// 硬过滤在前：实测最快的机器如果已经占满槽位，仍然不能被选中。
+#[test]
+fn a_measured_eta_cannot_bypass_a_hard_filter() {
+    let build = amd64();
+    let nodes = vec![worker("fast", 0), worker("slow", 0)];
+    let health = vec![machine("fast", 8, 1.0), machine("slow", 8, 1.0)];
+    let mut jobs = history("fast", &build, 5, 5);
+    jobs.extend(history("slow", &build, 5, 900));
+    assert_eq!(chosen(&nodes, &health, &build, &jobs), "fast");
+    // 给快的机器塞一个正在运行的任务：max_jobs=1，槽位已满。
+    let mut busy = run("fast", &build, 99_000, None, "exit 0");
+    busy.phase = Phase::Running;
+    busy.attempts[0].outcome = None;
+    busy.attempts[0].finished_at = None;
+    jobs.push(busy);
+    assert_eq!(chosen(&nodes, &health, &build, &jobs), "slow");
+    let refused = scheduler::rank(
+        &nodes[0],
+        &health[0],
+        &build,
+        &jobs,
+        &scheduler::Evidence::collect(&jobs, &build),
+    )
+    .unwrap_err();
+    assert_eq!(refused, "all slots reserved");
+}
+
+/// 同分同实测时顺序必须确定，不能随 HashMap 迭代顺序变化。
+#[test]
+fn ties_break_on_the_node_name_not_on_hash_order() {
+    let build = amd64();
+    let nodes = vec![worker("beta", 0), worker("alpha", 0)];
+    let health = vec![machine("beta", 8, 1.0), machine("alpha", 8, 1.0)];
+    assert_eq!(chosen(&nodes, &health, &build, &[]), "alpha");
+    let nodes = vec![worker("alpha", 0), worker("beta", 0)];
+    let health = vec![machine("alpha", 8, 1.0), machine("beta", 8, 1.0)];
+    assert_eq!(chosen(&nodes, &health, &build, &[]), "alpha");
+}
+
+/// 一轮调度只解析一次历史，结果必须与逐节点查询一致。
+#[test]
+fn one_pass_evidence_matches_per_node_lookup() {
+    let build = amd64();
+    let nodes = vec![worker("a", 0), worker("b", 0), worker("c", 0)];
+    let health = vec![
+        machine("a", 8, 1.0),
+        machine("b", 8, 1.0),
+        machine("c", 8, 1.0),
+    ];
+    let mut jobs = history("a", &build, 4, 100);
+    jobs.extend(history("b", &build, 3, 200));
+    jobs.extend(history("c", &build, 2, 5));
+    let evidence = scheduler::Evidence::collect(&jobs, &build);
+    assert_eq!(evidence.expected("a").map(|eta| eta.seconds), Some(100));
+    assert_eq!(evidence.expected("b").map(|eta| eta.seconds), Some(200));
+    // c 只有 2 条样本：不足以产生预期，即便它「看起来最快」。
+    assert!(evidence.expected("c").is_none());
+    assert_eq!(chosen(&nodes, &health, &build, &jobs), "a");
+    // 逐节点查询必须给出一模一样的结果，否则两处口径迟早分叉。
+    for node in &nodes {
+        assert_eq!(
+            evidence.expected(&node.name),
+            scheduler::expected_seconds(&jobs, &node.name, &build).as_ref()
         );
     }
 }

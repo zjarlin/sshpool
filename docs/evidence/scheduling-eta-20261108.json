@@ -1,0 +1,123 @@
+{
+  "checked_at": "2026-11-08T05:10:00+08:00",
+  "scope": "020 根据预计完成时间选择节点：排序依据必须来自本控制面观察到的成功耗时，而不是声明或静态分数",
+  "entry": {
+    "offline": {
+      "test": "tests/boundaries.rs",
+      "command": "cargo test --locked --test boundaries",
+      "why": "排序是纯函数，直接在 fixture 上断言「选中谁」，不依赖 Docker"
+    },
+    "live": {
+      "test": "tests/scheduling_live.rs::measured_runs_become_the_next_expectation",
+      "command": "SSHPOOL_LIVE_NODE=okm182 cargo test --locked --test scheduling_live -- --ignored --nocapture --test-threads=1",
+      "why": "运行真实容器 4 轮，确认 finished_at 被写入、样本满 3 条后事件链出现实测上界"
+    }
+  },
+  "worker": {
+    "alias": "okm182",
+    "arch": "linux/amd64",
+    "docker": "29.1.3"
+  },
+  "measurement_rule": {
+    "class_key": [
+      "image",
+      "command",
+      "platform",
+      "memory_mib",
+      "cpus"
+    ],
+    "same_node": true,
+    "success_only": "outcome == \"exit 0\"",
+    "requires_both_timestamps": [
+      "started_at",
+      "finished_at"
+    ],
+    "window": 8,
+    "statistic": "max",
+    "min_samples": 3,
+    "on_insufficient_samples": null
+  },
+  "ranking_order": [
+    "node.priority (descending; explicit operator intent outranks measurement)",
+    "has measured eta before no measurement; shorter eta first among measured",
+    "static score: cpus - load - reserved cpus (descending)",
+    "node name (ascending; deterministic tie-break)"
+  ],
+  "live_rounds": [
+    {
+      "round": 0,
+      "samples_at_assignment": 0,
+      "basis": "live (no measured completion time for this build; priority 0 and load only)"
+    },
+    {
+      "round": 1,
+      "samples_at_assignment": 1,
+      "basis": "live (no measured completion time for this build; priority 0 and load only)"
+    },
+    {
+      "round": 2,
+      "samples_at_assignment": 2,
+      "basis": "live (no measured completion time for this build; priority 0 and load only)",
+      "samples_after": 3,
+      "eta_after_seconds": 24
+    },
+    {
+      "round": 3,
+      "samples_at_assignment": 3,
+      "basis": "live (eta 24s from 3 runs)"
+    }
+  ],
+  "offline_tests": [
+    "a_measured_completion_time_outranks_more_idle_cores",
+    "a_node_without_measured_history_does_not_look_fastest",
+    "a_fast_failure_is_not_a_completion_time",
+    "an_attempt_without_a_finish_time_is_not_a_sample",
+    "history_of_a_different_build_is_not_evidence",
+    "fewer_than_three_samples_is_not_an_expectation",
+    "the_expectation_is_the_slowest_run_not_the_average",
+    "only_the_recent_window_decides",
+    "explicit_priority_still_wins_over_a_shorter_measured_run",
+    "a_measured_eta_cannot_bypass_a_hard_filter",
+    "ties_break_on_the_node_name_not_on_hash_order",
+    "tests/api.rs::the_reason_a_worker_was_chosen_survives_a_reload",
+    "one_pass_evidence_matches_per_node_lookup"
+  ],
+  "assertions": {
+    "expectation_comes_from_observed_runs": true,
+    "missing_finished_at_is_not_zero_duration": true,
+    "failed_runs_are_not_samples": true,
+    "insufficient_samples_yield_no_expectation": true,
+    "slowest_run_not_average": true,
+    "recent_window_excludes_old_outliers": true,
+    "explicit_priority_still_outranks_measurement": true,
+    "hard_filters_apply_before_measurement": true,
+    "tie_break_is_deterministic": true,
+    "assignment_basis_is_recorded_in_event_chain": true,
+    "live_run_recorded_finished_at": true,
+    "no_container_survived": true,
+    "input_cache_and_network_cost_not_implemented": true,
+    "scheduling_basis_survives_reload": true,
+    "legacy_records_without_the_new_fields_still_load": true,
+    "evidence_is_collected_once_per_round": true
+  },
+  "assertions_total": 16,
+  "not_implemented": [
+    "输入缓存命中率",
+    "网络成本",
+    "镜像是否已在节点本地",
+    "依赖下载时间",
+    "对本次任务本身的预测"
+  ],
+  "failed_assertions": [],
+  "assignment_record": {
+    "attempts_field": "schedule",
+    "event_kind": "schedule",
+    "why": "attempt 里的依据与指派在同一次 checkpoint 落盘，重启后可离线核对；事件只有选中者摘要",
+    "example": "live (eta 24s from 3 runs); rejected other (no measured completion time for this build; priority 0 and load only)"
+  },
+  "live_rounds_command_result": {
+    "command": "SSHPOOL_LIVE_NODE=okm182 cargo test --locked --test scheduling_live -- --ignored --nocapture --test-threads=1",
+    "result": "2 passed",
+    "container_leak_check": "docker ps -a | grep -c sshpool == 0"
+  }
+}

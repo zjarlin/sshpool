@@ -530,6 +530,8 @@ mod tests {
                 cleanup_confirmed: Some(true),
                 watchdog_deadline: None,
                 cleanup_proof: None,
+                finished_at: finished,
+                schedule: None,
             }],
             exit_code: code,
             message: None,
