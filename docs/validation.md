@@ -61,6 +61,21 @@ ARM64 的 shell 任务已完成日志、退出码、产物导出与清理闭环�
 
 - 取消：任务进入 `running` 后 2 秒取消 → 远端收到停止请求、`events.jsonl` 记录 `client-cancel; remote container stopped`、终态 `cancelled`、`cleanup_confirmed=true`、按 `label=io.sshpool.job=<id>` 查询容器数为 0。
 - 期限：`timeout_secs=5` 而命令是 `sleep 600` → 记录 `deadline` 原因、终态 `failed` 且消息含 `job deadline exceeded`、容器数为 0。
+- 复验：`sshpool-anchor` 连续 8 轮、`okm182-lan`（linux/amd64）连续 4 轮，每轮两个场景全绿，每轮结束后按标签查询残留容器数都是 0。
+
+### 连接层抖动不该被当成任务结论
+
+这轮实测暴露了一个真实的误判：lima 的 sshd 在并发连接下会丢弃部分握手（实测并发 100 条约 1/3 失败，报错 `Connection timed out during banner exchange`），而 OpenSSH 用**退出码 255**表示连接层错误、命令根本没跑。此前只有 `Err` 分支重试，`Ok((255, …))` 直接当成任务失败，于是「已经确认停止」的任务被改写成 `interrupted` 并隔离 Worker。
+
+现在按「命令是否可能已经执行」分两类：
+
+| 路径 | 重试 | 理由 |
+| --- | --- | --- |
+| `docker image inspect`、`docker inspect`（标签核对）、`docker ps` | 是（最多 3 次） | 只读，命令没跑到可以安全重放 |
+| `docker stop`、`docker rm -f`、`tar -xf` 覆盖导入 | 是（最多 3 次） | 幂等：再执行一次得到同一结论/同一棵树 |
+| `docker exec` 跑构建命令 | 否 | 命令可能已经在远端执行，重试等于同时跑两份业务 |
+
+`Err` 与 `Ok((255, …))` 两条入口都覆盖；执行超时（`timed out after`）与命令自身的非零退出码都不算连接层失败，绝不重试。
 
 证据在 [evidence/cancel-timeout-20261107.json](evidence/cancel-timeout-20261107.json)。语义边界要说清：`docker stop` 的 SIGTERM 发给容器 PID1（本项目是 `sleep timeout+grace`），不是容器里的业务进程，所以取消是「确定停止」而不是「优雅排空」——不给业务进程自定义清理时间，被取消的任务一律不导出产物，中间结果也不保证可用。
 

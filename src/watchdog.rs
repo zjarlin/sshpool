@@ -110,14 +110,18 @@ pub async fn inspect(node: &Node, id: Uuid, container: &str) -> Result<RemoteSta
         format,
         transport::quote(container)
     );
-    let (code, stdout, stderr) = transport::capture(node, &script, 20).await?;
-    if code != 0 {
-        let error = String::from_utf8_lossy(&stderr).to_lowercase();
-        if error.contains("no such object") || error.contains("no such container") {
-            return Ok(RemoteState::Absent);
+    // 只读核对：连接层握手失败可以重试，但「容器不存在」是命令的真实结论，
+    // 必须原样返回 Absent，不能被重试逻辑吞掉或改写成错误。
+    let stdout = match transport::verified(node, &script, 20).await {
+        Ok(stdout) => stdout,
+        Err(error) => {
+            let message = format!("{error:#}").to_lowercase();
+            if message.contains("no such object") || message.contains("no such container") {
+                return Ok(RemoteState::Absent);
+            }
+            bail!("cannot confirm container identity: {}", message.trim());
         }
-        bail!("cannot confirm container identity: {}", error.trim());
-    }
+    };
     let value = String::from_utf8_lossy(&stdout);
     let (label, running) = value
         .trim()
@@ -151,7 +155,9 @@ docker rm -f {} >/dev/null",
         transport::quote(&id.to_string()),
         transport::quote(container)
     );
-    let (code, _, stderr) = transport::capture(node, &script, 30).await?;
+    // 同一条脚本里已经重新校验过标签，重复执行只会得到一个「已经不存在」的结论，
+    // 因此连接层抖动可以安全重试。
+    let (code, _, stderr) = transport::idempotent(node, &script, 30).await?;
     match code {
         0 => Ok(()),
         3 => Ok(()), // 容器在证明之后消失：同样没有进程可以继续提交结果。
@@ -170,12 +176,10 @@ pub async fn started_at(node: &Node, container: &str) -> Result<u64> {
         transport::quote("{{.State.StartedAt}}"),
         transport::quote(container)
     );
-    let (code, stdout, stderr) = transport::capture(node, &script, 20).await?;
-    ensure!(
-        code == 0,
-        "cannot read container start time: {}",
-        String::from_utf8_lossy(&stderr).trim()
-    );
+    let stdout = match transport::verified(node, &script, 20).await {
+        Ok(stdout) => stdout,
+        Err(error) => bail!("cannot read container start time: {error:#}"),
+    };
     parse_docker_time(String::from_utf8_lossy(&stdout).trim())
 }
 

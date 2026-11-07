@@ -26,6 +26,8 @@ struct Execution {
     code: i32,
     stop: Option<lifecycle::StopCause>,
     stop_confirmed: bool,
+    /// 停止未确认时保留原始错误，供终态消息使用。
+    stop_reason: Option<String>,
 }
 /// 一次尝试的可审计结果。停止原因决定终态，不能靠退出码猜测。
 struct RunResult {
@@ -34,16 +36,28 @@ struct RunResult {
     artifacts: bool,
     stop: Option<lifecycle::StopCause>,
     stop_confirmed: bool,
+    /// 停止未确认时的原始失败原因；成功路径为空。
+    stop_reason: Option<String>,
 }
 impl RunResult {
     fn from_execution(execution: Execution, artifacts: bool) -> Self {
         match execution.stop {
             Some(cause) => Self {
-                outcome: format!("{}; remote container stopped", cause.as_str()),
+                // 只有确认停止时才写 "stopped"；否则文案本身就在说谎。
+                outcome: format!(
+                    "{}; {}",
+                    cause.as_str(),
+                    if execution.stop_confirmed {
+                        "remote container stopped"
+                    } else {
+                        "remote stop unconfirmed"
+                    }
+                ),
                 code: None,
                 artifacts: false,
                 stop: Some(cause),
                 stop_confirmed: execution.stop_confirmed,
+                stop_reason: execution.stop_reason,
             },
             None => Self {
                 outcome: format!("exit {}", execution.code),
@@ -51,6 +65,7 @@ impl RunResult {
                 artifacts,
                 stop: None,
                 stop_confirmed: false,
+                stop_reason: None,
             },
         }
     }
@@ -62,6 +77,7 @@ impl RunResult {
             artifacts: false,
             stop: None,
             stop_confirmed: false,
+            stop_reason: None,
         }
     }
 }
@@ -85,7 +101,10 @@ async fn remove(node: &Node, id: Uuid, container: &str) -> Result<()> {
         transport::quote("{{index .Config.Labels \"io.sshpool.job\"}}"),
         transport::quote(container)
     );
-    let (code, output, error) = transport::capture(node, &inspect, 15).await?;
+    // 清理是幂等的：握手失败时命令根本没跑，重试不会额外删除任何东西。
+    // 不做这层重试的后果是实测过的 —— 已经确认停止的任务因为一次
+    // `Connection timed out during banner exchange` 被改判成「中断 + 隔离」。
+    let (code, output, error) = transport::idempotent(node, &inspect, 15).await?;
     if code != 0 {
         let error = String::from_utf8_lossy(&error).to_lowercase();
         if error.contains("no such object") || error.contains("no such container") {
@@ -97,12 +116,18 @@ async fn remove(node: &Node, id: Uuid, container: &str) -> Result<()> {
         String::from_utf8_lossy(&output).trim() == id.to_string(),
         "container label mismatch; refusing removal"
     );
-    transport::checked(
+    let (code, _, stderr) = transport::idempotent(
         node,
         &format!("docker rm -f {}", transport::quote(container)),
         20,
     )
     .await?;
+    ensure!(
+        code == 0,
+        "{}: container removal exited {code}: {}",
+        node.name,
+        String::from_utf8_lossy(&stderr)
+    );
     Ok(())
 }
 async fn log_stream(
@@ -157,7 +182,12 @@ async fn execute(
     let report = loop {
         tokio::select! {
             result = &mut run => {
-                return Ok(Execution { code: result?, stop: None, stop_confirmed: false });
+                return Ok(Execution {
+                    code: result?,
+                    stop: None,
+                    stop_confirmed: false,
+                    stop_reason: None,
+                });
             }
             _ = tokio::time::sleep(Duration::from_secs(1)) => {
                 let cause = if state.cancelled(id).await {
@@ -178,7 +208,7 @@ async fn execute(
             }
         }
     };
-    state.event(id, "stop_requested", &report.1.detail).await?;
+    record_stop(state, id, &report.1).await?;
     let code = match tokio::time::timeout(Duration::from_secs(lifecycle::EXEC_DRAIN_SECS), &mut run)
         .await
     {
@@ -190,6 +220,7 @@ async fn execute(
         code,
         stop: Some(report.0),
         stop_confirmed: report.1.confirmed,
+        stop_reason: report.1.reason,
     })
 }
 async fn collect(
@@ -246,6 +277,10 @@ async fn collect(
         Err(_) => bail!("artifact export timed out"),
     }
 }
+/// 停止决策的唯一审计入口：每个分支都必须写下原因与阶段。
+async fn record_stop(state: &Arc<State>, id: Uuid, report: &lifecycle::StopReport) -> Result<()> {
+    state.event(id, "stop_requested", &report.detail).await
+}
 /// 在阶段边界上检查是否已经需要停止；返回原因时调用方应立即收尾。
 ///
 /// 取消可能落在「容器已创建但还没启动」或「源码导入中」这些窗口里。只在
@@ -269,7 +304,7 @@ async fn attempt(
 ) -> Result<(Execution, bool)> {
     state.event(id, "image_check", &node.name).await?;
     // 默认只用预先准备好的镜像，避免构建请求在业务磁盘上触发无限拉取。
-    let image = transport::checked(
+    let image = transport::verified(
         node,
         &format!("docker image inspect {}", transport::quote(&build.image)),
         15,
@@ -291,13 +326,17 @@ async fn attempt(
         "images declaring VOLUME are not allowed: use a build image without persistent volumes"
     );
     // 已经取消或到期时连容器都不必创建：省掉一次完整创建/校验往返。
+    // 取消经常落在这段窗口里，所以即便没有远端动作也要留审计记录。
     if let Some(cause) = pending_stop(state, id, deadline).await {
+        let report = lifecycle::describe_pre_start(cause, "before create");
+        record_stop(state, id, &report).await?;
         // 容器尚未创建，等价于远端确认「不存在」，因此停止是可信的。
         return Ok((
             Execution {
                 code: 0,
                 stop: Some(cause),
-                stop_confirmed: true,
+                stop_confirmed: report.confirmed,
+                stop_reason: None,
             },
             false,
         ));
@@ -310,21 +349,31 @@ async fn attempt(
     isolation::verify_created(node, container, id, build).await?;
     // 容器仍停在 Created：此时没有任何进程可停止，直接按「从未启动」收尾。
     if let Some(cause) = pending_stop(state, id, deadline).await {
+        let report = lifecycle::describe_pre_start(cause, "before start");
+        record_stop(state, id, &report).await?;
         return Ok((
             Execution {
                 code: 0,
                 stop: Some(cause),
-                stop_confirmed: true,
+                stop_confirmed: report.confirmed,
+                stop_reason: None,
             },
             false,
         ));
     }
-    transport::checked(
+    // 启动是幂等的：容器已经在跑时再次 start 仍返回 0。
+    let (code, _, stderr) = transport::idempotent(
         node,
         &format!("docker start {}", transport::quote(container)),
         20,
     )
     .await?;
+    ensure!(
+        code == 0,
+        "{}: docker start exited {code}: {}",
+        node.name,
+        String::from_utf8_lossy(&stderr)
+    );
     // 容器 PID1 只是 `sleep timeout+grace`；把真实启动时刻换算成租约到期并立即持久化，
     // 这样即使之后 SSH 掉线，也有一条不依赖远端连接的终止证据。
     let lease = watchdog::started_at(node, container)
@@ -343,12 +392,13 @@ async fn attempt(
         let requested =
             lifecycle::request_stop(node, id, container, lifecycle::STOP_GRACE_SECS).await;
         let report = lifecycle::describe(cause, &requested);
-        state.event(id, "stop_requested", &report.detail).await?;
+        record_stop(state, id, &report).await?;
         return Ok((
             Execution {
                 code: 0,
                 stop: Some(cause),
                 stop_confirmed: report.confirmed,
+                stop_reason: report.reason,
             },
             false,
         ));
@@ -722,14 +772,16 @@ pub async fn run(state: Arc<State>, id: Uuid) -> Result<()> {
         if result.stop.is_some() && !result.stop_confirmed {
             // 停止请求发出但没有拿到「已停止」的证据：既不能算取消成功，
             // 也不能换机重跑，否则旧进程可能与新尝试同时提交结果。
+            // 说明里必须带上真正的原因，否则事后只能看到「未确认」而无法排障。
             return state
                 .finish(
                     id,
                     Phase::Interrupted,
                     None,
                     format!(
-                        "{outcome}; remote stop unconfirmed on {}; quarantine until `sshpool node reconcile {}` proves the container is gone",
-                        node.name, node.name
+                        "{outcome}; remote stop unconfirmed on {node} ({reason}); quarantine until `sshpool node reconcile {node}` proves the container is gone",
+                        node = node.name,
+                        reason = result.stop_reason.as_deref().unwrap_or("reason not recorded")
                     ),
                     false,
                 )
@@ -1036,6 +1088,7 @@ mod tests {
                 code: 143,
                 stop: Some(crate::lifecycle::StopCause::ClientCancel),
                 stop_confirmed: true,
+                stop_reason: None,
             },
             false,
         );
@@ -1058,11 +1111,18 @@ mod tests {
                 code: 143,
                 stop: Some(crate::lifecycle::StopCause::Deadline),
                 stop_confirmed: false,
+                stop_reason: Some("container is still running after the stop request".into()),
             },
             false,
         );
         // 请求了停止但没拿到证据，必须与「已确认停止」区分开。
         assert!(!expired.stop_confirmed);
+        assert!(
+            expired.outcome.contains("remote stop unconfirmed"),
+            "an unconfirmed stop must not claim the container stopped: {}",
+            expired.outcome
+        );
+        assert!(!expired.outcome.contains("stopped"));
     }
 
     /// 正常结束的执行没有停止原因，退出码与产物照常返回。
@@ -1073,6 +1133,7 @@ mod tests {
                 code: 0,
                 stop: None,
                 stop_confirmed: false,
+                stop_reason: None,
             },
             true,
         );

@@ -1,9 +1,15 @@
 {
-  "checked_at": "2026-11-07T21:20:00+08:00",
+  "checked_at": "2026-11-07T18:30:00+08:00",
   "scope": "issuing and verifying a remote stop on cancel and on deadline, instead of only dropping the controller-side SSH client",
   "worker": {
-    "alias": "sshpool-anchor",
-    "arch": "aarch64",
+    "aliases": [
+      "sshpool-anchor",
+      "okm182-lan"
+    ],
+    "arch": {
+      "sshpool-anchor": "aarch64",
+      "okm182-lan": "x86_64"
+    },
     "docker": "29.1.3",
     "image": "alpine:3.22"
   },
@@ -26,7 +32,25 @@
       "docker create 后、docker start 前：容器停在 Created，等价于从未启动，直接收尾",
       "源码导入后、启动命令前：先请求停止再返回，避免白跑一次完整构建"
     ],
-    "unconfirmed_handling": "停止未确认 → interrupted + 隔离该 Worker，不报 cancelled/succeeded，也不允许换机重跑"
+    "unconfirmed_handling": "停止未确认 → interrupted + 隔离该 Worker，不报 cancelled/succeeded，也不允许换机重跑",
+    "link_retry": {
+      "problem": "lima 的 sshd 在并发连接下丢弃部分握手（实测并发 100 条约 1/3 失败，报错 `Connection timed out during banner exchange`）。OpenSSH 用退出码 255 表示连接层错误且命令根本没跑，但旧实现只对 `Err` 分支重试，`Ok((255, …))` 被当成任务失败，导致已确认停止的任务被改写成 interrupted 并隔离 Worker。",
+      "attempts": 3,
+      "entry": "src/transport.rs::idempotent / src/transport.rs::verified / src/transport.rs::upload",
+      "retried_paths": [
+        "docker image inspect（只读）",
+        "docker inspect 标签核对（只读）",
+        "docker ps 容器清点（只读）",
+        "docker stop（幂等）",
+        "docker rm -f（先校验标签，幂等）",
+        "tar -xf 覆盖式源码导入（同一份归档解两次得到同一棵树）"
+      ],
+      "never_retried": [
+        "docker exec 执行构建命令：命令可能已在远端执行，重试等于并发跑两份业务",
+        "SSH 执行超时（`timed out after`）：同样可能已执行"
+      ],
+      "coverage": "Err 与 Ok((255, …)) 两条入口都覆盖；命令自身的非零退出码（例如 no such container）原样返回，不重试"
+    }
   },
   "result": {
     "unit_tests": {
@@ -38,9 +62,14 @@
       "src/runner.rs::tests::a_normal_execution_keeps_its_exit_code": "ok"
     },
     "live_tests": {
-      "command": "SSHPOOL_LIVE_NODE=sshpool-anchor cargo test --test lifecycle_live -- --ignored --test-threads=1",
+      "command": "SSHPOOL_LIVE_NODE=<alias> cargo test --test lifecycle_live -- --ignored --test-threads=1",
       "cancel_stops_the_remote_process_and_removes_the_container": "ok",
-      "deadline_stops_the_remote_process_before_reporting_failure": "ok"
+      "deadline_stops_the_remote_process_before_reporting_failure": "ok",
+      "rounds": {
+        "sshpool-anchor (linux/arm64)": "8 轮连续全绿",
+        "okm182-lan (linux/amd64)": "4 轮连续全绿"
+      },
+      "residual_containers": "每轮结束后 `docker ps -aq --filter label=io.sshpool.job | wc -l` 均为 0"
     }
   },
   "observed_on_the_real_worker": {
@@ -59,6 +88,7 @@
   },
   "half_closed_note": "docker stop 的 SIGTERM 发给容器 PID1（本项目的 `sleep timeout+grace`），不是容器内正在跑的业务进程；业务进程随 PID1 退出被内核终止，实测取消后 Worker 上没有留下的执行进程。取消语义因此是「确定停止」而不是「优雅排空」：不给业务进程自定义清理时间，也不导出中间产物。",
   "boundaries": [
+    "连接层重试只对幂等命令启用；构建执行的 `docker exec` 永不重试，因此不会出现两份业务同时运行",
     "不覆盖 docker exec 之后、SIGTERM 之前瞬间已写入的产物：被取消的任务一律不导出产物",
     "不证明被取消任务的部分输出可用；取消只保证停下并释放配额",
     "控制面自身崩溃期间无法发起停止，只能依赖容器租约（watchdog-deadline）事后证明",

@@ -328,7 +328,8 @@ pub async fn verify_created(node: &Node, container: &str, id: Uuid, build: &Buil
         transport::quote("{{json .}}"),
         transport::quote(container)
     );
-    let output = transport::checked(node, &script, 20).await?;
+    // 只读核对：握手抖动时命令根本没跑，重试不会改变结论。
+    let output = transport::verified(node, &script, 20).await?;
     verify(build, id, &String::from_utf8_lossy(&output))
 }
 
