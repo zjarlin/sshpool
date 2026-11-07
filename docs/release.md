@@ -53,6 +53,8 @@ gh workflow run release.yml -f publish=true        # 核对无误后再建 Relea
 
 标签**存在**时则相反：必须 `git rev-parse <tag>^{commit}` 等于检出提交，否则直接失败——不允许拿别的提交冒充某个标签。
 
+演练路径已经真实跑过一次（提交 `b8bc8ce`，run 42391464195）：四个 job 全绿、三个目标各自过基线闸门，汇总 `checksums: ok (3 条)` / `release assets: ok (v0.1.0)`，「发布」步骤因为 `rehearsal=true` 被跳过，`gh release list` 仍为空。
+
 ## 本地复现与校验
 
 三个目标都能在本机复现；Linux 那个必须在 glibc 2.35 的环境里构建，否则基线闸门会失败——这正是它的用途。

@@ -96,7 +96,7 @@
     "script_and_binary_agree": true,
     "no_git_tag_exists_yet": true
   },
-  "assertions_total": 26,
+  "assertions_total": 29,
   "failed_assertions": [],
   "assertions": {
     "three_bundles_present": true,
@@ -124,6 +124,31 @@
     "undeclared_target_failure_is_explicit": true,
     "binary_and_tag_agree": true,
     "no_git_tag_exists_so_nothing_was_published": true,
-    "no_privkey_or_token_in_evidence": true
+    "no_privkey_or_token_in_evidence": true,
+    "ci_rehearsal_all_four_jobs_succeeded": true,
+    "ci_rehearsal_measured_the_same_baselines": true,
+    "ci_rehearsal_skipped_publishing": true
+  },
+  "ci_rehearsal": {
+    "workflow": ".github/workflows/release.yml",
+    "trigger": "workflow_dispatch（标签为空 + publish 未勾选；即演练，不建 Release）",
+    "commit": "b8bc8ce",
+    "run_id": 42391464195,
+    "conclusion": "success",
+    "jobs": {
+      "x86_64-unknown-linux-gnu": "success",
+      "aarch64-apple-darwin": "success",
+      "x86_64-apple-darwin": "success",
+      "release": "success"
+    },
+    "publish_step": "skipped（rehearsal=true，符合预期）",
+    "release_created": false,
+    "observed_in_ci": {
+      "x86_64-unknown-linux-gnu": "glibc 2.34 (baseline 2.35)；本机冒烟输出 sshpool 0.1.0",
+      "aarch64-apple-darwin": "macos 11.0 (baseline 11.0)",
+      "x86_64-apple-darwin": "macos 10.12 (baseline 11.0)",
+      "aggregate_check": "checksums: ok (3 条) / release assets: ok (v0.1.0)",
+      "tag_state_log": "标签 v0.1.0 不存在：按提交 b8bc8ce 演练"
+    }
   }
 }

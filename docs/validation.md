@@ -529,6 +529,8 @@ macOS ARM64 Worker 本次只完成资源探测：可用内存约 2.7 GiB，小�
 
 自动化侧新增 `tests/release_assets.rs`（6 个测试）：合规单平台包通过但 `--all` 拒绝、篡改/坏行/大写摘要被拒、未声明目标与路径逃逸被拒、缺二进制时不产出半成品、基线闸门量出真实基线且拒绝外来格式（退出码必须是 2）、标签核对（无标签走演练、版本不符退出 2、标签指向别的提交退出 2——最后一条用临时 git 仓库造出「两个提交、标签打在旧的那个上」）。流水线本体是 `.github/workflows/release.yml`：`v*` 标签触发三个目标并行构建 → 基线闸门 → 打包 → 汇总 `SHA256SUMS` → `--all` 复核 → 建 Release；`workflow_dispatch` 在同一套步骤上演练，标签不存在时只在日志里标明「按提交 … 演练」并跳过发布。
 
+这条流水线本身也真跑过一遍演练（提交 `b8bc8ce`，run 42391464195）：四个 job 全部成功，CI 里量出的基线与本机一致（Linux `glibc 2.34 (baseline 2.35)`、arm64 `minos 11.0`、x86_64 `minos 10.12`），汇总步骤打印 `checksums: ok (3 条)` 与 `release assets: ok (v0.1.0)`，而「发布」那一步因为 `rehearsal=true` 被跳过、没有创建 Release。也就是说演练与正式发布之间只剩「标签真实存在」这一个差别，不是两套代码。
+
 尚未覆盖：没有代码签名与公证（macOS 是 ad-hoc 签名，需要用户自行处理 quarantine），`SHA256SUMS` 与压缩包放在同一个 Release 里所以只防传输损坏、不防篡改，没有 Linux aarch64 与静态 musl 变体，也没有真正打过 `v*` 标签或创建过 GitHub Release（本轮证据里 `no_git_tag_exists_so_nothing_was_published` 为真）。这些边界写进了 [版本发布](release.md#已知限制)。
 
 ## control-state-recovery
