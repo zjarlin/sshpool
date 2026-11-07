@@ -266,6 +266,13 @@ pub fn sha256_file(path: &Path) -> Result<String> {
     Ok(hex_digest(&hasher.finalize()))
 }
 
+/// 对内存中的小对象计算同一格式摘要；用于镜像清单和稳定身份，不替代大文件流式校验。
+pub fn sha256_bytes(bytes: &[u8]) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(bytes);
+    hex_digest(&hasher.finalize())
+}
+
 fn hash_reader(reader: &mut impl Read, hasher: &mut Sha256) -> std::io::Result<u64> {
     let mut buffer = [0_u8; 65536];
     let mut total = 0_u64;

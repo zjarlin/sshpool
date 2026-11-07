@@ -138,15 +138,18 @@ async fn cancel(
     authorized(&headers, &state)?;
     // 与首次领取任务共用调度锁，避免取消和进入 Running 的窄竞态。
     let _scheduling = state.scheduling.lock().await;
-    let mut jobs = state.jobs.lock().await;
-    let job = jobs.get_mut(&id).context("unknown job")?;
-    if !job.phase.terminal() {
-        job.cancel_requested = true;
-        state.persist(job)?;
-    }
-    let record = job.clone();
-    drop(jobs);
+    let _transition = state.transitions.lock().await;
+    let candidate = {
+        let jobs = state.jobs.lock().await;
+        let mut candidate = jobs.get(&id).cloned().context("unknown job")?;
+        if !candidate.phase.terminal() {
+            candidate.cancel_requested = true;
+        }
+        candidate
+    };
+    let result = state.checkpoint_candidate_locked(candidate).await;
     state.wake_queue();
+    let (record, _) = result?;
     Ok(axum::Json(record))
 }
 async fn submit(
@@ -204,6 +207,7 @@ async fn submit(
             output.write_all(&bytes).await?;
         }
         output.flush().await?;
+        output.sync_all().await?;
         archive::validate(&source, maximum, None)?;
         let actual = archive::sha256_file(&source)?;
         ensure!(
@@ -230,6 +234,7 @@ async fn submit(
         (queue_timeout_secs > 0).then_some(created_at.saturating_add(queue_timeout_secs));
     let job = Job {
         id,
+        revision: 0,
         build,
         phase: Phase::Queued,
         created_at,
@@ -243,8 +248,7 @@ async fn submit(
         queue_deadline,
         source_sha256: Some(source_sha256.clone()),
     };
-    state.persist(&job)?;
-    state.jobs.lock().await.insert(id, job.clone());
+    // 首个必须成功的 checkpoint 同时包含提交事件，避免事件只留在本机。
     state
         .event(
             id,
@@ -252,6 +256,13 @@ async fn submit(
             &format!("source validated sha256:{source_sha256}"),
         )
         .await?;
+    let job = match state.checkpoint_candidate(job).await {
+        Ok((job, _)) => job,
+        Err(error) => {
+            // 请求尚未对客户端发布；保留本地诊断副本，绝不删除可能已被远端引用的源码。
+            return Err(error.into());
+        }
+    };
     state.wake_queue();
     runner::spawn_job(state, id, permit);
     Ok((StatusCode::ACCEPTED, axum::Json(job)))

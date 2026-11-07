@@ -24,12 +24,13 @@
 | [090-delivery.feature](090-delivery.feature) | 2 | 0 | 2 | 0 |
 | [100-ssi-research.feature](100-ssi-research.feature) | 0 | 0 | 0 | 3 |
 | [110-pooled-linux.feature](110-pooled-linux.feature) | 0 | 0 | 0 | 7 |
-| [120-stateful-recovery.feature](120-stateful-recovery.feature) | 0 | 0 | 2 | 3 |
+| [120-stateful-recovery.feature](120-stateful-recovery.feature) | 1 | 0 | 3 | 3 |
 | [130-ssi-lab.feature](130-ssi-lab.feature) | 8 | 0 | 0 | 1 |
 | [140-ssi-workspace.feature](140-ssi-workspace.feature) | 2 | 2 | 0 | 1 |
 | [150-ssi-device-memory.feature](150-ssi-device-memory.feature) | 13 | 3 | 1 | 3 |
 | [160-ssi-clock.feature](160-ssi-clock.feature) | 6 | 4 | 0 | 1 |
 | [170-ssi-transport.feature](170-ssi-transport.feature) | 20 | 6 | 0 | 4 |
 | [180-ssi-device-order.feature](180-ssi-device-order.feature) | 1 | 1 | 0 | 4 |
-| [190-ssi-physical-storage.feature](190-ssi-physical-storage.feature) | 3 | 1 | 2 | 1 |
-| 合计 | 79 | 24 | 17 | 29 |
+| [190-ssi-physical-storage.feature](190-ssi-physical-storage.feature) | 4 | 2 | 1 | 1 |
+| [200-control-state-recovery.feature](200-control-state-recovery.feature) | 12 | 2 | 0 | 1 |
+| 合计 | 93 | 27 | 17 | 30 |

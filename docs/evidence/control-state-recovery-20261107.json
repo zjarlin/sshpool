@@ -1,0 +1,21 @@
+{
+  "schema": 1,
+  "date": "2026-11-07",
+  "scope": "Non-business demonstration task; task-state replication only",
+  "quorum": 2,
+  "independent_physical_domains": 2,
+  "demonstration_job_labels": ["direction-a", "direction-b"],
+  "source_digest_verified": true,
+  "directions": [
+    {"failed_replica": 1, "surviving_replica": 1, "recovered_job": true, "source_digest_verified": true, "queue_state_preserved": true, "events_preserved": true, "commit_proof_preserved": true},
+    {"failed_replica": 1, "surviving_replica": 1, "recovered_job": true, "source_digest_verified": true, "queue_state_preserved": true, "events_preserved": true, "commit_proof_preserved": true}
+  ],
+  "not_verified": [
+    "running process migration",
+    "automatic control-plane takeover",
+    "PostgreSQL transaction durability",
+    "Redis and application-volume consistency",
+    "cross-site disaster recovery",
+    "distributed persistent storage"
+  ]
+}

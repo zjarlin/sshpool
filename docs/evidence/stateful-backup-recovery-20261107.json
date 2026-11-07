@@ -1,0 +1,107 @@
+{
+  "schema": 1,
+  "date": "2026-11-07",
+  "scope": "Offline recovery verification for sub2api PostgreSQL and Redis; no production cutover, continuous replication, or automatic failover was performed.",
+  "privacy": {
+    "addresses_removed": true,
+    "credentials_removed": true,
+    "private_paths_removed": true,
+    "company_paths_removed": true,
+    "business_rows_removed": true
+  },
+  "run": {
+    "id": "20261107T042859Z-10bb568b",
+    "formed_at": "2026-11-07T04:35:14Z",
+    "format": "sshpool-dr-v1",
+    "worker_quiesce_command_succeeded": true,
+    "managed_containers_seen_before_backup": 9,
+    "managed_containers_restarted_after_backup": 9,
+    "application_health_check_passed_after_backup": true
+  },
+  "archive": {
+    "payload_bytes": 1954653659,
+    "sha256": "9806968fde0226bdd8505439d081dee416e93646138c09bf0f9c514cd95ff60c",
+    "manifest_payload_sha256": "c2ea43c881c573aef4a51549d000c288fed3142c6e364e13553fe0572efe6978",
+    "internal_files_verified": 13,
+    "offline_verification_passed": true,
+    "local_copy_matches_worker_copy": true
+  },
+  "encrypted_offsite_copy": {
+    "age_version": "1.3.2",
+    "ciphertext_bytes": 1955131041,
+    "ciphertext_sha256": "23c27ddaf8b6adcb59590f5b8f5a63e015b1071fc2bebf1ffb967b3894bc4ac2",
+    "recovery_target_independent_of_source": true,
+    "local_checksum_verified": true,
+    "ciphertext_decrypted_on_recovery_target": true,
+    "plaintext_bytes": 1954653659,
+    "plaintext_sha256": "9806968fde0226bdd8505439d081dee416e93646138c09bf0f9c514cd95ff60c",
+    "plaintext_matches_archive": true,
+    "temporary_plaintext_removed": true,
+    "temporary_binary_removed": true
+  },
+  "postgres": {
+    "version": "15.19",
+    "database": "sub2api",
+    "dump_sha256": "626f5083e6b0849b17a5072549358026166b5f40973a344bf39fa72059cb9c2d",
+    "restore_method": "pg_restore --no-owner --no-acl --exit-on-error",
+    "restore_exit_code": 0,
+    "restored_into_temporary_database": true,
+    "production_database_replaced_or_stopped": false,
+    "tables": 116,
+    "sequences": 78,
+    "indexes": 482,
+    "foreign_keys": 95,
+    "table_data_entries": 116,
+    "row_count_tables_exported": 116,
+    "schema_object_list_identical": true,
+    "schema_object_list_sha256": "17469e50557ab62b63cc42d0b862703ada4e4f04b189b0050971527ceca5b325",
+    "row_count_file_sha256": "724eee075e84c798c845421615a7ce0d58df4e630f1c419d56061179b454cea9",
+    "temporary_database_removed_after_verification": true
+  },
+  "redis": {
+    "version": "8.10.2",
+    "rdb_sha256": "2f0b7946e7cd00cb904fd2eba230059964244cbeac57b041691b4329217552aa",
+    "rdb_check_passed": true,
+    "raw_keys_read": 12136,
+    "expires": 7788,
+    "already_expired_at_check": 4,
+    "isolated_volume_restore": true,
+    "network": "none",
+    "loaded_live_keys": 11375,
+    "expired_on_load": 761,
+    "databases": {
+      "0": 11321,
+      "6": 27,
+      "7": 27
+    },
+    "backup_default_db_dbsize": 12080,
+    "exact_key_count_equality_claimed": false,
+    "production_instance_replaced_or_stopped": false,
+    "temporary_container_removed": true,
+    "temporary_volume_removed": true
+  },
+  "recovery_sequence": {
+    "application_configuration_and_volumes_archived": true,
+    "container_images_archived": true,
+    "application_quiesced_during_export": true,
+    "postgres_and_redis_exported_during_quiesce": true,
+    "paired_application_and_database_restore_rehearsed": false,
+    "production_traffic_cutover_rehearsed": false
+  },
+  "claims": {
+    "historical_backup_recovery_verified": true,
+    "postgres_logical_restore_verified": true,
+    "redis_rdb_load_verified": true,
+    "offsite_ciphertext_exists": true,
+    "rpo_is_zero": false,
+    "postgres_wal_archiving_verified": false,
+    "redis_continuous_replication_verified": false,
+    "automatic_failover_verified": false,
+    "write_fencing_verified": false,
+    "database_high_availability_verified": false,
+    "bundled_docker_image_load_verified": false,
+    "aggregated_cpu_memory_disk_verified": false,
+    "full_ssi_verified": false,
+    "ceph_deployed": false
+  }
+}

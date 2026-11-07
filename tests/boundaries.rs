@@ -1,7 +1,7 @@
 use anyhow::Result;
 use sshpool::{
     archive,
-    config::{Build, Node},
+    config::{Build, Config, Node, Replica},
     model::{Attempt, Health, Job, Phase, queue_precedes},
     scheduler, transport,
 };
@@ -189,6 +189,7 @@ fn scheduler_protects_reserves_platform_and_concurrent_slots() {
     assert!(scheduler::score(&node, &pressure, &build, &[]).is_err());
     let job = Job {
         id: uuid::Uuid::new_v4(),
+        revision: 0,
         build: build.clone(),
         phase: Phase::Running,
         created_at: 0,
@@ -198,6 +199,7 @@ fn scheduler_protects_reserves_platform_and_concurrent_slots() {
             container: "owned".into(),
             started_at: 0,
             outcome: None,
+            cleanup_confirmed: None,
         }],
         exit_code: None,
         message: None,
@@ -240,6 +242,7 @@ fn limited_queue_orders_priority_then_submission_time_with_stable_ids() {
     };
     let make_job = |priority, created_at| Job {
         id: uuid::Uuid::nil(),
+        revision: 0,
         build: Build {
             queue_priority: priority,
             ..build.clone()
@@ -317,6 +320,7 @@ fn uncertain_cleanup_quarantines_the_worker() {
     };
     let mut job = Job {
         id: uuid::Uuid::new_v4(),
+        revision: 0,
         build: build.clone(),
         phase: Phase::Interrupted,
         created_at: 0,
@@ -325,7 +329,8 @@ fn uncertain_cleanup_quarantines_the_worker() {
             node: node.name.clone(),
             container: "owned".into(),
             started_at: 0,
-            outcome: None,
+            outcome: Some("SSH connection interrupted".into()),
+            cleanup_confirmed: Some(false),
         }],
         exit_code: None,
         message: None,
@@ -336,6 +341,103 @@ fn uncertain_cleanup_quarantines_the_worker() {
         source_sha256: None,
     };
     assert!(scheduler::score(&node, &health, &build, std::slice::from_ref(&job)).is_err());
+    job.attempts[0].cleanup_confirmed = Some(true);
     job.cleanup_confirmed = true;
     assert!(scheduler::score(&node, &health, &build, &[job]).is_ok());
+}
+
+#[test]
+fn a_later_success_cannot_clear_an_older_worker_quarantine() {
+    let (node, health) = node_and_health();
+    let build = Build {
+        platform: "linux/amd64".into(),
+        ..Build::default()
+    };
+    let job = Job {
+        id: uuid::Uuid::new_v4(),
+        revision: 0,
+        build: build.clone(),
+        phase: Phase::Succeeded,
+        created_at: 0,
+        finished_at: Some(2),
+        attempts: vec![
+            Attempt {
+                node: node.name.clone(),
+                container: "uncertain".into(),
+                started_at: 0,
+                outcome: Some("SSH connection interrupted".into()),
+                cleanup_confirmed: Some(false),
+            },
+            Attempt {
+                node: "second-node".into(),
+                container: "successful".into(),
+                started_at: 1,
+                outcome: Some("exit 0".into()),
+                cleanup_confirmed: Some(true),
+            },
+        ],
+        exit_code: Some(0),
+        message: None,
+        artifacts: false,
+        cancel_requested: false,
+        cleanup_confirmed: true,
+        queue_deadline: None,
+        source_sha256: None,
+    };
+    assert!(scheduler::score(&node, &health, &build, &[job]).is_err());
+}
+
+#[test]
+fn enabled_replicas_require_distinct_failure_domains_and_positive_quorum() {
+    let replica = |name: &str, domain: &str, host: &str| Replica {
+        name: name.into(),
+        ssh: name.into(),
+        namespace: "test".into(),
+        failure_domain: domain.into(),
+        expected_host_id_sha256: host.repeat(64),
+        ssh_config: None,
+        enabled: true,
+    };
+    let mut config = Config {
+        replica_min_ack: 2,
+        replicas: vec![
+            replica("one", "same-host", "a"),
+            replica("two", "same-host", "b"),
+        ],
+        ..Config::default()
+    };
+    assert!(sshpool::config::validate(&config).is_err());
+    config.replicas[1].failure_domain = "another-host".into();
+    config.replicas[1].expected_host_id_sha256 = config.replicas[0].expected_host_id_sha256.clone();
+    assert!(sshpool::config::validate(&config).is_err());
+    config.replicas[1].expected_host_id_sha256 = "b".repeat(64);
+    assert!(sshpool::config::validate(&config).is_ok());
+    config.replicas[0].failure_domain = "local".into();
+    assert!(sshpool::config::validate(&config).is_err());
+    config.replicas[0].failure_domain = "same-host".into();
+    config.replica_min_ack = 0;
+    assert!(sshpool::config::validate(&config).is_err());
+    config.replicas.clear();
+    assert!(sshpool::config::validate(&config).is_ok());
+}
+
+#[test]
+fn replica_namespace_cannot_escape_the_dedicated_remote_root() {
+    let mut replica = Replica {
+        name: "replica".into(),
+        ssh: "replica-host".into(),
+        namespace: "prod".into(),
+        failure_domain: "host".into(),
+        expected_host_id_sha256: "a".repeat(64),
+        ssh_config: None,
+        enabled: true,
+    };
+    assert!(sshpool::config::validate_replica(&replica).is_ok());
+    for namespace in ["", "../escape", "/absolute", "a/b", ".", ".."] {
+        replica.namespace = namespace.into();
+        assert!(
+            sshpool::config::validate_replica(&replica).is_err(),
+            "unsafe namespace was accepted: {namespace}"
+        );
+    }
 }

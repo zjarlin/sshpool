@@ -56,6 +56,7 @@ fn test_node(name: &str) -> Node {
 fn active_job(node: &str) -> Job {
     Job {
         id: uuid::Uuid::new_v4(),
+        revision: 0,
         build: Build::default(),
         phase: Phase::Running,
         created_at: 0,
@@ -65,6 +66,7 @@ fn active_job(node: &str) -> Job {
             container: "owned".into(),
             started_at: 0,
             outcome: None,
+            cleanup_confirmed: None,
         }],
         exit_code: None,
         message: None,
@@ -79,6 +81,7 @@ fn active_job(node: &str) -> Job {
 fn queued_job(queue_timeout_secs: u64, queue_deadline: Option<u64>) -> Job {
     Job {
         id: uuid::Uuid::new_v4(),
+        revision: 0,
         build: Build {
             queue_timeout_secs,
             ..Build::default()
@@ -334,7 +337,8 @@ async fn default_zero_queue_timeout_keeps_immediate_failure_semantics() -> Resul
         source_sha256: Some(digest),
         ..job
     };
-    state.persist(&job)?;
+    let mut stored = job.clone();
+    state.persist(&mut stored)?;
     state.jobs.lock().await.insert(job.id, job.clone());
     let permit = state
         .uploads
@@ -369,7 +373,8 @@ async fn restart_retains_only_a_valid_unexpired_queue_request() -> Result<()> {
         source_sha256: Some(digest),
         ..job
     };
-    state.persist(&job)?;
+    let mut stored = job.clone();
+    state.persist(&mut stored)?;
     state.jobs.lock().await.insert(job.id, job.clone());
     sshpool::runner::recover(&state).await?;
     let retained = state
@@ -420,7 +425,8 @@ async fn restart_interrupts_expired_or_missing_source_queue_requests() -> Result
             source_sha256: digest,
             ..job
         };
-        state.persist(&job)?;
+        let mut stored = job.clone();
+        state.persist(&mut stored)?;
         state.jobs.lock().await.insert(job.id, job.clone());
         sshpool::runner::recover(&state).await?;
         let recovered = state
@@ -456,6 +462,7 @@ async fn restart_marks_queued_work_interrupted_without_replaying_it() -> Result<
     let (_root, state) = state()?;
     let job = Job {
         id: uuid::Uuid::new_v4(),
+        revision: 0,
         build: Build::default(),
         phase: Phase::Queued,
         created_at: 0,
@@ -470,7 +477,8 @@ async fn restart_marks_queued_work_interrupted_without_replaying_it() -> Result<
         source_sha256: None,
     };
     fs::create_dir(state.dir(job.id))?;
-    state.persist(&job)?;
+    let mut stored = job.clone();
+    state.persist(&mut stored)?;
     state.jobs.lock().await.insert(job.id, job.clone());
     sshpool::runner::recover(&state).await?;
     let bytes = fs::read(state.dir(job.id).join("job.json"))?;
@@ -488,6 +496,7 @@ async fn audit_events_survive_state_reload_without_credentials() -> Result<()> {
     fs::create_dir(state.dir(id))?;
     let job = Job {
         id,
+        revision: 0,
         build: Build::default(),
         phase: Phase::Succeeded,
         created_at: 0,
@@ -501,7 +510,8 @@ async fn audit_events_survive_state_reload_without_credentials() -> Result<()> {
         queue_deadline: None,
         source_sha256: None,
     };
-    state.persist(&job)?;
+    let mut stored = job.clone();
+    state.persist(&mut stored)?;
     state.event(id, "submitted", "source validated").await?;
     state.event(id, "assigned", "worker-a").await?;
     let reloaded = State::load(state.home.clone(), state.config.clone())?;

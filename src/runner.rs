@@ -61,6 +61,20 @@ fn container_args(id: Uuid, name: &str, build: &Build) -> Vec<String> {
     args.push(format!("sleep {}", build.timeout_secs + 180));
     args
 }
+
+/// 清理确认、幂等和禁网同时成立时，才允许在另一台 Worker 上重新执行。
+fn failover_allowed(
+    execution_failed: bool,
+    cleanup_confirmed: bool,
+    attempts: usize,
+    build: &Build,
+) -> bool {
+    cleanup_confirmed
+        && execution_failed
+        && attempts <= build.retries
+        && build.idempotent
+        && !build.network
+}
 /// 清理时同时校验不可猜测的任务标识和容器标签，不接受外部路径。
 async fn remove(node: &Node, id: Uuid, container: &str) -> Result<()> {
     let inspect = format!(
@@ -256,11 +270,17 @@ async fn attempt(
     Ok((code, artifacts))
 }
 async fn mark_queue_waiting(state: &State, id: Uuid, reason: &str) -> Result<()> {
-    let mut jobs = state.jobs.lock().await;
-    let job = jobs.get_mut(&id).context("unknown job")?;
-    job.phase = Phase::Queued;
-    job.message = Some(format!("waiting for an eligible worker: {reason}"));
-    state.persist(job)
+    let mut candidate = state
+        .jobs
+        .lock()
+        .await
+        .get(&id)
+        .cloned()
+        .context("unknown job")?;
+    candidate.phase = Phase::Queued;
+    candidate.message = Some(format!("waiting for an eligible worker: {reason}"));
+    state.checkpoint_candidate(candidate).await?;
+    Ok(())
 }
 
 async fn queue_deadline(state: &State, id: Uuid) -> Option<u64> {
@@ -442,19 +462,18 @@ pub async fn run(state: Arc<State>, id: Uuid) -> Result<()> {
         }
         tried.push(node.name.clone());
         let container = format!("sshpool-{id}-{}", tried.len());
-        {
-            let mut jobs = state.jobs.lock().await;
-            let job = jobs.get_mut(&id).context("unknown job")?;
-            job.phase = Phase::Running;
-            job.cleanup_confirmed = false;
-            job.attempts.push(Attempt {
-                node: node.name.clone(),
-                container: container.clone(),
-                started_at: now(),
-                outcome: None,
-            });
-            state.persist(job)?;
-        }
+        let mut assigned = current;
+        assigned.phase = Phase::Running;
+        assigned.cleanup_confirmed = false;
+        assigned.attempts.push(Attempt {
+            node: node.name.clone(),
+            container: container.clone(),
+            started_at: now(),
+            outcome: None,
+            cleanup_confirmed: None,
+        });
+        // 创建远端容器前先达到状态 quorum；失败时仍保持未领取状态。
+        state.checkpoint_candidate(assigned).await?;
         drop(guard);
         state.event(id, "assigned", &node.name).await?;
         let result = tokio::time::timeout(
@@ -482,17 +501,34 @@ pub async fn run(state: Arc<State>, id: Uuid) -> Result<()> {
             Ok((code, _)) => format!("exit {code}"),
             Err(error) => format!("{error:#}"),
         };
-        {
-            let mut jobs = state.jobs.lock().await;
-            let job = jobs.get_mut(&id).context("unknown job")?;
-            job.cleanup_confirmed = cleanup.is_ok();
-            if let Some(attempt) = job.attempts.last_mut() {
-                attempt.outcome = Some(outcome.clone());
-            }
-            state.persist(job)?;
+        let mut completed = state
+            .jobs
+            .lock()
+            .await
+            .get(&id)
+            .cloned()
+            .context("unknown job")?;
+        completed.cleanup_confirmed = cleanup.is_ok();
+        if let Some(attempt) = completed.attempts.last_mut() {
+            attempt.outcome = Some(outcome.clone());
+            attempt.cleanup_confirmed = Some(cleanup.is_ok());
         }
+        // 重试或终态发布前先记录本次尝试与清理结果。
+        state.checkpoint_candidate(completed).await?;
         if let Err(error) = cleanup {
-            return state.finish(id, Phase::Interrupted, None, format!("{outcome}; cleanup unconfirmed: {error:#}. No retry; watchdog will stop the container."), false).await;
+            // SSH 超时不能证明旧容器已经停止。缺少远端看门狗确认时禁止换机重跑，
+            // 否则两个执行者可能同时生成或提交结果。
+            return state
+                .finish(
+                    id,
+                    Phase::Interrupted,
+                    None,
+                    format!(
+                        "{outcome}; cleanup unconfirmed: {error:#}. No retry without a remote watchdog proof"
+                    ),
+                    false,
+                )
+                .await;
         }
         if state.cancelled(id).await {
             return state
@@ -521,7 +557,7 @@ pub async fn run(state: Arc<State>, id: Uuid) -> Result<()> {
                     )
                     .await;
             }
-            Err(error) if tried.len() > build.retries => {
+            Err(error) if !failover_allowed(true, true, tried.len(), &build) => {
                 return state
                     .finish(id, Phase::Failed, None, format!("{error:#}"), false)
                     .await;
@@ -553,7 +589,21 @@ pub fn spawn_job(state: Arc<State>, id: Uuid, permit: OwnedSemaphorePermit) {
                     )
                     .await
             {
-                eprintln!("cannot save failure for {id}: {save_error:#}");
+                let artifacts = state.local_artifacts_available(id);
+                if let Err(local_error) = state
+                    .finish_local(
+                        id,
+                        Phase::Interrupted,
+                        None,
+                        format!(
+                            "durability quorum failed: {save_error:#}; local artifacts retained={artifacts}"
+                        ),
+                        artifacts,
+                    )
+                    .await
+                {
+                    eprintln!("cannot save failure for {id}: {local_error:#}");
+                }
             }
         }
     });
@@ -587,13 +637,11 @@ pub async fn recover(state: &Arc<State>) -> Result<()> {
         }
         let can_retain = job.queue_open_at(now()) && source_can_resume(state, &job).is_ok();
         if can_retain {
-            let mut jobs = state.jobs.lock().await;
-            let record = jobs.get_mut(&job.id).context("unknown job")?;
-            record.cleanup_confirmed = true;
-            record.message =
+            let mut candidate = job.clone();
+            candidate.cleanup_confirmed = true;
+            candidate.message =
                 Some("controller restarted; queue retained with the original deadline".into());
-            state.persist(record)?;
-            drop(jobs);
+            state.checkpoint_candidate(candidate).await?;
             state
                 .event(
                     job.id,
@@ -604,8 +652,9 @@ pub async fn recover(state: &Arc<State>) -> Result<()> {
             queued.push(job);
             continue;
         }
-        let cleanup = match job.attempts.last() {
-            Some(attempt) => match state
+        let mut cleanups = Vec::new();
+        for attempt in &job.attempts {
+            let cleanup = match state
                 .config
                 .nodes
                 .iter()
@@ -613,20 +662,35 @@ pub async fn recover(state: &Arc<State>) -> Result<()> {
             {
                 Some(node) => remove(node, job.id, &attempt.container).await,
                 None => Err(anyhow::anyhow!("worker removed from configuration")),
-            },
-            None => Ok(()),
-        };
-        let confirmed = cleanup.is_ok();
-        let message = match cleanup {
-            Ok(()) => "controller restarted; previous container absent or removed".into(),
-            Err(error) => format!("controller restarted; cleanup unconfirmed: {error:#}"),
-        };
-        {
-            let mut jobs = state.jobs.lock().await;
-            let record = jobs.get_mut(&job.id).context("unknown job")?;
-            record.cleanup_confirmed = confirmed;
-            state.persist(record)?;
+            };
+            cleanups.push(cleanup);
         }
+        let confirmed = cleanups.iter().all(Result::is_ok);
+        let errors = cleanups
+            .iter()
+            .filter_map(|result| result.as_ref().err())
+            .map(|error| format!("{error:#}"))
+            .collect::<Vec<_>>();
+        let message = if errors.is_empty() {
+            "controller restarted; all prior containers absent or removed".into()
+        } else {
+            format!(
+                "controller restarted; cleanup unconfirmed: {}",
+                errors.join("; ")
+            )
+        };
+        let mut candidate = state
+            .jobs
+            .lock()
+            .await
+            .get(&job.id)
+            .cloned()
+            .context("unknown job")?;
+        candidate.cleanup_confirmed = confirmed;
+        for (attempt, cleanup) in candidate.attempts.iter_mut().zip(&cleanups) {
+            attempt.cleanup_confirmed = Some(cleanup.is_ok());
+        }
+        state.checkpoint_candidate(candidate).await?;
         state
             .finish(job.id, Phase::Interrupted, None, message, false)
             .await?;
@@ -661,4 +725,42 @@ pub fn read_build(path: &Path) -> Result<Build> {
     let build: Build = toml::from_str(&std::fs::read_to_string(path)?)?;
     build.validate()?;
     Ok(build)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::failover_allowed;
+    use crate::config::Build;
+
+    #[test]
+    fn confirmed_cleanup_is_required_before_worker_failover() {
+        let build = Build {
+            retries: 1,
+            idempotent: true,
+            network: false,
+            ..Build::default()
+        };
+        assert!(!failover_allowed(true, false, 1, &build));
+        assert!(failover_allowed(true, true, 1, &build));
+        assert!(!failover_allowed(false, true, 1, &build));
+        assert!(!failover_allowed(true, true, 2, &build));
+        assert!(!failover_allowed(
+            true,
+            true,
+            1,
+            &Build {
+                idempotent: false,
+                ..build.clone()
+            }
+        ));
+        assert!(!failover_allowed(
+            true,
+            true,
+            1,
+            &Build {
+                network: true,
+                ..build
+            }
+        ));
+    }
 }

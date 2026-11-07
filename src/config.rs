@@ -19,7 +19,12 @@ pub struct Config {
     pub max_artifact_mib: u64,
     pub min_free_disk_mib: u64,
     pub max_active_jobs: usize,
+    /// 包括本地权威状态在内、必须成功的独立故障域数；零仅用于没有副本配置的本地开发。
+    #[serde(default)]
+    pub replica_min_ack: usize,
     pub nodes: Vec<Node>,
+    #[serde(default)]
+    pub replicas: Vec<Replica>,
 }
 impl Default for Config {
     fn default() -> Self {
@@ -32,9 +37,30 @@ impl Default for Config {
             max_artifact_mib: 256,
             min_free_disk_mib: 10240,
             max_active_jobs: 4,
+            replica_min_ack: 0,
             nodes: Vec::new(),
+            replicas: Vec::new(),
         }
     }
+}
+
+/// 任务状态的跨主机副本；只使用已有 SSH 别名，不在远端安装常驻 Agent。
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Replica {
+    pub name: String,
+    pub ssh: String,
+    /// 同一账号可承载多个相互隔离的控制面状态集合。
+    #[serde(default = "default_namespace")]
+    pub namespace: String,
+    /// 独立物理故障域；同一宿主机的多个地址不能重复计数。
+    pub failure_domain: String,
+    /// 首次登记时固定远端稳定机器身份，重装或替换主机后拒绝继续写入。
+    pub expected_host_id_sha256: String,
+    #[serde(default)]
+    pub ssh_config: Option<PathBuf>,
+    #[serde(default = "yes")]
+    pub enabled: bool,
 }
 /// 一个 SSH 可达的容器执行节点；同一业务节点应保留足够内存。
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -61,6 +87,9 @@ pub struct Node {
 }
 fn yes() -> bool {
     true
+}
+fn default_namespace() -> String {
+    "default".into()
 }
 fn one() -> usize {
     1
@@ -190,7 +219,12 @@ pub fn default_home() -> Result<PathBuf> {
 }
 pub fn read(home: &Path) -> Result<Config> {
     let config: Config = toml::from_str(&fs::read_to_string(home.join("config.toml"))?)?;
-    let mut names = HashSet::new();
+    validate(&config)?;
+    Ok(config)
+}
+
+/// 配置、CLI 修改和启动共用同一组故障域与 quorum 的不变量。
+pub fn validate(config: &Config) -> Result<()> {
     ensure!(
         config.max_active_jobs > 0 && config.max_active_jobs <= 64,
         "max_active_jobs must be 1..64"
@@ -207,11 +241,106 @@ pub fn read(home: &Path) -> Result<Config> {
         config.ssh_listen != config.ssh_backend,
         "SSH proxy cannot forward to itself"
     );
+    let mut names = HashSet::new();
     for node in &config.nodes {
         validate_node(node)?;
         ensure!(names.insert(&node.name), "duplicate node: {}", node.name);
     }
-    Ok(config)
+    let enabled_replicas = config
+        .replicas
+        .iter()
+        .filter(|replica| replica.enabled)
+        .collect::<Vec<_>>();
+    ensure!(
+        config.replica_min_ack <= enabled_replicas.len() + 1,
+        "replica_min_ack exceeds enabled replicas plus local state"
+    );
+    ensure!(
+        config.replicas.is_empty() || config.replica_min_ack > 0,
+        "configured replicas require replica_min_ack > 0"
+    );
+    ensure!(
+        !config.replicas.is_empty() || config.replica_min_ack == 0,
+        "local-only configuration cannot claim a cross-host quorum"
+    );
+    ensure!(
+        config.replicas.is_empty() || config.replica_min_ack >= 2,
+        "configured replicas require local plus at least one remote acknowledgement"
+    );
+    let mut replica_names = HashSet::new();
+    let mut replica_hosts = HashSet::new();
+    let mut failure_domains = HashSet::new();
+    for replica in &config.replicas {
+        validate_replica(replica)?;
+        ensure!(
+            replica.name != "local",
+            "replica name 'local' is reserved for controller state"
+        );
+        ensure!(
+            replica.failure_domain != "local",
+            "failure domain 'local' is reserved for controller state"
+        );
+        ensure!(
+            replica_names.insert(&replica.name),
+            "duplicate replica: {}",
+            replica.name
+        );
+        if replica.enabled {
+            ensure!(
+                replica_hosts.insert(&replica.expected_host_id_sha256),
+                "duplicate enabled replica host identity: {}",
+                replica.name
+            );
+            ensure!(
+                failure_domains.insert(&replica.failure_domain),
+                "duplicate enabled failure domain: {}",
+                replica.failure_domain
+            );
+        }
+    }
+    Ok(())
+}
+
+pub fn validate_replica(replica: &Replica) -> Result<()> {
+    validate_label("replica", &replica.name)?;
+    validate_label("replica namespace", &replica.namespace)?;
+    validate_label("failure_domain", &replica.failure_domain)?;
+    ensure!(
+        replica.failure_domain != "local",
+        "failure domain 'local' is reserved for controller state"
+    );
+    ensure!(
+        replica.expected_host_id_sha256.len() == 64
+            && replica
+                .expected_host_id_sha256
+                .bytes()
+                .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase()),
+        "invalid replica host identity"
+    );
+    validate_ssh_target(&replica.ssh)
+}
+
+fn validate_label(kind: &str, value: &str) -> Result<()> {
+    ensure!(
+        !value.is_empty()
+            && value
+                .chars()
+                .all(|character| character.is_ascii_alphanumeric() || "-_".contains(character)),
+        "invalid {kind}"
+    );
+    Ok(())
+}
+
+fn validate_ssh_target(target: &str) -> Result<()> {
+    ensure!(
+        !target.is_empty()
+            && !target.starts_with('-')
+            && target
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || "-_.@:+[]".contains(c)),
+        "use an SSH alias or user@host, without shell syntax"
+    );
+    Ok(())
 }
 pub fn validate_node(node: &Node) -> Result<()> {
     ensure!(
@@ -222,15 +351,7 @@ pub fn validate_node(node: &Node) -> Result<()> {
                 .all(|c| c.is_ascii_alphanumeric() || "-_".contains(c)),
         "invalid node name"
     );
-    ensure!(
-        !node.ssh.is_empty()
-            && !node.ssh.starts_with('-')
-            && node
-                .ssh
-                .chars()
-                .all(|c| c.is_ascii_alphanumeric() || "-_.@:+[]".contains(c)),
-        "use an SSH alias or user@host, without shell syntax"
-    );
+    validate_ssh_target(&node.ssh)?;
     ensure!(node.max_jobs > 0 && node.max_jobs <= 64, "invalid max_jobs");
     ensure!(
         node.max_load_per_cpu.is_finite() && node.max_load_per_cpu > 0.0,
@@ -240,13 +361,23 @@ pub fn validate_node(node: &Node) -> Result<()> {
 }
 pub fn atomic_write(path: &Path, bytes: &[u8]) -> Result<()> {
     let temporary = path.with_extension(format!("tmp-{}", uuid::Uuid::new_v4()));
-    fs::write(&temporary, bytes)?;
+    let mut file = fs::OpenOptions::new()
+        .create_new(true)
+        .write(true)
+        .open(&temporary)?;
+    use std::io::Write;
+    file.write_all(bytes)?;
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
         fs::set_permissions(&temporary, fs::Permissions::from_mode(0o600))?;
     }
+    file.sync_all()?;
+    drop(file);
     fs::rename(temporary, path)?;
+    if let Some(parent) = path.parent() {
+        fs::File::open(parent)?.sync_all()?;
+    }
     Ok(())
 }
 pub fn save(home: &Path, config: &Config) -> Result<()> {

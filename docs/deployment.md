@@ -70,3 +70,29 @@ Worker 运维账号需要管理自己使用的容器引擎。这是有权限的�
 暂停提交，向控制面发送 SIGTERM；它会请求取消活跃任务并等待清理。替换二进制后重启。若被强制终止，下次启动会检查遗留任务；清理无法确认的节点会被隔离。
 
 不自动修改 Worker 的已有服务，不执行 `docker system prune`，不自动删除公司目录。持久任务归档在控制面专用 `jobs` 目录；当前没有自动保留期清理，需自行安排备份和保留策略。
+
+### 任务状态副本
+
+副本只使用已有 SSH 别名与主机密钥，不向 Worker 安装常驻 Agent。每台远端必须属于独立物理故障域；同一 ESXi 上的多个 VM 不能重复计数。
+
+```sh
+sshpool replica add linux-replica --ssh existing-linux --namespace prod --failure-domain physical-linux
+sshpool replica add second-replica --ssh existing-mac --namespace prod --failure-domain physical-mac
+sshpool replica quorum 2
+sshpool replica check
+```
+
+升级已存在的本地任务时，先停机，再逐条执行 `sshpool replica adopt <job-id>`。如果本地任务没有远端历史，带副本配置的启动会失败关闭并要求显式纳管。不要直接删除 `replica-receipts` 或远端 `~/.sshpool-replica`。
+
+### 控制面主机恢复
+
+1. 确认原控制器已停止，避免两个写入方同时启动。
+2. 在恢复机安装相同或更新的二进制，从独立的秘密备份恢复 `config.toml`、`token`、SSH 配置、known_hosts 和所需私钥。
+3. 用同一 `replica_min_ack` 启动。控制面从仍可达的物理故障域恢复缺失任务；未达到 quorum 时拒绝启动。
+4. 检查 `jobs`、事件、源码摘要和产物，再恢复入口端口或 DNS。
+
+远端状态副本不包含控制器 token、SSH 私钥和工作区磁盘。它们必须单独备份；只备份任务目录不能完成控制面主机恢复。
+
+### 业务数据库边界
+
+`sub2api + PostgreSQL + Redis` 不在此机制内自动高可用。PostgreSQL 需要一致性基础备份与持续 WAL，Redis 需要核对 AOF/RDB 与复制，应用可变目录也需要一致快照。恢复时必须先隔离旧写入方，再让新实例接写。日常运维可按 [failure-modes.md](failure-modes.md) 的矩阵验收。

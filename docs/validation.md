@@ -113,3 +113,26 @@ macOS ARM64 Worker 本次只完成资源探测：可用内存约 2.7 GiB，小�
 公开源码已发布到 [zjarlin/sshpool](https://github.com/zjarlin/sshpool)，MIT 许可，包含 Cargo.lock、Linux/macOS CI 和 Gherkin 验收清单。首个源码提交为 `b27c835`。提交前检查真实地址、节点 SSH 别名、用户目录、私钥标记和常见 token 格式，没有将私有配置或任务归档加入仓库。
 
 本地 Rust 测试、格式检查、Clippy 和 release build 通过；具体数量随版本增长，以对应提交的 CI 为准。工作台客户端与 Mac 控制面均已更新，但公开源码不代表生产可用或全部验收场景通过。CI 运行结果见 [GitHub Actions](https://github.com/zjarlin/sshpool/actions)。
+
+## control-state-recovery
+
+2026-11-07 在两个独立物理故障域完成非业务演示任务的 quorum-2 双向恢复：先隔离一个远端并从另一个恢复完整任务归档，再交换隔离方向重复验证。恢复结果保留任务 ID、源码 SHA-256、队列状态、revision、事件和提交回执。脱敏记录见 [control-state-recovery-20261107.json](evidence/control-state-recovery-20261107.json)。
+
+自动化还覆盖同一 revision 的不同内容或回执冲突、达不到 quorum、较新发布版本损坏、重复主机/故障域、namespace 路径逃逸和未确认远端清理。真实测试没有证明运行进程迁移、自动控制面漂移、PostgreSQL 事务容灾或跨主机存储；这些仍按失败关闭处理。
+
+## stateful-backup-recovery
+
+2026-11-07 对 `sub2api` 的 PostgreSQL 与 Redis 做了隔离恢复演练。备份前暂停 9 个受管容器，应用停写后导出 PostgreSQL 自定义归档、Redis RDB、应用配置与卷归档、容器清单和镜像，随后重启并确认核心应用健康。恢复包内 13 个真实载荷逐项校验摘要，PostgreSQL 归档包含 116 个 `TABLE DATA` 条目，容器镜像归档也通过格式检查。
+
+加密副本在另一台独立物理机的临时目录中解密成功。密文摘要为 `23c27d…4ac2`，解密后的压缩包摘要与源包及本机副本一致，均为 `9806968f…ff60c`；明文和临时解密工具随后删除。该步骤证明异地介质和口令可恢复出原始包，不证明已完成业务切换。
+
+PostgreSQL 15.19 在现有实例中创建临时数据库，以 `pg_restore --no-owner --no-acl --exit-on-error` 恢复成功；116 张表、78 个序列、482 个索引和 95 个外键的 schema 对象清单与当前生产清单逐字节一致，116 张表的行数全部成功导出。生产数据库没有被停止或替换，临时库随后删除。
+
+Redis 8.10.2 使用独立容器和独立命名卷恢复，网络为 `none`。RDB 校验通过：原始 12,136 个键、7,788 个过期信息，检查时有 4 个键已过期；加载后 761 个键按 TTL 过期、11,375 个键存活，DB0/6/7 分别为 11,321/27/27。备份时默认 DB0 的 `DBSIZE=12080`，隔离加载后不能与这一历史计数做等值比较。临时容器和卷已删除，生产 Redis 未被停止或替换。
+
+证据见 [stateful-backup-recovery-20261107.json](evidence/stateful-backup-recovery-20261107.json)。本轮验收边界：
+
+- 成功的是历史时点逻辑备份、RDB 加载和隔离恢复；备份时间之后的写入存在非零 RPO。
+- 没有实现 PostgreSQL 持续 WAL 归档或流复制、Redis 持续复制、写入 fencing、自动故障转移或入口 DNS 切换。
+- 应用配置与数据库虽在同一次停写窗口导出，尚未在独立演示环境完成整套 `sub2api + PostgreSQL + Redis` 恢复并接管流量，因此不能宣称生产数据库高可用。
+- `sub2api-chatgptweb` 在备份前已存在 `Restarting (137)`，本轮未把它归因于备份流程或宣称该子服务健康。

@@ -2,7 +2,7 @@ use anyhow::{Context, Result, ensure};
 use clap::{Parser, Subcommand};
 use sshpool::{
     client::Client,
-    config::{self, Build, Node},
+    config::{self, Build, Node, Replica},
     gateway, probe, runner,
     state::State,
 };
@@ -32,6 +32,11 @@ enum Action {
         #[command(subcommand)]
         command: NodeAction,
     },
+    /// 管理任务状态的跨 SSH 主机副本。
+    Replica {
+        #[command(subcommand)]
+        command: ReplicaAction,
+    },
     /// 只读探测已登记节点。
     Doctor,
     /// 探测两个 SSH 目标的 SSI 原生 TSC 频率与接口；不安装软件或加入集群。
@@ -40,6 +45,23 @@ enum Action {
         ssh: Vec<String>,
         #[arg(long)]
         ssh_config: Option<PathBuf>,
+    },
+    /// 离线校验外部灾备包并生成数据库恢复证据。
+    Dr {
+        #[command(subcommand)]
+        command: DrAction,
+    },
+    /// 只读检查新存储设备；不格式化、不挂载，也不创建 RAID/LVM/OSD。
+    StorageAdmission {
+        #[arg(long)]
+        ssh: String,
+        #[arg(long)]
+        ssh_config: Option<PathBuf>,
+        #[arg(long)]
+        device: String,
+        /// 只有已经核实是全新且专属于集群的空盘时才可指定。
+        #[arg(long)]
+        new_dedicated_device: bool,
     },
     /// 从运行中的控制面读取节点状态。
     Status,
@@ -116,6 +138,64 @@ enum NodeAction {
         image: String,
     },
 }
+#[derive(Subcommand)]
+enum ReplicaAction {
+    /// 登记一个已有 SSH 可达的状态副本。
+    Add {
+        name: String,
+        #[arg(long)]
+        ssh: String,
+        /// 远端 ~/.sshpool-replica 下相互隔离的状态集合。
+        #[arg(long, default_value = "default")]
+        namespace: String,
+        /// 独立物理故障域；同一宿主机上的别名必须共用同一个值。
+        #[arg(long)]
+        failure_domain: String,
+        #[arg(long)]
+        ssh_config: Option<PathBuf>,
+    },
+    /// 移除配置；远端已有状态不会被删除。
+    Remove {
+        name: String,
+    },
+    List,
+    /// 设置每次状态提交至少需要的副本确认数。
+    Quorum {
+        minimum: usize,
+    },
+    /// 通过 SSH 检查副本根目录归属与基本可用性。
+    Check,
+    /// 立即把一条本地任务重新推送到所有启用的副本。
+    Sync {
+        id: uuid::Uuid,
+    },
+    /// 从命名副本恢复本地不存在的任务；已有任务绝不覆盖。
+    Restore {
+        id: uuid::Uuid,
+        #[arg(long)]
+        from: String,
+    },
+    /// 为缺少摘要的旧任务验证源码并纳入副本保护。
+    Adopt {
+        id: uuid::Uuid,
+    },
+}
+#[derive(Subcommand)]
+enum DrAction {
+    /// 校验归档摘要、内部文件清单、PostgreSQL 与 Redis 快照。
+    Verify {
+        archive: PathBuf,
+        #[arg(long)]
+        checksum: PathBuf,
+    },
+    /// 将 PostgreSQL COPY 行数输出转为可比较的 JSON。
+    SqlCounts {
+        #[arg(long, default_value = "-")]
+        input: String,
+        #[arg(long)]
+        output: Option<PathBuf>,
+    },
+}
 fn client(cli: &Cli, home: &std::path::Path) -> Result<Client> {
     let endpoint = cli
         .endpoint
@@ -159,6 +239,7 @@ async fn dispatch(cli: Cli) -> Result<i32> {
         }
         Action::Serve => serve(home).await?,
         Action::Node { command } => node_command(&cli, &home, command).await?,
+        Action::Replica { command } => replica_command(&home, command).await?,
         Action::SsiPreflight { ssh, ssh_config } => {
             let report = sshpool::ssi::preflight(ssh, ssh_config.as_deref()).await?;
             println!("{}", serde_json::to_string_pretty(&report)?);
@@ -168,6 +249,23 @@ async fn dispatch(cli: Cli) -> Result<i32> {
                 2
             });
         }
+        Action::StorageAdmission {
+            ssh,
+            ssh_config,
+            device,
+            new_dedicated_device,
+        } => {
+            sshpool::storage::validate_requested_device(device)?;
+            let probe = sshpool::storage::probe(ssh, ssh_config.as_deref()).await?;
+            let report = sshpool::storage::assess(device, *new_dedicated_device, probe);
+            println!("{}", serde_json::to_string_pretty(&report)?);
+            return Ok(if report.eligible_for_future_initialization {
+                0
+            } else {
+                2
+            });
+        }
+        Action::Dr { command } => return dr_command(command),
         Action::Doctor => {
             println!(
                 "{}",
@@ -230,6 +328,149 @@ async fn dispatch(cli: Cli) -> Result<i32> {
         Action::Shim { tool, arguments } => return shim(&cli, &home, tool, arguments).await,
     }
     Ok(0)
+}
+fn dr_command(command: &DrAction) -> Result<i32> {
+    match command {
+        DrAction::Verify { archive, checksum } => {
+            let report = sshpool::dr::verify_archive(archive, checksum)?;
+            println!("{}", serde_json::to_string_pretty(&report)?);
+        }
+        DrAction::SqlCounts { input, output } => {
+            let counts = if input == "-" {
+                sshpool::dr::parse_sql_counts(std::io::stdin().lock())?
+            } else {
+                let file = fs::File::open(input)?;
+                sshpool::dr::parse_sql_counts(std::io::BufReader::new(file))?
+            };
+            let json = serde_json::to_vec_pretty(&counts)?;
+            if let Some(output) = output {
+                ensure!(
+                    !output.exists(),
+                    "output already exists: {}",
+                    output.display()
+                );
+                config::atomic_write(output, &json)?;
+            } else {
+                println!("{}", String::from_utf8(json)?);
+            }
+        }
+    }
+    Ok(0)
+}
+async fn replica_command(home: &std::path::Path, command: &ReplicaAction) -> Result<()> {
+    let mut config = config::read(home)?;
+    match command {
+        ReplicaAction::Add {
+            name,
+            ssh,
+            namespace,
+            failure_domain,
+            ssh_config,
+        } => {
+            ensure!(
+                !config.replicas.iter().any(|replica| replica.name == *name),
+                "replica already exists"
+            );
+            let expected_host_id_sha256 =
+                sshpool::mirror::prepare(ssh, ssh_config.as_deref(), namespace).await?;
+            let replica = Replica {
+                name: name.clone(),
+                ssh: ssh.clone(),
+                namespace: namespace.clone(),
+                failure_domain: failure_domain.clone(),
+                expected_host_id_sha256,
+                ssh_config: ssh_config.clone(),
+                enabled: true,
+            };
+            config::validate_replica(&replica)?;
+            config.replicas.push(replica);
+            if config.replica_min_ack == 0 {
+                // 默认承诺“本地加任意一个远端”；更高 quorum 必须由用户显式设置。
+                config.replica_min_ack = 2;
+            }
+            config::validate(&config)?;
+            config::save(home, &config)?;
+            println!("Replica added. Restart the controller to load configuration changes.");
+        }
+        ReplicaAction::Remove { name } => {
+            let before = config.replicas.len();
+            config.replicas.retain(|replica| replica.name != *name);
+            ensure!(config.replicas.len() < before, "unknown replica");
+            if config.replicas.is_empty() {
+                config.replica_min_ack = 0;
+            } else {
+                config.replica_min_ack = config.replica_min_ack.min(config.replicas.len() + 1);
+            }
+            if !config.replicas.is_empty() && config.replica_min_ack < 2 {
+                config.replica_min_ack = 2;
+            }
+            config::save(home, &config)?;
+            println!("Replica removed; remote immutable objects were not deleted.");
+        }
+        ReplicaAction::List => println!(
+            "{}",
+            serde_json::to_string_pretty(&serde_json::json!({
+                "replica_min_ack": config.replica_min_ack,
+                "replicas": config.replicas
+            }))?
+        ),
+        ReplicaAction::Quorum { minimum } => {
+            ensure!(
+                *minimum <= config.replicas.len() + 1,
+                "quorum exceeds local plus configured replica count"
+            );
+            ensure!(
+                *minimum >= 2 || config.replicas.is_empty(),
+                "configured replicas require local plus at least one remote acknowledgement"
+            );
+            config.replica_min_ack = *minimum;
+            config::validate(&config)?;
+            config::save(home, &config)?;
+            println!("Replica quorum set to {minimum}.");
+        }
+        ReplicaAction::Check => {
+            let health = sshpool::mirror::health(&config).await;
+            // 本地控制目录在检查期间可读且已获得控制锁，因此计为一个故障域。
+            let healthy = health.iter().filter(|replica| replica.healthy).count() + 1;
+            println!("{}", serde_json::to_string_pretty(&health)?);
+            ensure!(
+                healthy >= config.replica_min_ack,
+                "replica quorum not met: {healthy} live fault domains/{} required",
+                config.replica_min_ack
+            );
+        }
+        ReplicaAction::Sync { id } => {
+            let replicas = sshpool::mirror::sync_job(&config, home, *id).await?;
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&serde_json::json!({
+                    "job": id,
+                    "acknowledged": replicas
+                }))?
+            );
+        }
+        ReplicaAction::Restore { id, from } => {
+            let replica = config
+                .replicas
+                .iter()
+                .find(|replica| replica.name == *from)
+                .context("unknown replica")?;
+            let path = sshpool::mirror::restore_from(&config, home, replica, *id).await?;
+            println!("{}", path.display());
+        }
+        ReplicaAction::Adopt { id } => {
+            let job = sshpool::mirror::adopt_legacy_job(&config, home, *id).await?;
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&serde_json::json!({
+                    "job": id,
+                    "revision": job.revision,
+                    "source_sha256": job.source_sha256
+                }))?
+            );
+        }
+    }
+    Ok(())
 }
 async fn node_command(cli: &Cli, home: &std::path::Path, command: &NodeAction) -> Result<()> {
     match command {
@@ -325,6 +566,13 @@ async fn serve(home: PathBuf) -> Result<()> {
     lock.try_lock_exclusive()
         .context("another controller owns this home")?;
     let config = config::read(&home)?;
+    let restored = sshpool::mirror::restore_missing(&config, &home).await?;
+    if !restored.is_empty() {
+        eprintln!(
+            "SSHPool restored {} job records from replicas",
+            restored.len()
+        );
+    }
     let api = tokio::net::TcpListener::bind(config.api_listen).await?;
     let ssh = tokio::net::TcpListener::bind(config.ssh_listen).await?;
     let backend = config.ssh_backend;

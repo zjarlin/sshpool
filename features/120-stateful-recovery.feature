@@ -9,6 +9,17 @@ Feature: sub2api PostgreSQL Redis 一致性恢复
     And 明确客户端重连请求去重和 RPO RTO 目标
     And 不假设 Redis 只存可丢弃缓存
 
+  # evidence: docs/validation.md#stateful-backup-recovery
+  @verified @manual @p0
+  Scenario: 历史备份可在隔离环境解析并加载
+    Given PostgreSQL 逻辑归档和 Redis RDB 已由同一停写窗口产生
+    And 恢复包与加密异地副本通过摘要校验
+    When 在临时数据库和隔离 Redis 卷中加载备份
+    Then PostgreSQL 归档逐表恢复并导出 116 张表的行数
+    And Redis RDB 校验通过并按既有 TTL 淘汰过期键
+    And 生产 PostgreSQL 与 Redis 实例不被恢复流程替换
+    And 明确记录备份时间之后的非零 RPO
+
   @planned @p0
   Scenario: 在演示数据上验收迁移和切回
     Given 独立创建的演示数据库和已验证备份
@@ -23,6 +34,15 @@ Feature: sub2api PostgreSQL Redis 一致性恢复
     Then 按明确复制或检查点协议恢复客体与数据库
     And 已确认事务满足约定的数据丢失上限
     And 未通过该测试不能宣称数据库高可用
+
+  # evidence: docs/validation.md#stateful-backup-recovery
+  @planned @manual @p0
+  Scenario: 演示环境整体迁移应用与数据库并切回
+    Given 已验证的应用配置卷 PostgreSQL 与 Redis 备份
+    When 在独立演示环境恢复全部 sub2api 容器并切换流量
+    Then 核对登录计费队列和持久会话
+    And 停写后切回原环境并验证没有双写
+    And 在完成前不把离线恢复成功当作生产 HA
 
   @research @p0
   Scenario: 网络分区只有一个有效写入方

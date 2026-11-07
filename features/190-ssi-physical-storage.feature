@@ -44,7 +44,8 @@ Feature: 物理主机准入与独立磁盘冗余
     And 不通过删除频率检查掩盖长期漂移
     And 同一进程的跨宿主执行归属和时钟测试都有原始证据
 
-  @planned @p0
+  # evidence: src/storage.rs::existing_partitions_filesystems_holders_and_pool_state_fail_closed
+  @verified @automated @p0
   Scenario: 新存储设备不能以未识别文件系统推断为空盘
     Given 设备可能有未挂载分区或公司内部数据
     When 请求加入分布式存储
@@ -52,6 +53,15 @@ Feature: 物理主机准入与独立磁盘冗余
     And 检查分区签名文件系统卷管理软件阵列及现有使用者
     And 归属未确认时拒绝格式化覆盖或建立 OSD
     And 初期试验只使用单独创建且限制大小的实验文件
+
+  @partial @p0
+  Scenario: 即将重装的主机先通过只读存储准入
+    Given 一台计划清除原系统并安装 ESXi 的物理主机
+    When 查询其磁盘分区、文件系统、挂载和存储管理层
+    Then 只执行不写设备的硬件归属与占用检查
+    And 重装意图不授予格式化、挂载或接管既有数据的权限
+    And 只有重装完成、专用盘归属和稳定硬件身份重新确认后才可登记
+    And 同一 ESXi 宿主上的多个 VM 不增加独立故障域数
 
   @planned @p0
   Scenario: 无 RAID 的冗余按真实物理主机放置

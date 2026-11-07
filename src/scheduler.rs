@@ -16,12 +16,12 @@ pub fn score(node: &Node, health: &Health, build: &Build, active: &[Job]) -> Res
         return Err(error.clone());
     }
     if active.iter().any(|job| {
-        job.phase == Phase::Interrupted
-            && !job.cleanup_confirmed
-            && job
-                .attempts
-                .last()
-                .is_some_and(|attempt| attempt.node == node.name)
+        job.attempts.iter().any(|attempt| {
+            attempt.node == node.name
+                && attempt.outcome.is_some()
+                && (attempt.cleanup_confirmed == Some(false)
+                    || (attempt.cleanup_confirmed.is_none() && !job.cleanup_confirmed))
+        })
     }) {
         return Err("worker quarantined: previous container cleanup is unconfirmed; restart controller to reconcile".into());
     }

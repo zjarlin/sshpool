@@ -52,6 +52,14 @@ impl Phase {
     }
 }
 impl Job {
+    /// 每次可观察状态变化增加版本；溢出时失败，不能回绕成旧版本。
+    pub fn bump_revision(&mut self) -> anyhow::Result<u64> {
+        self.revision = self
+            .revision
+            .checked_add(1)
+            .ok_or_else(|| anyhow::anyhow!("job revision overflow"))?;
+        Ok(self.revision)
+    }
     /// 判断当前时刻是否仍可按显式期限等待；已尝试或旧记录均不重放。
     pub fn queue_open_at(&self, timestamp: u64) -> bool {
         self.phase == Phase::Queued
@@ -68,10 +76,16 @@ pub struct Attempt {
     pub container: String,
     pub started_at: u64,
     pub outcome: Option<String>,
+    /// 每次尝试单独记录清理结果，避免后续成功覆盖旧节点的不确定状态。
+    #[serde(default)]
+    pub cleanup_confirmed: Option<bool>,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Job {
     pub id: uuid::Uuid,
+    /// 单调状态版本；恢复时先选最高版本，旧目录保留为备份。
+    #[serde(default)]
+    pub revision: u64,
     pub build: Build,
     pub phase: Phase,
     pub created_at: u64,

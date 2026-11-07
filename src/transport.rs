@@ -96,14 +96,26 @@ pub async fn checked(node: &Node, script: &str, seconds: u64) -> Result<Vec<u8>>
     Ok(stdout)
 }
 pub async fn upload(node: &Node, script: &str, source: &Path) -> Result<()> {
+    upload_capture(node, script, source, 120).await?;
+    Ok(())
+}
+
+/// 上传到显式受限的远端命令并保留有界标准输出，供原子写入后回报摘要。
+pub async fn upload_capture(
+    node: &Node,
+    script: &str,
+    source: &Path,
+    seconds: u64,
+) -> Result<Vec<u8>> {
     let mut child = command(node, script)
         .stdin(Stdio::piped())
-        .stdout(Stdio::null())
+        .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()?;
     let mut stdin = child.stdin.take().context("missing stdin")?;
+    let stdout = child.stdout.take().context("missing stdout")?;
     let stderr = child.stderr.take().context("missing stderr")?;
-    let result = tokio::time::timeout(Duration::from_secs(120), async {
+    let result = tokio::time::timeout(Duration::from_secs(seconds), async {
         let mut file = tokio::fs::File::open(source).await?;
         let transfer = async move {
             tokio::io::copy(&mut file, &mut stdin).await?;
@@ -112,12 +124,56 @@ pub async fn upload(node: &Node, script: &str, source: &Path) -> Result<()> {
             drop(stdin);
             Ok::<_, std::io::Error>(())
         };
+        let (_, status, output, errors) = tokio::try_join!(
+            transfer,
+            child.wait(),
+            async { bounded(stdout, 65536).await.map_err(std::io::Error::other) },
+            async { bounded(stderr, 65536).await.map_err(std::io::Error::other) }
+        )?;
+        ensure!(
+            status.success(),
+            "input upload failed: {}",
+            String::from_utf8_lossy(&errors)
+        );
+        Ok::<_, anyhow::Error>(output)
+    })
+    .await;
+    match result {
+        Ok(value) => value,
+        Err(_) => {
+            child.kill().await?;
+            bail!("source upload timed out")
+        }
+    }
+}
+
+/// 只执行调用方构造的固定远端读取命令，并把 stdout 写入本次创建的临时文件。
+pub async fn download(node: &Node, script: &str, destination: &Path, seconds: u64) -> Result<()> {
+    let mut child = command(node, script)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()?;
+    let mut stdout = child.stdout.take().context("missing stdout")?;
+    let stderr = child.stderr.take().context("missing stderr")?;
+    let result = tokio::time::timeout(Duration::from_secs(seconds), async {
+        let mut file = tokio::fs::OpenOptions::new()
+            .create_new(true)
+            .write(true)
+            .open(destination)
+            .await?;
+        let transfer = async {
+            tokio::io::copy(&mut stdout, &mut file).await?;
+            file.flush().await?;
+            file.sync_all().await?;
+            Ok::<_, std::io::Error>(())
+        };
         let (_, status, errors) = tokio::try_join!(transfer, child.wait(), async {
             bounded(stderr, 65536).await.map_err(std::io::Error::other)
         })?;
         ensure!(
             status.success(),
-            "input upload failed: {}",
+            "remote download failed: {}",
             String::from_utf8_lossy(&errors)
         );
         Ok::<_, anyhow::Error>(())
@@ -127,7 +183,7 @@ pub async fn upload(node: &Node, script: &str, source: &Path) -> Result<()> {
         Ok(value) => value,
         Err(_) => {
             child.kill().await?;
-            bail!("source upload timed out")
+            bail!("remote download timed out")
         }
     }
 }
