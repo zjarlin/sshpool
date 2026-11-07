@@ -637,7 +637,7 @@ fn install_shims(home: &std::path::Path) -> Result<()> {
     let directory = home.join("bin");
     fs::create_dir_all(&directory)?;
     let binary = std::env::current_exe()?;
-    for tool in ["cargo", "gradle", "make"] {
+    for tool in sshpool::shim::TOOLS {
         let path = directory.join(tool);
         ensure!(!path.exists(), "shim already exists: {}", path.display());
         let script = format!(
@@ -656,51 +656,23 @@ fn install_shims(home: &std::path::Path) -> Result<()> {
     Ok(())
 }
 async fn shim(cli: &Cli, home: &std::path::Path, tool: &str, arguments: &[String]) -> Result<i32> {
-    ensure!(
-        ["cargo", "gradle", "make"].contains(&tool),
-        "unsupported shim"
-    );
+    // 路由决策在 `shim::route` 里，纯函数、可单测；这里只负责执行。
     let cwd = std::env::current_dir()?;
-    let build_command = match tool {
-        "cargo" => arguments
-            .first()
-            .is_some_and(|arg| ["build", "test", "check", "clippy"].contains(&arg.as_str())),
-        _ => !arguments
-            .iter()
-            .any(|arg| ["--version", "-v", "--help", "-h"].contains(&arg.as_str())),
-    };
-    let project = cwd
-        .ancestors()
-        .find(|path| path.join("sshpool.toml").is_file());
-    if let Some(project) = project.filter(|_| build_command) {
-        ensure!(
-            project == cwd,
-            "run distributed builds from project root: {}",
-            project.display()
-        );
-        let mut build = runner::read_build(&project.join("sshpool.toml"))?;
-        build.command = std::iter::once(tool.to_string())
-            .chain(arguments.iter().cloned())
-            .collect();
-        return client(cli, home)?.run(project, build).await;
+    if let sshpool::shim::Route::Remote { root, build } =
+        sshpool::shim::route(&cwd, tool, arguments)?
+    {
+        return client(cli, home)?.run(&root, build).await;
     }
     let path = std::env::var_os("PATH").context("PATH is missing")?;
+    // shim 目录必须排除：否则 install-shims 之后 shim 会无限递归 exec 自己。
     let shims = home.join("bin").canonicalize()?;
-    for directory in std::env::split_paths(&path) {
-        if directory.canonicalize().ok().as_ref() == Some(&shims) {
-            continue;
-        }
-        let binary = directory.join(tool);
-        if !binary.is_file() {
-            continue;
-        }
-        let status = tokio::process::Command::new(binary)
-            .args(arguments)
-            .status()
-            .await?;
-        return Ok(status.code().unwrap_or(1));
-    }
-    anyhow::bail!("no local {tool} found outside sshpool shims")
+    let binary = sshpool::shim::local_binary(tool, &path, &shims)
+        .with_context(|| format!("no local {tool} found outside sshpool shims"))?;
+    let status = tokio::process::Command::new(binary)
+        .args(arguments)
+        .status()
+        .await?;
+    Ok(status.code().unwrap_or(1))
 }
 #[tokio::main]
 async fn main() {
