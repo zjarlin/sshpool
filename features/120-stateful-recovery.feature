@@ -20,7 +20,10 @@ Feature: sub2api PostgreSQL Redis 一致性恢复
     And 生产 PostgreSQL 与 Redis 实例不被恢复流程替换
     And 明确记录备份时间之后的非零 RPO
 
-  @planned @p0
+  # 数据层已验收：两侧内容级指纹逐项相等、切回后可重新写入、操作记录可复核。
+  # 仍未覆盖真实 sub2api 容器与入口层流量切换，因此是 partial 而不是 verified。
+  # evidence: tests/migration_live.rs::demonstration_data_migrates_and_switches_back
+  @partial @automated @p0
   Scenario: 在演示数据上验收迁移和切回
     Given 独立创建的演示数据库和已验证备份
     When 停写并执行一致性恢复和切回

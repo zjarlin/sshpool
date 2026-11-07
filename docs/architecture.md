@@ -50,6 +50,8 @@
 
 指标走独立的 `metrics_listen`（默认关闭，启动行打印 `metrics=off` 或实际地址），不挂在 `/v1/...` 上：Prometheus 默认 15 秒抓一次，走控制面路由会经 `audit_access` 在几分钟内冲掉 12 MiB 的有界审计。抓取只读 `health_snapshot` 缓存，不触发远端探测。抓取要求**根 token**（`Bearer`，恒时比较，与 API 共用 `src/token.rs`）或一条带 `scrape` 的短期凭据（走 `credentials::verify`，因此撤销与到期在下一次抓取生效）；两者都不匹配一律 401 且不输出样本，配置 TLS 时该端口共用同一份证书。权限是**两个方向都隔离**的：带 `read` / `submit` / `cancel` / `admin` 的 API 凭据抓不到指标，`scrape` 凭据也没有任何 `/v1/...` 路由 —— 前者防止借出的工作台顺带看到集群拓扑，后者让 Prometheus 不必持运维全权 token。抓取不写访问审计，所以「谁抓过」不在 `access.jsonl` 里。默认只允许绑回环地址，跨主机抓取要显式 `metrics_allow_remote = true` 且必须配 TLS。暴露的仍只有节点名与数值。
 
+`src/migration.rs` 把「迁移成功」变成可比较的判断：PostgreSQL 每张表的行数与行内容摘要、每个序列的 `last_value`，Redis 每个键的类型、值摘要与过期时间分钟桶，两侧统一按名字排序后逐项比对；解析任何一行不合约定就失败关闭。它同时提供链式操作日志（`hash` 覆盖序号、时刻、步骤、详情与前一条摘要），可以在迁移进程退出后离线复核顺序与内容。模块只做判定与记录，容器编排在 `tests/migration_live.rs` 里，两者共用同一份 SQL 与 Lua。见 [验证记录](validation.md#stateful-migration)。
+
 Docker 容器共享内核，不能用此原型承诺对恶意租户的强隔离。公司重要主机建议使用专用计算 VM 或 rootless Docker，并持续更新运行时。宿主业务的突发负载仍可能影响任务，需要实测预留量。
 
 工作台用户本身能编辑自己的工作台文件；任务容器只能看到显式提交的源码。两种权限不要混淆。构建时不要让源码同步工具并发更改项目文件。

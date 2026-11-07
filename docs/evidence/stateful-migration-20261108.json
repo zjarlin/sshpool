@@ -1,0 +1,98 @@
+{
+  "schema": 1,
+  "checked_at": "2026-11-08T02:01:00+08:00",
+  "scope": "演示数据（PostgreSQL + Redis）在两个一次性隔离环境之间的完整迁移与切回；不包含真实 sub2api 容器、入口层流量切换与 RPO/RTO 承诺",
+  "privacy": {
+    "addresses_removed": true,
+    "credentials_removed": true,
+    "private_paths_removed": true,
+    "business_rows_removed": true,
+    "identifier_note": "演练资源名含一次性 UUID，本报告不保留；口令在测试源码里就是显式占位值"
+  },
+  "entry": {
+    "test": "tests/migration_live.rs",
+    "command": "SSHPOOL_LIVE_NODE=sshpool-anchor cargo test --test migration_live -- --ignored --nocapture --test-threads=1",
+    "why": "判据是两侧内容级指纹逐项相等与链式操作日志可复核，不是 pg_restore 的退出码"
+  },
+  "worker": {
+    "alias": "sshpool-anchor",
+    "arch": "aarch64",
+    "docker": "29.1.3",
+    "images": [
+      "postgres:16-alpine",
+      "redis:8-alpine"
+    ]
+  },
+  "isolation": {
+    "topology": "两个独立 PostgreSQL 实例 + 两个独立 Redis 实例，各自独立卷；一次性 --internal 网络，无外网",
+    "postgres_write_fence": "alter system set default_transaction_read_only = on + pg_reload_conf()",
+    "redis_write_fence": "config set min-replicas-to-write 1（无副本，故任何写入被拒）",
+    "redis_role": "ACL SETUSER demo_app on >app-pw ~* +@all -@admin -config",
+    "cleanup": "全部容器/卷/网络/临时目录在结束时删除，且只核对本轮前缀，失败也走清理"
+  },
+  "dataset": {
+    "postgres_tables": 4,
+    "postgres_sequences": 3,
+    "redis_keys": 5,
+    "redis_databases": [
+      0,
+      3,
+      5
+    ],
+    "shapes": [
+      "billing.account / billing.charge 带外键与唯一约束",
+      "billing.ledger 无限定列，用于验证切回后的新写入",
+      "public.session 带 jsonb 负载",
+      "Redis 含一个带 TTL 的键、一个列表、一个哈希，跨三个库"
+    ]
+  },
+  "results": {
+    "restored_digest_equals_baseline": true,
+    "restored_equals_baseline": true,
+    "differences_after_restore": 0,
+    "switchback_digest_differs": true,
+    "switchback_change_observed": true,
+    "digest_note": "Redis 的过期时间按绝对到期时刻的分钟桶记录，所以同一份数据在不同时刻采集会得到不同 digest；判据是同一次演练内两侧相等，不是跨演练复现同一个值。因此本报告只记录「相等/不等」这个结论，不把某一轮的 digest 当作可复现常量。",
+    "journal_entries": 12,
+    "journal_chain_verified": true,
+    "postgres_dump_bytes": 8029,
+    "redis_rdb_bytes": 209,
+    "container_leftovers": 0
+  },
+  "journal": [
+    "environment-created",
+    "programs-uploaded",
+    "sources-ready",
+    "application-data-created",
+    "baseline-captured",
+    "sources-fenced",
+    "snapshot-taken",
+    "postgres-restored",
+    "redis-restored",
+    "target-verified",
+    "source-resumed",
+    "no-double-write"
+  ],
+  "assertions": {
+    "application_writes_rejected_after_fencing_postgres": true,
+    "application_writes_rejected_after_fencing_redis": true,
+    "application_role_cannot_change_fencing_config": true,
+    "restored_state_has_no_differences": true,
+    "restored_digest_equals_baseline": true,
+    "restore_uses_application_role": true,
+    "source_accepts_writes_after_switchback": true,
+    "switchback_write_is_visible_in_fingerprint": true,
+    "target_stays_frozen_across_switchback": true,
+    "missing_table_and_its_sequence_are_reported": true,
+    "journal_chain_detects_edits_reordering_and_gaps": true,
+    "no_containers_volumes_networks_or_paths_left": true
+  },
+  "assertions_total": 12,
+  "failed_assertions": [],
+  "boundaries": [
+    "没有真实 sub2api 应用容器参与，未验证应用侧连接串切换与重连去重",
+    "没有入口层流量切换，反向代理与长连接行为未覆盖",
+    "不承诺 RPO/RTO：停写窗口之外的增量不在本演练范围内",
+    "Redis 依赖 RDB 全量快照，未覆盖 AOF 重放与主从复制"
+  ]
+}

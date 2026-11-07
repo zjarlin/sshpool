@@ -601,6 +601,43 @@ Redis 8.10.2 使用独立容器和独立命名卷恢复，网络为 `none`。RDB
 - `sub2api-chatgptweb` 在备份前已存在 `Restarting (137)`，本轮未把它归因于备份流程或宣称该子服务健康。
 
 
+### 演示数据迁移与切回 {#stateful-migration}
+
+2026-11-08 在一次性隔离环境里跑了完整的 A→B→切回，而不是只跑一次 `pg_restore` 看退出码。`tests/migration_live.rs` 在两个真实 Worker 容器组之间做迁移，判据是**两侧内容级指纹逐项相等**：PostgreSQL 每张表的行数与行内容摘要、每个序列的 `last_value`，Redis 每个键的类型、值摘要与过期时间分钟桶。
+
+```sh
+SSHPOOL_LIVE_NODE=sshpool-anchor \
+  cargo test --test migration_live -- --ignored --nocapture --test-threads=1
+```
+
+| 环节 | 做法 | 实测（`sshpool-anchor`，linux/arm64，Docker 29.1.3） |
+| --- | --- | --- |
+| 环境 | 两个独立 PostgreSQL（`postgres:16-alpine`）+ 两个独立 Redis（`redis:8-alpine`），各带独立卷；`--internal` 网络不许出网 | 4 容器 + 4 卷 + 1 网络，名字全带一次性 UUID |
+| 数据 | `billing.account`/`billing.charge`（外键 + 唯一约束）、`billing.ledger`、`public.session`；Redis DB0/3/5，含一个带 TTL 的键、一个列表、一个哈希 | 4 表、3 序列、5 键、3 个库 |
+| 停写 | PostgreSQL `default_transaction_read_only=on` + `pg_reload_conf()`；Redis `min-replicas-to-write 1`（无副本） | 用**应用用户**分别试写，报 `read-only` 与 `NOREPLICAS`；应用用户的 `config set` 报 `NOPERM` |
+| 导出 | `pg_dump -Fc` + `redis-cli save` | 归档 8029 B、RDB 209 B |
+| 恢复 | 先建同一应用角色与库归属，再 **以应用用户** `pg_restore -U demo_app --no-owner --no-acl --exit-on-error`；RDB 放进 B 的卷后重启加载 | 两侧指纹相等，差异 0 条；4 表/3 序列/5 键/3 库逐项对齐 |
+| 切回 | 撤掉两侧隔离，A 用**应用用户的 ACL 凭据**重新接写 | A 的 `INSERT` 与 `SET` 都成功，指纹随之改变（`billing.ledger` 与一个 Redis 键被报为新增） |
+| 双写 | 切回后比较 A 与 B | B 没有出现 A 不存在的行；B 保持冻结 |
+| 收尾 | 删容器/卷/网络/临时目录，且失败也走清理 | 本轮前缀残留 0 |
+
+指纹里 Redis 的过期时间记的是**绝对到期时刻的分钟桶**，所以同一份数据在不同时刻采集必然得到不同 digest；判据只能是「同一次演练内 A 与 B 相等」，不能把某个 digest 当成跨轮固定值。这也是为什么证据只记录「相等/不等」这个结论。
+
+另外三条不靠「看起来对」的断言：
+
+- **恢复必须用应用用户**。若用超级用户导入，`demo_app` 读 `billing` schema 会 `permission denied`；这条以前是靠踩坑才知道的，现在写进测试。
+- **「恢复了但少了数据」不算成功**。第二个测试删掉 `billing.charge` 后采集指纹，必须同时报出该表**及其序列** `billing.charge_id_seq`；只比表数或只看 `pg_restore` 退出码都抓不到。
+- **操作记录可复核**。每一步写一条链式日志（`hash` 覆盖序号、时刻、步骤、详情与前一条摘要），单元测试覆盖改一条、删一条、换顺序、跳号四种伪造；实测一轮 12 条且校验通过。
+
+证据文件：[evidence/stateful-migration-20261108.json](evidence/stateful-migration-20261108.json)（12 条断言全为 true，`failed_assertions` 为空）。
+
+边界（因此这个场景记为 `@partial` 而不是 `@verified`）：
+
+- 参与的是演示 schema，不是真实 `sub2api` 应用容器；应用侧连接串切换、重连去重、计费/队列在切回后的行为都未覆盖。
+- 没有入口层流量切换：反向代理、长连接、DNS 都未参与，「切回」只到数据层可写为止。
+- 不承诺 RPO/RTO：停写窗口之外的增量不在范围内。
+- Redis 走 RDB 全量快照，未覆盖 AOF 重放与主从复制；PostgreSQL 未覆盖 WAL 归档与流复制。
+
 ## watchdog-cleanup-proof
 
 2026-11-07 把「清理未确认时禁止换机重跑」从一句注释变成可执行的证据链。之前的实现只会把 Worker 隔离，并要求重启控制面才能恢复接单；现在隔离状态可以在线解除，且解除依据可复现。

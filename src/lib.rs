@@ -10,6 +10,7 @@ pub mod gateway;
 pub mod isolation;
 pub mod lifecycle;
 pub mod metrics;
+pub mod migration;
 pub mod mirror;
 pub mod model;
 pub mod placement;
