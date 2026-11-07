@@ -176,6 +176,35 @@ Mac 上已安装专用 LaunchAgent，读取私有状态目录并启动独立 Lim
 
 当前验证使用 macOS ARM64 Rust 1.94 与 Linux ARM64 Rust 1.93。GitHub Linux/macOS CI 的实际结论以仓库运行结果为准。Windows 原生客户端、跨公网网络和恶意多租户隔离未验证。
 
+### 升级与到期任务清理 {#upgrade-and-retention}
+
+_（本节标题锚点为 `upgrade-and-retention`。）_
+
+`sshpool jobs inspect` / `sshpool jobs prune` 只改本机任务目录，不走 HTTP 接口，因此不扩大鉴权面。核对会拒绝而不是跳过无法解释的目录：非规范 UUID 目录名、缺 `job.json`、记录与目录名不一致、终态缺 `finished_at`、`.revision` 超前于已发布版本、`source.tar` 非法或摘要不符、声明了产物却缺 `artifacts.tar`、目录里出现未知文件/符号链接。控制面启动时的 `State::load` 对这些目录是静默跳过，清理若沿用同一语义就会把一个命名错误的历史任务永久留在磁盘上。
+
+| 不变量 | 实现 | 自动化 |
+| --- | --- | --- |
+| 活跃任务永不清理 | 只有 `succeeded`/`failed`/`cancelled` 进入候选 | `terminal_states_with_unconfirmed_cleanup_are_never_pruned` |
+| `interrupted` 永不清理 | 它可能被 `node reconcile` 自动重跑 | 同上 |
+| 清理必须逐个确认 | 逐 attempt 取 `Some(confirmed)`，`None` 回退到顶层标志 | `legacy_records_without_per_attempt_cleanup_follow_the_top_level_flag` |
+| 年龄与最近保留同时满足 | `finished_at + older_than_secs <= now` 且不在 `keep_last` 内 | `keep_last_and_age_are_both_required_before_a_job_qualifies` |
+| 归档必须可恢复 | 写出后核对摘要，再 `install_bundle` 重新安装并逐字段比对 | `apply_writes_a_restorable_bundle_and_moves_instead_of_deleting` |
+| 移动而非删除 | 任务目录移入 `backups/jobs/pruned-<ts>-<uuid>/`，只有 `--purge` 才回收 | `purge_reclaims_the_moved_directory_keeps_the_bundle` |
+| 失败整批回滚 | 任一候选失败即把本批已移动目录移回，并删掉半成品归档 | `retention::tests::a_late_failure_restores_every_moved_directory_and_drops_partial_bundles` |
+| 计划与执行之间不得变更 | 用同一时钟重新生成候选集合并逐项比对 | `apply_is_idempotent_after_a_clean_run_and_rejects_a_stale_plan` |
+| 不碰运行中的控制面 | 独占 `controller.lock` 失败即拒绝 | 见下方 CLI 实录 |
+| 旧记录先补齐再清理 | 缺摘要时阻塞，`replica adopt` 补摘要后可继续 | `adopting_a_legacy_record_unblocks_pruning` |
+| 半成品归档必须撤销 | 取包后校验失败则删归档、把目录移回 `jobs/` | `retention::tests::a_stage_failure_removes_the_untrusted_bundle_and_keeps_the_task_in_place` |
+| purge 失败不丢报告 | 第一条失败即停止，归档保留，实际进度走 stderr | `retention::tests::a_purge_failure_stops_at_the_first_error_and_keeps_archives` |
+
+真实二进制在临时 home 上的实测（`--older-than-days 30 --keep-last 0`）：`inspect` 报 1 个任务、0 个 blocker；dry-run 列出 1 个候选且目录仍在 `jobs/`；`--apply` 生成 14336 字节归档（SHA-256 `be09806b…`），任务目录移入 `backups/jobs/pruned-…/`，`remaining_jobs=0`。再执行一次是干净的空计划（退出码 0、`pruned=0`），`backups/jobs/` 仍只有 1 个批次目录 —— 命令行每次都重新生成计划，所以"过期计划"只会出现在库层调用；该断言由 `apply_is_idempotent_after_a_clean_run_and_rejects_a_stale_plan` 覆盖，不是 CLI 行为。对一个被 `flock` 持有的 `controller.lock` 执行 `--apply`，退出码 1，错误为 `controller is running on this home; stop it before pruning`。往 `jobs/` 放一个指向 `/tmp` 的符号链接后，`inspect` 退出码 2 并报 `task entry is a symbolic link`，`prune` 退出码 1 拒绝执行；空 `jobs/` 上 `inspect`/`apply` 都干净返回且不生成批次目录。
+
+再把**本机生产状态目录只读复制**到 `/tmp`（未改动生产）并用 release 二进制清理：`inspect` 报 7 个任务、1,037,065 字节、0 个 blocker；`--older-than-days 1 --keep-last 0` 选出 5 条（2 个 `failed`、3 个 `succeeded`），`interrupted` 的 `1fe5b0f1` 与最年轻的 `26757349` 被跳过；`--apply` 移动 571,783 字节、生成 593,920 字节归档，`jobs/` 只剩 2 条、465,282 字节。逐个重算归档摘要一致，`job.json` 逐字段一致（差异仅为 serde 在重写时补出的 `attempts[].watchdog_deadline` / `cleanup_proof: null` 默认值）。证据见 [evidence/retention-20261107.json](evidence/retention-20261107.json)。
+
+生产状态目录本身只做了 `inspect` 与 dry-run（`--older-than-days 7 --keep-last 3` 计划为空：`1fe5b0f1` 因 `interrupted` 被排除，其余因 `keep_last` 或年龄未到而保留），没有真正清理。
+
+尚未覆盖：跨主机副本的保留（远端副本仍需 `replica sync` 自行管理）、`backups/jobs/` 自身的容量上限与再压缩、`--purge` 后的归档恢复演练（`install_bundle` 只在临时目录验证，没有替换过真实控制面状态）。
+
 ## hardware-proof
 
 2026-11-07 起，这条链路有可复跑的 `#[ignore]` 测试：`tests/hardware_live.rs`。它在测试进程内启动临时控制面（临时 home + 回环随机端口），由 **ARM64 工作台执行真实 CLI** 通过 `host.lima.internal` 访问该控制面，再派发到独立 x86_64 Worker。

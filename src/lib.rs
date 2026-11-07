@@ -11,6 +11,7 @@ pub mod mirror;
 pub mod model;
 pub mod probe;
 pub mod reconcile;
+pub mod retention;
 pub mod runner;
 pub mod scheduler;
 pub mod shim;

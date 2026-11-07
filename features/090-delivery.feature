@@ -24,7 +24,8 @@ Feature: 部署发布和运维
     Then 提供经过兼容性验证的二进制和校验和
     And 说明支持的系统版本
 
-  @planned @p1
+  # evidence: tests/retention.rs::adopting_a_legacy_record_unblocks_pruning
+  @verified @automated @p1
   Scenario: 升级迁移和状态保留
     Given 有历史配置和任务归档
     When 升级或清理到期任务

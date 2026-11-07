@@ -65,8 +65,11 @@ enum Action {
     },
     /// 从运行中的控制面读取节点状态。
     Status,
-    /// 列出持久化任务记录。
-    Jobs,
+    /// 查看任务记录，或离线核对与清理任务库。
+    Jobs {
+        #[command(subcommand)]
+        command: Option<JobsAction>,
+    },
     /// 查看任务阶段与清理记录。
     Events { id: uuid::Uuid },
     /// 使用项目 sshpool.toml 提交隔离构建。
@@ -102,6 +105,28 @@ enum Action {
         tool: String,
         #[arg(last = true)]
         arguments: Vec<String>,
+    },
+}
+#[derive(Subcommand)]
+enum JobsAction {
+    /// 从运行中的控制面列出任务记录。
+    List,
+    /// 离线核对任务目录、摘要和版本预留；不修改任何文件。
+    Inspect,
+    /// 生成到期任务清理计划；默认只打印计划。
+    Prune {
+        /// 结束时间早于该天数的终态任务才会进入候选。
+        #[arg(long, default_value_t = 30)]
+        older_than_days: u64,
+        /// 最近完成的这么多条任务无论多旧都保留。
+        #[arg(long, default_value_t = 10)]
+        keep_last: usize,
+        /// 真正执行：先写可恢复归档，再把任务目录移出 jobs/。
+        #[arg(long)]
+        apply: bool,
+        /// 与 apply 连用：归档仍保留，但被移出的任务目录不再占用磁盘。
+        #[arg(long, requires = "apply")]
+        purge: bool,
     },
 }
 #[derive(Subcommand)]
@@ -281,10 +306,49 @@ async fn dispatch(cli: Cli) -> Result<i32> {
             "{}",
             serde_json::to_string_pretty(&client(&cli, &home)?.get("/v1/status").await?)?
         ),
-        Action::Jobs => println!(
-            "{}",
-            serde_json::to_string_pretty(&client(&cli, &home)?.get("/v1/jobs").await?)?
-        ),
+        Action::Jobs { command } => match command {
+            None | Some(JobsAction::List) => println!(
+                "{}",
+                serde_json::to_string_pretty(&client(&cli, &home)?.get("/v1/jobs").await?)?
+            ),
+            Some(JobsAction::Inspect) => {
+                let config = config::read(&home)?;
+                let report = sshpool::retention::inspect(&home, &config)?;
+                println!("{}", serde_json::to_string_pretty(&report)?);
+                if !report.blockers.is_empty() {
+                    return Ok(2);
+                }
+            }
+            Some(JobsAction::Prune {
+                older_than_days,
+                keep_last,
+                apply,
+                purge,
+            }) => {
+                let config = config::read(&home)?;
+                let seconds = older_than_days
+                    .checked_mul(86_400)
+                    .context("retention age overflows seconds")?;
+                let plan = sshpool::retention::plan(
+                    &home,
+                    &config,
+                    seconds,
+                    *keep_last,
+                    sshpool::model::now(),
+                )?;
+                // 标准输出只能有一种 JSON 文档：计划与执行结果分开打印会让脚本无法解析。
+                if !apply {
+                    println!("{}", serde_json::to_string_pretty(&plan)?);
+                    eprintln!(
+                        "dry run: {} task(s) would be archived and moved out of jobs/; pass --apply to execute",
+                        plan.candidates.len()
+                    );
+                    return Ok(0);
+                }
+                let report = sshpool::retention::apply(&home, &config, &plan, *purge)?;
+                println!("{}", serde_json::to_string_pretty(&report)?);
+            }
+        },
         Action::Events { id } => println!(
             "{}",
             serde_json::to_string_pretty(

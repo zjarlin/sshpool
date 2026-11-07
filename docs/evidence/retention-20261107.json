@@ -1,0 +1,176 @@
+{
+  "checked_at": "2026-11-07T12:20:00+08:00",
+  "scope": "090 升级迁移和状态保留：离线核对、可恢复归档与移动式清理",
+  "implementation": {
+    "module": "src/retention.rs",
+    "cli": [
+      "sshpool jobs inspect",
+      "sshpool jobs prune --older-than-days N --keep-last K [--apply [--purge]]"
+    ],
+    "transport": "纯本地文件操作；不新增 HTTP 路由，不扩大鉴权面",
+    "lock": "apply 独占 home/controller.lock；控制面在跑时拒绝"
+  },
+  "automated": {
+    "suite": "tests/retention.rs（11 个测试）+ src/retention.rs 内 3 个回滚/purge 注入测试，均无 Docker/SSH",
+    "verified": [
+      "非规范 UUID 目录/缺 job.json 是 blocker，不是静默跳过",
+      "源码摘要不符、.revision 超前、终态缺 finished_at、未知文件/符号链接均为 blocker",
+      "只清理 succeeded/failed/cancelled；interrupted 与活跃任务永不清理",
+      "清理逐个 attempt 确认，None 回退到顶层标志，Some(false) 不被顶层覆盖",
+      "finished_at + older_than_secs <= now 且在 keep_last 之外才进候选",
+      "归档写出后核对摘要，再 install_bundle 重新安装并比对记录",
+      "任务目录移动到 backups/jobs/pruned-<ts>-<uuid>/，只有 --purge 才回收",
+      "任一候选失败即整批回滚已移动目录，并删除半成品归档",
+      "计划与执行之间任务库变化时拒绝执行",
+      "缺 source_sha256 的旧记录阻塞清理，replica adopt 后可继续",
+      "归档中途失败（结束时间在取包之后变化）会删除半成品归档并把目录留在 jobs/",
+      "purge 第一条失败即停止，后续目录保留，归档不删"
+    ]
+  },
+  "real_cli": {
+    "topology": "release 二进制 + 真实临时 home（sshpool init 生成 token/config）",
+    "steps": {
+      "inspect": "1 个任务、0 blockers、bundle_ready=true",
+      "dry_run": "1 个候选；jobs/ 内目录仍在",
+      "apply": "生成 14336 字节归档（SHA-256 be09806b…），目录移入 backups/jobs/pruned-<ts>-<uuid>/，remaining_jobs=0",
+      "stale_reapply": "命令行每次重新计划：第二次 --apply 是空计划（退出码 0、pruned=0、不生成新批次目录）。过期计划拒绝只存在于库层调用，由 apply_is_idempotent_after_a_clean_run_and_rejects_a_stale_plan 覆盖",
+      "running_controller": "对 flock 持有的 controller.lock 执行 --apply，退出码 1，错误 controller is running on this home",
+      "symbolic_link_blocker": "在 jobs/ 放一个指向 /tmp 的符号链接：inspect 退出码 2 并报 task entry is a symbolic link；prune 退出码 1 且拒绝执行",
+      "empty_store": "空 jobs/：inspect 0 任务 0 blocker；apply 不生成任何批次目录"
+    }
+  },
+  "production_copy": {
+    "source": "本机 ~/.sshpool 的 config/token/jobs 只读复制到 /tmp 临时目录（未改动生产状态）",
+    "inspect": {
+      "jobs": 2,
+      "total_bytes": 465282,
+      "blockers": []
+    },
+    "dry_run_7d_keep3": {
+      "candidates": [],
+      "skipped": [
+        [
+          "1fe5b0f1-cbb2-4328-9038-5742297fea6c",
+          "interrupted task may still be resumed by reconcile"
+        ],
+        [
+          "26757349-13e7-4a74-9fd4-17520a2c76bf",
+          "kept by keep_last=3"
+        ],
+        [
+          "298b9c97-748f-4a28-a291-e31aba0efa0d",
+          "kept by keep_last=3"
+        ],
+        [
+          "c59d51c4-cf2e-4123-9a74-641e0c25f4f0",
+          "kept by keep_last=3"
+        ],
+        [
+          "4c6a58c4-7e95-4d9a-9fb3-ec6990f181aa",
+          "finished too recently for this retention age"
+        ],
+        [
+          "2392d158-8993-4ed4-8362-29401a932d24",
+          "finished too recently for this retention age"
+        ],
+        [
+          "0ff96aa3-4968-4dec-b76a-3d35a023cba0",
+          "finished too recently for this retention age"
+        ]
+      ]
+    },
+    "apply_1d_keep0": {
+      "pruned": 5,
+      "job_bytes_moved": 571783,
+      "bundle_bytes": 593920,
+      "remaining_jobs": 2,
+      "remaining_bytes": 465282,
+      "staged_root": "pruned-1794052241-ef7fa339-bc70-45d8-9d53-0aa720b6951c"
+    },
+    "pruned_detail": [
+      {
+        "job": "0ff96aa3-4968-4dec-b76a-3d35a023cba0",
+        "phase": "failed",
+        "bundle_bytes": 7680,
+        "bundle_sha256": "a16e6eefaabbe05fd1ca3e779f9c38a1e01c0ceb2cb0819f6e7ce21bc5c0a25b",
+        "bundle_sha256_recomputed": "a16e6eefaabbe05fd1ca3e779f9c38a1e01c0ceb2cb0819f6e7ce21bc5c0a25b",
+        "bundle_members": [
+          ".revision",
+          "job.json",
+          "source.tar"
+        ],
+        "purged": false
+      },
+      {
+        "job": "2392d158-8993-4ed4-8362-29401a932d24",
+        "phase": "failed",
+        "bundle_bytes": 7680,
+        "bundle_sha256": "aa0734d88d2b6fa823caaebba0f42198bd74bf00bc192d265147bfc25f7e6c7c",
+        "bundle_sha256_recomputed": "aa0734d88d2b6fa823caaebba0f42198bd74bf00bc192d265147bfc25f7e6c7c",
+        "bundle_members": [
+          ".revision",
+          "job.json",
+          "source.tar"
+        ],
+        "purged": false
+      },
+      {
+        "job": "4c6a58c4-7e95-4d9a-9fb3-ec6990f181aa",
+        "phase": "succeeded",
+        "bundle_bytes": 11776,
+        "bundle_sha256": "320966f854d50dc604730617ce0874e5c7cc684ba0a512b38e113c4d5615999e",
+        "bundle_sha256_recomputed": "320966f854d50dc604730617ce0874e5c7cc684ba0a512b38e113c4d5615999e",
+        "bundle_members": [
+          ".revision",
+          "artifacts.tar",
+          "job.json",
+          "log.txt",
+          "source.tar"
+        ],
+        "purged": false
+      },
+      {
+        "job": "c59d51c4-cf2e-4123-9a74-641e0c25f4f0",
+        "phase": "succeeded",
+        "bundle_bytes": 550400,
+        "bundle_sha256": "cf28856bb4aa480734f779e726652cba92ef35adbe2caac9c08c584418a63cd8",
+        "bundle_sha256_recomputed": "cf28856bb4aa480734f779e726652cba92ef35adbe2caac9c08c584418a63cd8",
+        "bundle_members": [
+          ".revision",
+          "artifacts.tar",
+          "job.json",
+          "log.txt",
+          "source.tar"
+        ],
+        "purged": false
+      },
+      {
+        "job": "298b9c97-748f-4a28-a291-e31aba0efa0d",
+        "phase": "succeeded",
+        "bundle_bytes": 16384,
+        "bundle_sha256": "f7dc955fa0b024240b682026bc2b8e7e89959e063ca2010539eb7c651e1c2645",
+        "bundle_sha256_recomputed": "f7dc955fa0b024240b682026bc2b8e7e89959e063ca2010539eb7c651e1c2645",
+        "bundle_members": [
+          ".revision",
+          "artifacts.tar",
+          "events.jsonl",
+          "job.json",
+          "log.txt",
+          "source.tar"
+        ],
+        "purged": false
+      }
+    ],
+    "records": {
+      "verified": "5 个任务的归档摘要重算一致；job.json 逐字段一致（除 serde 默认值补全：attempts[].watchdog_deadline/cleanup_proof）",
+      "kept": "interrupted 任务 1fe5b0f1 未进候选；最新任务 26757349 因年龄未到保留"
+    },
+    "note": "本轮用 release 二进制对 ~/.sshpool 只读副本执行，输出摘要如下；权威记录在 docs/validation.md#upgrade-and-retention"
+  },
+  "boundaries": [
+    "只处理本机 home；远端副本的保留流程未在本轮验收",
+    "backups/jobs 自身没有容量上限或再压缩策略",
+    "--purge 之后没有做过「用归档替换真实控制面状态」的演练；install_bundle 只在临时目录验证",
+    "生产状态目录只做了 inspect 与计划，没有真正清理；清理能力在真实数据的副本上验证"
+  ]
+}

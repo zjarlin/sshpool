@@ -133,7 +133,10 @@ queue_priority = 0
 
 ```sh
 sshpool run
-sshpool jobs
+sshpool jobs                      # 等价于 jobs list：从运行中的控制面列任务
+sshpool jobs inspect              # 离线核对任务目录、摘要与版本预留
+sshpool jobs prune --older-than-days 30 --keep-last 10          # 只打印计划
+sshpool jobs prune --older-than-days 30 --keep-last 10 --apply  # 归档并移出 jobs/
 sshpool logs <job-id>
 sshpool fetch <job-id>
 sshpool cancel <job-id>
@@ -172,7 +175,7 @@ export SSHPOOL_TOKEN_FILE="$HOME/.sshpool/token"
 - tmpfs 避免写满业务磁盘，但大型构建需要相应内存。不能把多个 Worker 的内存合并给一个任务。
 - 资源探测是快照，业务负载仍可能突然增长。预留量需要按部署测量，容器和虚拟化引擎必须支持并实际执行 cgroup 限额。
 - Docker Desktop 的内部磁盘与空闲内存不能仅由宿主指标完全判断。任务不会自动拉镜像，工作区不使用宿主磁盘；镜像维护仍由运维负责。
-- 不自动同步已有工程或清理公司文件。任务记录与源码归档当前保留供诊断；应在控制面停机后按保留策略管理专用状态目录。
+- 不自动同步已有工程或清理公司文件。任务记录与源码归档当前保留供诊断。清理必须离线执行：`jobs prune` 会独占 `controller.lock`，控制面在跑时直接拒绝。只有 `succeeded`/`failed`/`cancelled`、结束时间已知、且清理逐个确认的任务才可能进入候选；`interrupted` 可能被自动重跑，永不清理。任何无法解释的任务目录（非规范 UUID、缺 `job.json`、摘要不符、版本预留超前、未知文件）都会阻塞整批清理，而不是被静默跳过。执行时先写出经摘要核对、并实际重新安装验证过的归档到 `backups/jobs/`，再把任务目录移到 `backups/jobs/pruned-<ts>-<uuid>/`；加 `--purge` 才回收这份移动目录，归档始终保留。
 - 不保证入口 Mac 关机、休眠或重启时会话在线。任务状态副本能保存已确认记录，但入口 SSH 和控制器不会自动漂移；恢复机需要独立保存的配置、token 与 SSH 凭据。
 - 不提供 NAT 穿透；复用已有 SSH ProxyJump/ProxyCommand 或受控网络。没有新增路由、隧道或端口映射。
 
