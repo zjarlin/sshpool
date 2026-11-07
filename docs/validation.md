@@ -4,9 +4,15 @@
 
 ## ssh
 
-在 Apple Silicon 宿主上的 Lima Linux 工作台验证：统一 SSH 别名返回 Linux aarch64；从控制客户端使用 scp/SFTP 上传文件；工作台没有宿主 home 的 virtiofs 挂载。完整 IDE 安装和自动重连尚未验收。
+统一入口是字节透传，认证、PTY、SFTP 和转发都由后端 OpenSSH 完成。2026-11-07 用可复跑脚本核对过「统一入口 vs 直连工作台」的等价性：
 
-自动化验证 `gateway_preserves_full_duplex_bytes_and_half_close` 确认双向二进制字节和半关闭语义。
+```sh
+scripts/check-ssh-parity.sh 2222 2223      # 入口端口、直连端口；输出 JSON
+```
+
+同一份本地输入（文本 + 256 KiB 随机二进制）分别经两个入口执行 PTY、scp、sftp、rsync 和 `-L` 本地端口转发，比较的是远端 sha256 与真实响应内容，而不是退出码：四项文件操作两端摘要一致，转发取回非空响应，两个入口的 ed25519 主机公钥相同（代理没有替换后端身份）。原始输出在 [evidence/ssh-parity-20261107.json](evidence/ssh-parity-20261107.json)。
+
+边界：只覆盖本机 loopback 的 `-L` 转发，不含 `-R` / `-D`；不覆盖 VS Code Remote SSH、JetBrains Gateway 等 IDE/AI 客户端的安装与重连（那是单独的待验收场景）。SSH 会话落在稳定工作台，与构建任务在隔离容器内执行是两件事。
 
 ## nodes
 

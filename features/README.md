@@ -12,7 +12,7 @@
 
 | 功能文件 | 已验证 | 部分完成 | 待实现 | 研究 |
 | --- | ---: | ---: | ---: | ---: |
-| [001-workspace.feature](001-workspace.feature) | 2 | 1 | 1 | 0 |
+| [001-workspace.feature](001-workspace.feature) | 3 | 0 | 1 | 0 |
 | [010-nodes.feature](010-nodes.feature) | 3 | 1 | 0 | 0 |
 | [020-scheduling.feature](020-scheduling.feature) | 6 | 0 | 1 | 0 |
 | [030-data-boundaries.feature](030-data-boundaries.feature) | 6 | 0 | 0 | 0 |
@@ -33,4 +33,4 @@
 | [180-ssi-device-order.feature](180-ssi-device-order.feature) | 1 | 1 | 0 | 4 |
 | [190-ssi-physical-storage.feature](190-ssi-physical-storage.feature) | 4 | 2 | 1 | 1 |
 | [200-control-state-recovery.feature](200-control-state-recovery.feature) | 13 | 1 | 0 | 1 |
-| 合计 | 98 | 23 | 17 | 30 |
+| 合计 | 99 | 22 | 17 | 30 |

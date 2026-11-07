@@ -1,0 +1,99 @@
+{
+  "checked_at": "2026-11-07T17:06:28+0800",
+  "scope": "unified SSH entry vs direct workspace OpenSSH: PTY, SFTP, scp, rsync, local port forwarding, host key",
+  "script": "scripts/check-ssh-parity.sh <entry-port> <direct-port> [host] [user]",
+  "setup": {
+    "entry": "127.0.0.1:2222 (sshpool gateway, byte-transparent to 127.0.0.1:2223)",
+    "direct": "127.0.0.1:2223 (lima sshpool backend OpenSSH)",
+    "host_key_alias": "sshpool-linux",
+    "identity": "~/.lima/_config/user"
+  },
+  "method": "同一份本地输入（文本 + 256KiB 随机二进制）分别经两个入口执行同样的操作；比较远程摘要与本机摘要，而不是只看退出码。",
+  "result": {
+    "entry_port": 2222,
+    "direct_port": 2223,
+    "host": "127.0.0.1",
+    "checks": [
+      {
+        "check": "pty",
+        "port": 2222,
+        "ok": true,
+        "detail": "/dev/pts/0stdin-tty"
+      },
+      {
+        "check": "scp",
+        "port": 2222,
+        "ok": true,
+        "detail": "sha256=fa02cfcdd4a56696f1cfafc6f75198dca0ef2a874f0e1be77986210c940a710b"
+      },
+      {
+        "check": "sftp",
+        "port": 2222,
+        "ok": true,
+        "detail": "sftp.txt uploaded"
+      },
+      {
+        "check": "rsync",
+        "port": 2222,
+        "ok": true,
+        "detail": "sha256=fa02cfcdd4a56696f1cfafc6f75198dca0ef2a874f0e1be77986210c940a710b"
+      },
+      {
+        "check": "forward",
+        "port": 2222,
+        "ok": true,
+        "detail": "local 18222 -> remote 18302, 391 bytes"
+      },
+      {
+        "check": "pty",
+        "port": 2223,
+        "ok": true,
+        "detail": "/dev/pts/0stdin-tty"
+      },
+      {
+        "check": "scp",
+        "port": 2223,
+        "ok": true,
+        "detail": "sha256=fa02cfcdd4a56696f1cfafc6f75198dca0ef2a874f0e1be77986210c940a710b"
+      },
+      {
+        "check": "sftp",
+        "port": 2223,
+        "ok": true,
+        "detail": "sftp.txt uploaded"
+      },
+      {
+        "check": "rsync",
+        "port": 2223,
+        "ok": true,
+        "detail": "sha256=fa02cfcdd4a56696f1cfafc6f75198dca0ef2a874f0e1be77986210c940a710b"
+      },
+      {
+        "check": "forward",
+        "port": 2223,
+        "ok": true,
+        "detail": "local 18223 -> remote 18303, 391 bytes"
+      },
+      {
+        "check": "host_key",
+        "port": 0,
+        "ok": true,
+        "detail": "SHA256:arDhDVlkKpR+EuqBfcZFnbxKVe62drTddzxpumIEEqk"
+      }
+    ],
+    "passed": true
+  },
+  "observations": {
+    "pty": "两个入口都返回真实的 /dev/pts/N，且远端 stdin 是 tty",
+    "scp": "二进制上传后远端 sha256 与本机一致（两个入口同一摘要）",
+    "sftp": "sftp -b 批量上传成功",
+    "rsync": "目录同步后 rand.bin 摘要与本地一致",
+    "forward": "远端 127.0.0.1 上的 HTTP 服务经 -L 本地转发取回非空响应（391 bytes 目录列表）",
+    "host_key": "两个入口呈现同一 ed25519 主机公钥；代理没有替换后端身份"
+  },
+  "boundaries": [
+    "只证明字节透传对这些协议等价；不证明 IDE/AI 客户端的安装与重连行为",
+    "端口转发验证的是本机 loopback 到远端 loopback；不覆盖反向转发（-R）与动态转发（-D）",
+    "SSH 会话本身走稳定工作台；构建任务仍在隔离容器内执行，不是同一件事"
+  ]
+}

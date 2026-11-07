@@ -16,12 +16,14 @@ Feature: 一个稳定的 Linux SSH 工作台
     When 双方发送二进制数据并半关闭输入
     Then 双向内容与 EOF 语义保持一致
 
-  # evidence: docs/validation.md#ssh
-  @partial @manual @p0
+  # evidence: scripts/check-ssh-parity.sh
+  # evidence: docs/evidence/ssh-parity-20261107.json
+  @verified @automated @p0
   Scenario: 标准文件传输和端口转发
     Given 统一入口使用后端 OpenSSH 认证
     When 客户端使用 PTY SFTP scp rsync 或本地端口转发
     Then 操作效果与直连该工作台一致
+    And 两个入口呈现同一主机公钥
 
   @planned @p1
   Scenario: IDE 和 AI 客户端兼容矩阵
