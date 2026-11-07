@@ -282,14 +282,15 @@ const MAX_CONNECTIONS: usize = 32;
 /// 请求行加头部的硬上限；超过就当作坏请求，不继续读。
 const MAX_REQUEST_BYTES: usize = 8192;
 
-/// 极简抓取服务：只接受带根 token 的 `GET /metrics` 与 `GET /`。
+/// 极简抓取服务：只接受带根 token **或 `scrape` 凭据**的 `GET /metrics` 与 `GET /`。
 ///
 /// 抓取**不写访问审计**（Prometheus 15 秒一次会把有界日志冲掉），但也绝不留匿名入口：
-/// 指标里有节点名与资源水位，谁能连上端口就等于能看到集群拓扑。这里只认根 token，
-/// 短期凭据即使带 `read` 也不能抓 —— 指标是运维面，不是借出去的工作台接口。
+/// 指标里有节点名与资源水位，谁能连上端口就等于能看到集群拓扑。带 `read`/`submit`/
+/// `cancel`/`admin` 的 API 凭据不能抓 —— 抓取是独立的权限，借出去的工作台不该顺带
+/// 拿到集群水位；反过来 `scrape` 也不打开任何 `/v1/...` 路由。
 ///
 /// 每条连接在独立任务里完成，并带读超时与连接上限。配置了 TLS 时该端口同样走 TLS
-/// （与控制面共用同一份证书），因此根 token 不会以明文跨网络。
+/// （与控制面共用同一份证书），因此 token 不会以明文跨网络。
 pub async fn serve(
     listener: tokio::net::TcpListener,
     state: Arc<State>,
@@ -434,7 +435,11 @@ fn decide(request: &[u8], state: &State) -> Decision {
     }
 }
 
-/// 头部名大小写不敏感；只接受整行 `Bearer <根 token>`，与 API 共用恒时比较。
+/// 头部名大小写不敏感；接受整行 `Bearer <根 token>`，或一条带 `scrape` 的短期凭据。
+///
+/// 根 token 走与 API 相同的恒时比较；凭据走 `credentials::verify`，因此撤销与到期
+/// 在**下一次抓取**就生效，不需要重启控制面。凭据库损坏时这里同样 fail-closed：
+/// 只保留根 token，不让「坏文件」变成放行。
 fn authorized(text: &str, state: &State) -> bool {
     let actual = text
         .split("\r\n")
@@ -442,7 +447,21 @@ fn authorized(text: &str, state: &State) -> bool {
         .find(|(name, _)| name.eq_ignore_ascii_case("authorization"))
         .map(|(_, value)| value.trim())
         .unwrap_or("");
-    !actual.is_empty() && crate::token::same(actual, &format!("Bearer {}", state.token))
+    if actual.is_empty() {
+        return false;
+    }
+    if crate::token::same(actual, &format!("Bearer {}", state.token)) {
+        return true;
+    }
+    let token = actual.strip_prefix("Bearer ").unwrap_or("");
+    match crate::credentials::verify(&state.home, token, crate::model::now()) {
+        Ok(Some(grant)) => grant.allows(crate::credentials::Scope::Scrape),
+        Ok(None) => false,
+        Err(error) => {
+            eprintln!("sshpool: credential store unusable, rejecting metrics scrape: {error:#}");
+            false
+        }
+    }
 }
 
 /// 从共享状态取一份一致性快照：任务记录加当前健康快照。

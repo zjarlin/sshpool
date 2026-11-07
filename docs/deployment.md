@@ -47,7 +47,7 @@ Host sshpool
 python3 scripts/install-launch-agent.py --binary target/release/sshpool
 ```
 
-专用 LaunchAgent 在用户登录后启动 Lima 和控制面。它不会保证 Mac 休眠或未登录时持续服务。只在需要让其他设备访问时调整 `ssh_listen`；API 应保留回环绑定，或配上 `tls_cert`/`tls_key` 直接提供 HTTPS（私钥必须 `0600`、路径为绝对路径、两者必须成对），也可以放在可信 SSH 隧道后。跨主机借用控制面时用 `sshpool credential issue --subject <name> --ttl-hours N [--scope read|submit|cancel|admin]...` 发短期凭据，不要复制根 token；不写 `--scope` 只有 `read`，撤销即刻生效；凭据默认只能看到并取消自己提交的任务，越过属主边界需要 `admin`（等同运维权限，不要随手借出），`root` 是保留主体名不能签发。客户端用 `--ca-file`（或 `SSHPOOL_CA_FILE`）信任自建 CA，没有跳过证书校验的开关。
+专用 LaunchAgent 在用户登录后启动 Lima 和控制面。它不会保证 Mac 休眠或未登录时持续服务。只在需要让其他设备访问时调整 `ssh_listen`；API 应保留回环绑定，或配上 `tls_cert`/`tls_key` 直接提供 HTTPS（私钥必须 `0600`、路径为绝对路径、两者必须成对），也可以放在可信 SSH 隧道后。跨主机借用控制面时用 `sshpool credential issue --subject <name> --ttl-hours N [--scope read|submit|cancel|admin]...` 发短期凭据，不要复制根 token；不写 `--scope` 只有 `read`，撤销即刻生效；凭据默认只能看到并取消自己提交的任务，越过属主边界需要 `admin`（等同运维权限，不要随手借出），`root` 是保留主体名不能签发。Prometheus 抓指标**不要用根 token**，签发一把 `--scope scrape` 的凭据即可（它打不开任何 `/v1/...` 路由，撤销后下一次抓取即 401）；反过来带 API 权限的凭据也抓不到指标。客户端用 `--ca-file`（或 `SSHPOOL_CA_FILE`）信任自建 CA，没有跳过证书校验的开关。
 
 ## Worker
 

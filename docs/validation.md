@@ -228,7 +228,8 @@ _（本节标题锚点为 `access-network`。）_
 | 并发签发不丢记录 | `issue`/`revoke`/`prune` 先取 `credentials.lock` 排他锁再读改写 | `concurrent_issuance_does_not_lose_records`（去掉锁后 8 次并发只剩 1 条） |
 | 只清理已撤销且已过期 | 仍有效或"过期但没撤销"的记录都保留 | `prune_only_drops_credentials_that_expired_after_revocation` |
 | 坏库不锁死控制面 | 动态凭据校验 `Err` 时记 stderr 并返回 401，主 token 照常通过 | `dynamic_credentials_authenticate_and_a_corrupt_store_still_denies` |
-| 默认最小权限 | 不写 `--scope` 只签发 `read`；`read` 是必需项，缺它的库整份拒绝加载（fail-closed） | `a_read_only_credential_can_read_but_cannot_change_node_state`、`credentials_without_a_scope_field_are_downgraded_to_read_only` |
+| 默认最小权限 | 不写 `--scope` 只签发 `read`；带任何 API 动作自动补 `read`，只写 `scrape` 时不补 | `a_read_only_credential_can_read_but_cannot_change_node_state`、`credentials_without_a_scope_field_are_downgraded_to_read_only` |
+| 至少一个入口 | `read` 与 `scrape` 都没有的记录（如只有 `admin`）自相矛盾，整库拒绝加载（fail-closed） | `scopes_are_whitelisted_normalized_and_read_is_mandatory` |
 | 越权是 403 不是 401 | 处理器入口 `Principal::require`，错误体只写缺哪一项权限 | `a_read_only_credential_is_refused_on_every_write_route` |
 | 旧记录降级只读 | 没有 `scopes` 字段的记录按 `legacy_scopes()` 处理，不兼容成「全部权限」 | `credentials_without_a_scope_field_are_downgraded_to_read_only` |
 | 属主由服务端写入 | `submit` 用鉴权结果里的主体写 `Job.owner`，请求头无法指定属主 | `a_credential_sees_and_manages_only_the_jobs_it_submitted`、`a_credential_sees_only_its_own_jobs_over_tls` |
@@ -243,7 +244,7 @@ _（本节标题锚点为 `access-network`。）_
 
 凭据侧：`credential issue --subject workbench --ttl-hours 1` 输出 `spt_` 前缀、101 字符、后 64 位十六进制的 token；`credentials.json` 与 `credentials.lock` 均为 `0600`，且磁盘上既没有明文也没有 secret 片段。该 token 能正常调用 `jobs` / `status`；`revoke` 后立刻复用得到 `controller: unauthorized`；重复 `revoke` 时 `revoked_at` 保持不变；根 token 全程不受影响；`--ttl-hours 2161` 被拒（`credential lifetime must not exceed 90 days`）；`prune` 默认 dry-run 只打印计划。向 `credentials.json` 写入坏内容后，CLI 用动态凭据退出码 1（`unauthorized`），服务端 stderr 出现 `credential store unusable`，根 token 仍是 200。松散私钥（`0644`）启动报 `TLS key … must not be readable by group or others (chmod 600)`；只配 `tls_key` 报 `tls_cert and tls_key must be configured together`；先发垃圾字节再建一条只连不说的连接，随后的正常请求仍在 1.6ms 内返回 200。证据见 [evidence/access-network-20261107.json](evidence/access-network-20261107.json)。
 
-权限分级在真实 TLS 链路上同样成立（macOS ARM64 release + 自建 CA，`credential issue` 走真实 CLI）：不写 `--scope` 时输出 `scopes == ["read"]`；只读凭据对 `GET /v1/status`、`/v1/jobs` 返回 200，对节点启用/禁用、在线核对隔离、`POST /v1/jobs`、任务取消、`GET /v1/access` 全部返回 403，且响应体逐条写明缺失的权限名（`admin` / `submit` / `cancel`）；`sshpool node disable`、`sshpool access` 用只读凭据时退出码 1 并原样打印 ``controller: credential lacks the `admin` scope``。显式 `--scope read --scope admin` 后同一路由不再 403，而是继续走到处理器（未知节点 → 400），说明 403 来自授权而不是路由不存在；这样的凭据仍不能提交任务（403 缺 `submit`）。`--scope READ --scope read --scope submit` 被归一成 `["read","submit"]`，`--scope root` 被拒且不写库。把一条记录的 `scopes` 字段删掉后 `credential list` 报 `["read"]`、读接口仍 200、提交变 403；把某条的 `scopes` 改成 `["admin"]`（缺 `read`）后整份库拒绝加载，两条动态凭据都退成 401，stderr 出现 `credential store unusable`，根 token 仍 200；撤销后同一把只读凭据读接口也变 401（撤销优先于权限）。证据见 [evidence/credential-scopes-20261107.json](evidence/credential-scopes-20261107.json)。
+权限分级在真实 TLS 链路上同样成立（macOS ARM64 release + 自建 CA，`credential issue` 走真实 CLI）：不写 `--scope` 时输出 `scopes == ["read"]`；只读凭据对 `GET /v1/status`、`/v1/jobs` 返回 200，对节点启用/禁用、在线核对隔离、`POST /v1/jobs`、任务取消、`GET /v1/access` 全部返回 403，且响应体逐条写明缺失的权限名（`admin` / `submit` / `cancel`）；`sshpool node disable`、`sshpool access` 用只读凭据时退出码 1 并原样打印 ``controller: credential lacks the `admin` scope``。显式 `--scope read --scope admin` 后同一路由不再 403，而是继续走到处理器（未知节点 → 400），说明 403 来自授权而不是路由不存在；这样的凭据仍不能提交任务（403 缺 `submit`）。`--scope READ --scope read --scope submit` 被归一成 `["read","submit"]`，`--scope root` 被拒且不写库。把一条记录的 `scopes` 字段删掉后 `credential list` 报 `["read"]`、读接口仍 200、提交变 403；把某条的 `scopes` 改成 `["admin"]`（既无 `read` 也无 `scrape`，一个入口都没有）后整份库拒绝加载，两条动态凭据都退成 401，stderr 出现 `credential store unusable`，根 token 仍 200；撤销后同一把只读凭据读接口也变 401（撤销优先于权限）。证据见 [evidence/credential-scopes-20261107.json](evidence/credential-scopes-20261107.json)。
 
 抓到的两个真实缺陷：`axum` 未启用 `http2` feature 时，ALPN 协商成 `h2` 但服务端只会说 HTTP/1.1，curl 报 `Error in the HTTP2 framing layer` —— 打开 `features = ["http2"]` 后三种协商全部正常。握手最初串行执行，被"只连不说"的客户端卡住整个控制面；改成每连接独立任务 + 64 并发上限 + 10 秒超时后，该测试与真实链路都恢复正常。
 
@@ -305,7 +306,7 @@ _（本节标题锚点为 `external-observation`。）_
 
 Prometheus 抓取走**独立的** `metrics_listen`（`config.toml`），默认不监听 —— 启动行写 `metrics=off`。它不挂在 `/v1/...` 上，因为 Prometheus 默认 15 秒抓一次，走控制面路由的话光是抓取就会在几分钟内把 12 MiB 的有界访问审计冲掉。抓取不经过 `audit_access` 中间件，也不触发远端探测：指标是控制面**已有事实**的渲染，不是新的探活通道。
 
-但它是**有鉴权的**：只接受 `Authorization: Bearer <根 token>`，比较走与 API 相同的恒时实现（`src/token.rs`）。短期凭据即使带 `read` / `admin` 也抓不到 —— 指标是运维面，不是借出去的工作台接口。配置了 `tls_cert` / `tls_key` 时这个端口共用同一份证书，因此 token 不会漏到明文网络上；没配 TLS 时它只允许绑回环地址。
+但它是**有鉴权的**：接受 `Authorization: Bearer <根 token>`（与 API 共用 `src/token.rs` 的恒时比较），或一条带 `scrape` 的短期凭据（走 `credentials::verify`，撤销与到期在下一次抓取生效）。两个方向的隔离都是刻意的：带 `read` / `submit` / `cancel` / `admin` 的 API 凭据抓不到指标 —— 指标是运维面，不是借出去的工作台接口；`scrape` 凭据也打不开任何 `/v1/...` 路由，所以 Prometheus 不必持运维全权 token。配置了 `tls_cert` / `tls_key` 时这个端口共用同一份证书，因此 token 不会漏到明文网络上；没配 TLS 时它只允许绑回环地址。
 
 | 指标 | 类型 | 口径 |
 | --- | --- | --- |
@@ -330,7 +331,10 @@ Prometheus 抓取走**独立的** `metrics_listen`（`config.toml`），默认�
 | --- | --- | --- |
 | `GET /metrics` 与 `GET /`，带根 token | 200，`text/plain; version=0.0.4; charset=utf-8` | `scraping_is_parseable_and_never_writes_the_access_audit` |
 | 不带 token / `Bearer ` 空值 / 错误 token / 正确 token 加后缀 | 401，`www-authenticate: Bearer`，正文固定 `unauthorized`，不含任何样本或节点名 | `scraping_without_a_token_is_refused_without_leaking_samples` |
-| 短期凭据（含 `read`、`admin`） | 401；同一把凭据打 `/v1/status` 仍是 200，证明是权限边界而不是凭据失效 | `a_short_lived_read_credential_cannot_scrape`、`the_metrics_port_requires_the_root_token_over_tls` |
+| 只有 API 权限的短期凭据（含 `read`、`admin`） | 401；同一把凭据打 `/v1/status` 仍是 200，证明是权限边界而不是凭据失效 | `a_short_lived_read_credential_cannot_scrape`、`the_metrics_port_requires_the_root_token_over_tls` |
+| `--scope scrape` 的凭据 | 200，正文与根 token 一致；同一把 token 打 `/v1/status`、`/v1/jobs` 都是 403 且写明缺 `read`（`scrape` 不打开 API） | `a_scrape_credential_reads_metrics_until_it_is_revoked`、`a_scrape_credential_scrapes_over_plaintext_until_revoked` |
+| 撤销 scrape 凭据 | 下一次抓取即 401（无需重启控制面），根 token 仍 200；抓取前后 `access.jsonl` 字节数不变 | `a_scrape_credential_reads_metrics_until_it_is_revoked`、`a_scrape_credential_scrapes_over_plaintext_until_revoked` |
+| 签发 `--scope scrape`（不带其它动作） | `scopes == ["scrape"]`，不自动补 `read`；与 API 动作同时给时补 `read` 并按固定顺序排列 | `scopes_are_whitelisted_normalized_and_read_is_mandatory` |
 | 401 前后 | `access.jsonl` 字节数不变：被拒绝的抓取也不写审计 | `a_refused_scrape_does_not_write_the_access_audit` |
 | 未知路径 | 未认证 401（不暴露路径是否存在），认证后 404 | `scraping_without_a_token_is_refused_without_leaking_samples` |
 | 非 `GET` 方法 | 405，不把 POST 当成一次抓取 | —（`decide` 先判方法） |
@@ -352,7 +356,9 @@ Prometheus 抓取走**独立的** `metrics_listen`（`config.toml`），默认�
 
 新增的鉴权实测（真实 release 二进制、自建 CA、控制面与指标端口都走 HTTPS、临时 home）：根 token 抓取 200、`content-type` 为 exposition、9858 字节 / 159 行、含不可达节点样本且不含 token；同一状态下再抓一次字节完全一致。匿名、空 Bearer、错误 token、正确 token 加后缀四种情形全部 401，正文逐字为 `unauthorized`、带 `www-authenticate: Bearer`、样本与节点名都不出现、`content-type` 不是 exposition。未知路径在不带 token 时也是 401，带根 token 才 404；`POST` 是 405。带 `read` + `admin` 的短期凭据打 `/v1/status` 是 200，打指标端口是 401。3 次成功抓取加 3 次失败抓取前后 `access.jsonl` 都是 507 字节。无 CA 的客户端握手被拒；明文打 TLS 指标端口失败。指标端口的 ALPN 只宣告 `http/1.1`（控制面同时提供 h2），所以 Go 写的 Prometheus 不会协商到它解析不了的协议。把 `metrics_listen` 配成 `0.0.0.0` 而没开 `metrics_allow_remote` 时退出码 1；开了开关但没配 TLS 时退出码 1 并报 `requires TLS`；两者都满足时启动行写 `metrics=0.0.0.0:<port>`，用根 token 经 HTTPS 抓取返回 200。证据见 [evidence/metrics-auth-20261107.json](evidence/metrics-auth-20261107.json)。
 
-尚未覆盖：日志后端本身（本仓库只产出 `events.jsonl` 与 `access.jsonl`，由部署者用 Loki/ELK 消费）、指标持久化与 Prometheus 抓取配置（本仓库只提供 exposition 端点）、**独立的抓取凭据**（现在只能用根 token，不能单独撤销或按节点过滤，也没有 IP 归因）、多控制面实例的聚合。
+可撤销抓取凭据的实测（同一份 35 条断言，真实 release 二进制、自建 CA、控制面与指标端口都走 HTTPS，另加一组明文回环、一组坏库）：`credential issue --scope scrape` 输出 `scopes == ["scrape"]`、101 字符 `spt_` 前缀 token，磁盘上只有摘要；`--scope SCRAPE` 大小写不敏感且同样不补 `read`；`--scope scrape --scope admin` 归一成 `["read","admin","scrape"]`（有 API 动作时才补 `read`）。这把 scrape 凭据抓 `/metrics` 与 `/` 都是 200，正文与根 token **逐字节相同**（9460 字节、含 `sshpool_node_ready{node="lab-unreachable"} 0`），而抓取前后 `access.jsonl` 都是 232 字节。同一把 token 打 `/v1/status`、`/v1/jobs` 是 403 ``credential lacks the `read` scope``，打 `/v1/access` 是 403 缺 `admin` —— 说明 403 来自权限而不是路由不存在。反向也成立：`read`+`admin` 的 API 凭据打 `/v1/status` 是 200，抓指标是 401、正文逐字 `unauthorized`、带 `www-authenticate: Bearer`、不含任何样本或节点名；匿名仍是 401。`credential revoke` 后同一把 scrape 凭据的下一次抓取立刻 401（进程没重启），根 token 仍是 200，重复撤销保留最早的 `revoked_at`。把凭据库改成一条只有 `["admin"]` 的记录后，原本 200 的抓取变 401、stderr 出现 `credential store unusable`，根 token 不受影响。明文回环（最常见的本机部署形态）同样接受 scrape 凭据，撤销后同样立刻 401。服务日志里没有根 token，也没有任何凭据明文。证据见 [evidence/metrics-scrape-credential-20261107.json](evidence/metrics-scrape-credential-20261107.json)。
+
+尚未覆盖：日志后端本身（本仓库只产出 `events.jsonl` 与 `access.jsonl`，由部署者用 Loki/ELK 消费）、指标持久化与 Prometheus 抓取配置（本仓库只提供 exposition 端点）、**`scrape` 凭据的粒度**（它是全有或全无，没有按节点、按指标过滤，也没有 IP 归因）、多控制面实例的聚合。
 
 ### 存储放置核算 {#storage-placement}
 

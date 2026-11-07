@@ -145,7 +145,10 @@ enum CredentialAction {
         /// 有效期（小时）；上限 90 天。
         #[arg(long, default_value_t = 12)]
         ttl_hours: u64,
-        /// 授予的权限，可重复：read / submit / cancel / admin。
+        /// 授予的权限，可重复：read / submit / cancel / admin / scrape。
+        ///
+        /// `scrape` 只打开指标端口，不打开任何 `/v1/...` 路由；只写
+        /// `--scope scrape` 时不会再自动补 `read`。
         #[arg(long = "scope", default_value = "read")]
         scopes: Vec<String>,
     },

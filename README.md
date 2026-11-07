@@ -193,6 +193,8 @@ export SSHPOOL_CA_FILE=/etc/sshpool/ca.pem      # 或每次传 --ca-file
 sshpool credential issue --subject workbench --ttl-hours 12                # 默认只读
 sshpool credential issue --subject builder --ttl-hours 12 \
   --scope submit --scope cancel                                            # 可重复给权限
+sshpool credential issue --subject prometheus --ttl-hours 720 \
+  --scope scrape                                                           # 只抓指标，打不开 API
 sshpool credential list
 sshpool credential revoke <id>
 sshpool credential prune --apply                                # 只清理已过期且已撤销的记录
@@ -200,14 +202,17 @@ sshpool credential prune --apply                                # 只清理已�
 
 明文 token 只在 `issue` 时打印一次，磁盘上只保存 SHA-256 摘要；有效期上限 90 天，到期是半开区间，撤销对之后发起的请求立即生效（已通过鉴权的进行中请求不会被中断）且可重复执行。根 token 仍然可用，并且是坏掉的 `credentials.json` 之外唯一的入口 —— 凭据库损坏时动态凭据一律 401，但根 token 不会因此被锁在门外。
 
-权限是显式授予的四项白名单，签发时不写 `--scope` 只拿到 `read`：
+权限是显式授予的五项白名单，签发时不写 `--scope` 只拿到 `read`：
 
 | 权限 | 允许的路由 |
 | --- | --- |
-| `read` | `GET /v1/status`、`/v1/jobs`、任务详情、日志、事件、产物（任何凭据都有；没有它整份凭据库拒绝加载） |
+| `read` | `GET /v1/status`、`/v1/jobs`、任务详情、日志、事件、产物（任何 API 凭据都有；带其它 API 动作时会自动补上） |
 | `submit` | `POST /v1/jobs` 提交任务（会占用 Worker） |
 | `cancel` | `POST /v1/jobs/{id}/cancel` 请求停止任务 |
 | `admin` | 节点启用/禁用、在线核对隔离、查询 `/v1/access` 访问审计；也是唯一能越过任务属主边界的凭据 |
+| `scrape` | 只打开 `metrics_listen` 的 `GET /metrics` 与 `GET /`，**不打开任何 `/v1/...` 路由**；只写 `--scope scrape` 时不会补 `read` |
+
+一份凭据至少要有一个入口：`read`（API）或 `scrape`（指标）。两者都没有的记录（例如只有 `admin`）是自相矛盾的，整份凭据库拒绝加载。
 
 缺权限返回 **403** 而不是 401（身份成立、权限不够），响应体只写缺哪一项：``credential lacks the `admin` scope``；审计里 401 与 403 一律记 `decision=denied`，`status` 保留具体状态码。旧版本签发、没有 `scopes` 字段的记录按最小权限降级为只读 —— 这是权限收紧，不给「缺字段等于全部权限」的兼容。根 token 不受分级影响，仍是运维用的全权凭据。
 
@@ -227,7 +232,7 @@ sshpool access --decision denied --since 1767225600
 
 ### 外部观测
 
-指标走独立的 `metrics_listen`，默认关闭；打开后与控制面同进程但不共端口，也**不写访问审计**（抓取是高频操作，不能把有界审计冲掉）。但它不是匿名入口：抓取要带**根 token**，短期凭据即使有 `read` / `admin` 也抓不到 —— 指标是运维面，不是借出去的工作台接口。
+指标走独立的 `metrics_listen`，默认关闭；打开后与控制面同进程但不共端口，也**不写访问审计**（抓取是高频操作，不能把有界审计冲掉）。但它不是匿名入口：抓取要带**根 token**或一条 `--scope scrape` 的短期凭据。两个方向都是隔离的 —— 带 `read` / `submit` / `cancel` / `admin` 的 API 凭据抓不到指标（指标是运维面，不是借出去的工作台接口），`scrape` 凭据也打不开任何 `/v1/...` 路由。
 
 ```toml
 metrics_listen = "127.0.0.1:9100"
@@ -238,7 +243,15 @@ curl -s -H "Authorization: Bearer $(cat ~/.sshpool/token)" \
   http://127.0.0.1:9100/metrics     # Prometheus 文本格式；/ 等价
 ```
 
-没有凭据、凭据错误、或只有短期凭据时一律 **401**，响应体固定为 `unauthorized` 并带 `www-authenticate: Bearer`，不输出任何样本，也不告诉你哪些路径存在。配置了 `tls_cert` / `tls_key` 时指标端口走同一份证书的 HTTPS，因此根 token 不会以明文跨网络。
+没有凭据、凭据错误、或只有 API 权限的短期凭据时一律 **401**，响应体固定为 `unauthorized` 并带 `www-authenticate: Bearer`，不输出任何样本，也不告诉你哪些路径存在。配置了 `tls_cert` / `tls_key` 时指标端口走同一份证书的 HTTPS，因此 token 不会以明文跨网络。
+
+抓取凭据与控制面共用同一份 `credentials.json`，所以撤销与到期在**下一次抓取**就生效，不需要重启控制面：
+
+```sh
+sshpool credential issue --subject prometheus --ttl-hours 720 --scope scrape
+# 把输出的明文写进 Prometheus 的 bearer_token_file（0600），不要复用根 token
+sshpool credential revoke <id>     # 下一次抓取立刻 401；根 token 不受影响
+```
 
 默认只允许绑回环地址。要跨主机抓取必须同时做三件事（开关、证书、私钥），少一件 `serve` 就在绑定端口之前退出：
 
@@ -255,7 +268,7 @@ Prometheus 侧：
 scrape_configs:
   - job_name: sshpool
     scheme: https
-    bearer_token_file: /etc/prometheus/sshpool-token
+    bearer_token_file: /etc/prometheus/sshpool-scrape-token   # `--scope scrape` 的凭据
     tls_config:
       ca_file: /etc/prometheus/sshpool-ca.pem
     static_configs:
@@ -276,10 +289,10 @@ scrape_configs:
 - 不保证入口 Mac 关机、休眠或重启时会话在线。任务状态副本能保存已确认记录，但入口 SSH 和控制器不会自动漂移；恢复机需要独立保存的配置、token 与 SSH 凭据。
 - 不提供 NAT 穿透；复用已有 SSH ProxyJump/ProxyCommand 或受控网络。没有新增路由、隧道或端口映射。
 - HTTPS 只做服务端证书校验，没有客户端证书（mTLS）。改证书必须重启控制面，没有热重载或轮换；信任的 CA 需要用 `--ca-file` 指定，没有吊销列表。
-- 短期凭据按四项白名单（`read`/`submit`/`cancel`/`admin`）授权，并有主体范围：默认只能看到、只能取消自己提交的任务。但粒度仍然有限 —— 没有按节点、按项目分权，也没有「只读某个项目的任务」；`admin` 是越过属主边界的唯一凭据，所以它仍然等价于运维权限，不能只是「多一个查询权限」随手借出。归属记在任务记录里，旧任务没有属主时只有运维主体能看；混跑旧版本二进制时，旧版落盘会丢掉不认识的 `owner` 字段，任务会退化成“归属未知”（仍然只有运维主体能看，是收紧而不是放宽）。改权限要重新签发。见 [验证文档](docs/validation.md#access-network)。
+- 短期凭据按五项白名单（`read`/`submit`/`cancel`/`admin`/`scrape`）授权，并有主体范围：默认只能看到、只能取消自己提交的任务。但粒度仍然有限 —— 没有按节点、按项目分权，也没有「只读某个项目的任务」；`admin` 是越过属主边界的唯一凭据，所以它仍然等价于运维权限，不能只是「多一个查询权限」随手借出。归属记在任务记录里，旧任务没有属主时只有运维主体能看；混跑旧版本二进制时，旧版落盘会丢掉不认识的 `owner` 字段，任务会退化成“归属未知”（仍然只有运维主体能看，是收紧而不是放宽）。改权限要重新签发。见 [验证文档](docs/validation.md#access-network)。
 - 访问审计是本机 `home/access.jsonl` 上的普通追加文件，没有签名链或只追加存储：能写这个目录的人可以改写、删除或伪造记录。超过 12 MiB 的历史会被滚动丢弃，没有远程日志后端或归档；也没有按 IP/地理归因。
 - **存储冗余仍只是规划算术**：`sshpool storage-plan` 按拓扑核算副本、仲裁和恢复预留，并拒绝「两台物理机凑三故障域」这类承诺；但 Ceph 没有部署，没有掉盘、`fsync`、崩溃恢复或跨机接管验收。它也不探测真实磁盘容量——输入里的 `size_bytes` 与故障域由部署者申报，盘的归属必须先过 `storage-admission`。见 [跨物理机与无 RAID 存储边界](docs/ssi-physical-storage.md#先核算再承诺) 与 [验证记录](docs/validation.md#storage-placement)。
-- 指标端点只认根 token，**没有独立的抓取凭据**：Prometheus 必须拿运维用的全权 token，泄露它等于泄露整个控制面，不能像短期凭据那样单独撤销。抓取也没有 `read` 级细分或按节点过滤，能看到全部节点名与资源水位。它只输出数值与节点名，不含 SSH 目标、token、任务消息或自由文本。指标不落盘、不带历史，重启后计数从现有任务记录重新渲染；Prometheus 配置与日志后端（Loki/ELK）由部署者自行提供。
+- 指标抓取凭据只解决「可撤销、不给 API」：`scrape` 是**全有或全无**，没有按节点或按指标过滤，任何一把 scrape 凭据都能看到全部节点名与资源水位。抓取也不进访问审计（15 秒一次会冲掉有界日志），所以「谁抓过」只能靠网络层或 Prometheus 自身的日志。它只输出数值与节点名，不含 SSH 目标、token、任务消息或自由文本。指标不落盘、不带历史，重启后计数从现有任务记录重新渲染；Prometheus 配置与日志后端（Loki/ELK）由部署者自行提供。
 
 ## 开发与验证
 

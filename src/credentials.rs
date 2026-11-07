@@ -8,6 +8,10 @@
 //! 旧版本签发的凭据没有 `scopes` 字段，按最小权限降级为只读 —— 这是权限收紧，
 //! 需要更大权限请重新签发；这里刻意不做「缺字段等于全部权限」的兼容。
 //!
+//! `scrape` 是唯一不对应任何 `/v1/...` 路由的权限：它只让指标端口接受这次抓取，
+//! 因此 Prometheus 可以拿一把单独撤销的凭据，而不是运维用的根 token。反过来，
+//! 带 API 权限的凭据抓不到指标 —— 两个方向都在签发时定死，不靠调用方自觉。
+//!
 //! 失败关闭：凭据文件存在但无法解析时拒绝全部动态凭据，而不是退回「没有凭据」。
 
 use crate::{config, model::now};
@@ -31,9 +35,13 @@ pub const RESERVED_SUBJECT: &str = "root";
 
 /// 一条短期凭据被允许做的事。权限只按白名单授予，不认识的字符串一律拒绝。
 ///
-/// `read` 是任何凭据都有的：没有它连自己的任务列表都看不到，凭据就没有意义。
+/// `read` 是 API 凭据都有的：没有它连自己的任务列表都看不到，凭据就没有意义。
 /// `submit` 提交任务（会占用 Worker），`cancel` 请求停止任务，
-/// `admin` 改节点状态、在线核对隔离、查询他人访问审计。
+/// `admin` 改节点状态、在线核对隔离、查询他人访问审计，并且是唯一能越过任务属主边界的凭据。
+///
+/// `scrape` 是**唯一**只面向指标端口的权限：它不打开任何 `/v1/...` 路由。
+/// 抓取是高频只读操作，给 Prometheus 一把单独可撤销的凭据，比让它拿
+/// 能改节点状态的 `admin` 小得多。
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[serde(rename_all = "kebab-case")]
 pub enum Scope {
@@ -41,10 +49,17 @@ pub enum Scope {
     Submit,
     Cancel,
     Admin,
+    Scrape,
 }
 
 impl Scope {
-    pub const ALL: [Scope; 4] = [Scope::Read, Scope::Submit, Scope::Cancel, Scope::Admin];
+    pub const ALL: [Scope; 5] = [
+        Scope::Read,
+        Scope::Submit,
+        Scope::Cancel,
+        Scope::Admin,
+        Scope::Scrape,
+    ];
     /// 解析命令行/配置里的一词；大小写不敏感，其余拼写一律拒绝。
     pub fn parse(word: &str) -> Result<Self> {
         match word.trim().to_ascii_lowercase().as_str() {
@@ -52,8 +67,11 @@ impl Scope {
             "submit" => Ok(Self::Submit),
             "cancel" => Ok(Self::Cancel),
             "admin" => Ok(Self::Admin),
+            "scrape" => Ok(Self::Scrape),
             _ => {
-                anyhow::bail!("unknown scope {word:?}; expected one of read, submit, cancel, admin")
+                anyhow::bail!(
+                    "unknown scope {word:?}; expected one of read, submit, cancel, admin, scrape"
+                )
             }
         }
     }
@@ -64,6 +82,7 @@ impl Scope {
             Self::Submit => "submit",
             Self::Cancel => "cancel",
             Self::Admin => "admin",
+            Self::Scrape => "scrape",
         }
     }
 }
@@ -71,6 +90,14 @@ impl Scope {
 /// 旧记录缺 `scopes` 时的权限：只读。权限收紧宁可让旧脚本报 403，也不能让它继续写。
 pub fn legacy_scopes() -> Vec<Scope> {
     vec![Scope::Read]
+}
+
+/// 一份凭据要能做什么，至少得有一个入口：API 读（`read`）或抓指标（`scrape`）。
+///
+/// 两者都没有的记录（例如只有 `admin`）是自相矛盾的：它没有任何一条路由可用，
+/// 与其猜签发者的意图，不如整份库拒绝加载。
+fn has_entry_scope(scopes: &[Scope]) -> bool {
+    scopes.contains(&Scope::Read) || scopes.contains(&Scope::Scrape)
 }
 
 /// 磁盘上的凭据记录；只保存摘要，明文永远不落盘。
@@ -191,11 +218,11 @@ fn load(home: &Path) -> Result<Store> {
         );
         validate_subject(&credential.subject)
             .context("credential store contains an invalid subject")?;
-        // 权限是白名单枚举，serde 已拒绝未知值；这里拒绝「声明了但没 read」这种
+        // 权限是白名单枚举，serde 已拒绝未知值；这里拒绝「哪个入口都没有」这种
         // 自相矛盾的记录，而不是悄悄补一个权限进去。
         ensure!(
-            credential.scopes.contains(&Scope::Read),
-            "credential store contains a credential without read access"
+            has_entry_scope(&credential.scopes),
+            "credential store contains a credential with neither read nor scrape access"
         );
         ensure!(
             credential.expires_at > credential.created_at,
@@ -223,13 +250,18 @@ fn sorted_scopes(scopes: &[Scope]) -> Vec<Scope> {
     values
 }
 
-/// 权限列表的规范形式：`read` 必定存在，其余按固定顺序，空列表按旧记录降级。
+/// 权限列表的规范形式：按固定顺序、去重，空列表按旧记录降级。
+///
+/// 只要凭据还带任何 API 动作（`submit`/`cancel`/`admin`），就补上 `read`：
+/// 一个能提交任务却看不到自己任务列表的凭据没有意义。只带 `scrape` 的凭据
+/// 刻意**不**补 `read` —— 它的唯一用途是抓指标，不该顺带看到任务。
 fn normalize_scopes(scopes: &[Scope]) -> Vec<Scope> {
     let mut values = sorted_scopes(scopes);
     if values.is_empty() {
         return legacy_scopes();
     }
-    if !values.contains(&Scope::Read) {
+    let api = values.iter().any(|scope| *scope != Scope::Scrape);
+    if api && !values.contains(&Scope::Read) {
         values.insert(0, Scope::Read);
     }
     values
@@ -626,8 +658,10 @@ mod tests {
 
     #[test]
     fn scopes_are_whitelisted_normalized_and_read_is_mandatory() {
-        // 解析只认四个词，大小写不敏感，其余（含空串与近义词）一律拒绝。
+        // 解析只认五个词，大小写不敏感，其余（含空串与近义词）一律拒绝。
         assert_eq!(Scope::parse(" READ ").unwrap(), Scope::Read);
+        assert_eq!(Scope::parse("Scrape").unwrap(), Scope::Scrape);
+        assert_eq!(Scope::Scrape.as_str(), "scrape");
         for word in ["root", "write", "readonly", ""] {
             assert!(Scope::parse(word).is_err(), "{word:?} must not parse");
         }
@@ -643,7 +677,22 @@ mod tests {
         )
         .unwrap();
         assert_eq!(summary.scopes, vec![Scope::Read, Scope::Admin]);
-        // 缺 `read` 的记录不是「只写凭据」，而是自相矛盾的坏记录：整库拒绝加载。
+        // 只带 `scrape` 是合法的：它不打开 API，所以刻意不补 `read`。
+        let (scraper, _) = issue(root.path(), "prometheus", &[Scope::Scrape], 60, 1_000).unwrap();
+        assert_eq!(scraper.scopes, vec![Scope::Scrape]);
+        // `scrape` 与 API 动作并存时仍然补 `read`：只要有一项 API 动作，
+        // 这把凭据就是 API 凭据，看不到自己的任务没有意义。顺序固定在其间。
+        let (both, _) = issue(
+            root.path(),
+            "observer",
+            &[Scope::Scrape, Scope::Admin],
+            60,
+            1_000,
+        )
+        .unwrap();
+        assert_eq!(both.scopes, vec![Scope::Read, Scope::Admin, Scope::Scrape]);
+        // 一个入口都没有的记录（只有 `admin`）不是「只写凭据」，而是自相矛盾的
+        // 坏记录：整库拒绝加载。
         let mut store: serde_json::Value =
             serde_json::from_str(&fs::read_to_string(path(root.path())).unwrap()).unwrap();
         store["credentials"][0]["scopes"] = serde_json::json!(["admin"]);

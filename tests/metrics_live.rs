@@ -503,6 +503,71 @@ async fn a_short_lived_read_credential_cannot_scrape() -> Result<()> {
     Ok(())
 }
 
+/// 回环明文上的可撤销抓取凭据：`scrape` 能抓，撤销后下一次抓取即 401。
+///
+/// TLS 链路上同样的断言由 `tests/access_network.rs::a_scrape_credential_reads_metrics_until_it_is_revoked`
+/// 覆盖；这里补的是最常见的部署形态 —— 指标端口只绑回环、没有 TLS。
+#[tokio::test]
+async fn a_scrape_credential_scrapes_over_plaintext_until_revoked() -> Result<()> {
+    let controller = Controller::start(true, "nodes = [{name = \"lab\", ssh = \"127.0.0.1\"}]\n")?;
+    let issued = cli(
+        controller.root.path(),
+        &[
+            "credential",
+            "issue",
+            "--subject",
+            "prometheus",
+            "--scope",
+            "scrape",
+        ],
+    )?;
+    ensure!(
+        issued.status.success(),
+        "credential issue failed: {}",
+        String::from_utf8_lossy(&issued.stderr)
+    );
+    let issued: serde_json::Value = serde_json::from_slice(&issued.stdout)?;
+    let id = issued["id"].as_str().context("issued id")?.to_string();
+    let token = issued["token"].as_str().context("issued token")?;
+
+    let response = scrape(controller.metrics, "/metrics", token)?;
+    let (head, body) = split(&response);
+    assert!(head.starts_with("HTTP/1.1 200 OK"), "{head}");
+    assert_parseable(body)?;
+    assert!(
+        body.contains("sshpool_node_ready{node=\"lab\"}"),
+        "a scrape credential must see the same exposition as the root token:\n{body}"
+    );
+    // 抓取仍然不写访问审计。
+    let audit = controller.root.path().join("access.jsonl");
+    std::thread::sleep(Duration::from_millis(100));
+    let before = fs::metadata(&audit).map(|m| m.len()).unwrap_or(0);
+    assert!(scrape(controller.metrics, "/", token)?.starts_with("HTTP/1.1 200"));
+    let after = fs::metadata(&audit).map(|m| m.len()).unwrap_or(0);
+    assert_eq!(
+        before, after,
+        "a scrape credential must not write access.jsonl"
+    );
+
+    // 撤销在下一次抓取生效，不需要重启控制面。
+    let revoked = cli(controller.root.path(), &["credential", "revoke", &id])?;
+    ensure!(
+        revoked.status.success(),
+        "credential revoke failed: {}",
+        String::from_utf8_lossy(&revoked.stderr)
+    );
+    assert!(
+        scrape(controller.metrics, "/metrics", token)?.starts_with("HTTP/1.1 401"),
+        "a revoked scrape credential must be refused"
+    );
+    // 根 token 不受影响。
+    assert!(
+        scrape(controller.metrics, "/metrics", &controller.token)?.starts_with("HTTP/1.1 200"),
+        "revoking a borrowed credential must not lock out the root token"
+    );
+    Ok(())
+}
+
 /// 401 不写访问审计：抓取本来就不审计，被拒绝的抓取同样不该写。
 #[tokio::test]
 async fn a_refused_scrape_does_not_write_the_access_audit() -> Result<()> {

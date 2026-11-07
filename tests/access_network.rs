@@ -551,10 +551,11 @@ async fn a_credential_sees_only_its_own_jobs_over_tls() -> Result<()> {
     Ok(())
 }
 
-/// 未握手的连接不能阻塞后续请求：扫描器发垃圾字节或只连不说，
-/// 也只该丢掉那一个连接，而不是让 accept 循环卡住。
 /// 指标端口与控制面共用同一份 TLS 证书：抓取要带根 token，
-/// 因此不能出现「token 走明文」的通路，也不能接受借出去的短期凭据。
+/// 因此不能出现「token 走明文」的通路；只有 API 权限的短期凭据也抓不到。
+///
+/// 专门的 `scrape` 凭据由
+/// `a_scrape_credential_reads_metrics_until_it_is_revoked` 覆盖。
 #[tokio::test]
 async fn the_metrics_port_requires_the_root_token_over_tls() -> Result<()> {
     let controller = Controller::start_with(true).await?;
@@ -644,6 +645,142 @@ async fn the_metrics_port_requires_the_root_token_over_tls() -> Result<()> {
             .is_err(),
         "the metrics listener must not serve plaintext when TLS is configured"
     );
+    Ok(())
+}
+
+/// 可撤销的抓取凭据：`scrape` 只打开指标端口，撤销在下一次抓取就生效。
+///
+/// 这里用真实 TLS 链路证明三件事：
+/// 1. `--scope scrape` 的凭据抓得到指标（200，正文是 exposition）；
+/// 2. 它不是 API 凭据 —— 同一把 token 打 `/v1/status`、`/v1/jobs` 都是 403；
+/// 3. `read` + `admin` 的 API 凭据仍然抓不到指标，`credential revoke` 之后
+///    同一把 scrape 凭据的下一次抓取立刻 401（不需要重启控制面）。
+#[tokio::test]
+async fn a_scrape_credential_reads_metrics_until_it_is_revoked() -> Result<()> {
+    let controller = Controller::start_with(true).await?;
+    let endpoint = controller
+        .metrics_endpoint
+        .as_deref()
+        .context("metrics listener was not configured")?
+        .to_string();
+    let token = controller.token()?;
+    let client = controller.http(Some(&controller.cert.clone())).await?;
+    let root = controller.token_file("root-token", &token)?;
+
+    let issued = controller.cli(
+        &[
+            "credential",
+            "issue",
+            "--subject",
+            "prometheus",
+            "--ttl-hours",
+            "1",
+            "--scope",
+            "scrape",
+        ],
+        &root,
+    )?;
+    ensure!(
+        issued.status.success(),
+        "credential issue failed: {}",
+        String::from_utf8_lossy(&issued.stderr)
+    );
+    let issued: Value = serde_json::from_slice(&issued.stdout)?;
+    let id = issued["id"].as_str().context("missing id")?.to_string();
+    let scraper = issued["token"]
+        .as_str()
+        .context("missing token")?
+        .to_string();
+    // `scrape` 是独立入口，签发时不会被补成 `read`。
+    assert_eq!(
+        issued["scopes"],
+        serde_json::json!(["scrape"]),
+        "a scrape-only credential must not gain read"
+    );
+
+    // 1) 抓取成功，且正文是 exposition 而不是空壳。
+    let response = client
+        .get(format!("{endpoint}/metrics"))
+        .bearer_auth(&scraper)
+        .send()
+        .await?;
+    assert_eq!(response.status(), 200, "a scrape credential must scrape");
+    assert_eq!(
+        response
+            .headers()
+            .get("content-type")
+            .and_then(|value| value.to_str().ok()),
+        Some(sshpool::metrics::CONTENT_TYPE)
+    );
+    let body = response.text().await?;
+    assert!(body.starts_with("# HELP sshpool_jobs "), "{body}");
+
+    // 2) 它不是 API 凭据：所有 `/v1/...` 都缺 `read`，因此 403 而不是 401。
+    for path in ["/v1/status", "/v1/jobs"] {
+        let response = client
+            .get(format!("{}{path}", controller.endpoint))
+            .bearer_auth(&scraper)
+            .send()
+            .await?;
+        assert_eq!(response.status(), 403, "scrape must not open {path}");
+        assert!(
+            response.text().await?.contains("`read`"),
+            "the refusal must name the missing scope"
+        );
+    }
+
+    // 3) `read` + `admin` 的 API 凭据仍然抓不到指标：抓取是独立权限。
+    let issued = controller.cli(
+        &[
+            "credential",
+            "issue",
+            "--subject",
+            "operator",
+            "--scope",
+            "admin",
+        ],
+        &root,
+    )?;
+    ensure!(
+        issued.status.success(),
+        "credential issue failed: {}",
+        String::from_utf8_lossy(&issued.stderr)
+    );
+    let issued: Value = serde_json::from_slice(&issued.stdout)?;
+    let operator = issued["token"].as_str().context("missing token")?;
+    let response = client
+        .get(format!("{endpoint}/metrics"))
+        .bearer_auth(operator)
+        .send()
+        .await?;
+    assert_eq!(response.status(), 401, "API scopes must not scrape");
+
+    // 4) 撤销下一次抓取就生效，不需要重启控制面。
+    let revoked = controller.cli(&["credential", "revoke", &id], &root)?;
+    ensure!(
+        revoked.status.success(),
+        "credential revoke failed: {}",
+        String::from_utf8_lossy(&revoked.stderr)
+    );
+    let response = client
+        .get(format!("{endpoint}/metrics"))
+        .bearer_auth(&scraper)
+        .send()
+        .await?;
+    assert_eq!(
+        response.status(),
+        401,
+        "a revoked scrape credential must fail"
+    );
+    assert_eq!(response.text().await?, "unauthorized");
+
+    // 5) 根 token 不受影响：撤销借出的凭据不该锁住运维入口。
+    let response = client
+        .get(format!("{endpoint}/metrics"))
+        .bearer_auth(&token)
+        .send()
+        .await?;
+    assert_eq!(response.status(), 200);
     Ok(())
 }
 
