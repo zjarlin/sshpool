@@ -1,8 +1,8 @@
 Feature: 持久任务审计
   审计能解释失败阶段，不能泄露控制面凭据。
 
-  # evidence: docs/validation.md#hardware-proof
-  @verified @manual @p0
+  # evidence: tests/delivery_live.rs::unified_entry_delivers_logs_exit_code_and_artifacts
+  @verified @automated @p0
   Scenario: 任务阶段事件
     Given 任务被接收并选择 Worker
     When 执行从输入导入到容器清理

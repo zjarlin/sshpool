@@ -22,8 +22,8 @@
   "scenarios": {
     "unified_entry_delivers_logs_exit_code_and_artifacts": {
       "job": {
-        "okm182-lan": "ac9e5f3b-ff0d-4989-969a-09567b862d67",
-        "sshpool-anchor": "e39c47fb-a9e7-4109-ad2a-598037abec4a"
+        "okm182-lan": "8af43bb7-89a8-4357-aabc-69084de3b086",
+        "sshpool-anchor": "b2e944fc-58dd-46c5-aa9b-3986bd611f1a"
       },
       "asserted": [
         "client.run 返回 0",
@@ -35,7 +35,8 @@
         "产物 out/arch.txt 与请求平台一致（x86_64→amd64，aarch64→arm64）",
         "产物 out/sum.txt 与工作台独立算式 (200000*200001/2) mod 1000003 = 40000 一致",
         "二次 fetch 到同一目录被拒绝",
-        "按 label=io.sshpool.job=<id> 查询 Worker：容器数为 0"
+        "按 label=io.sshpool.job=<id> 查询 Worker：容器数为 0",
+        "真实 sshpool 二进制执行 `sshpool events <id>`：事件数与 API 一致，输出不含控制面 token"
       ],
       "observed_output": {
         "okm182-lan": [
@@ -50,6 +51,16 @@
           "aarch64",
           "40000"
         ]
+      },
+      "cli_audit": {
+        "command": "sshpool --home <state> --endpoint <in-process address> events <id>",
+        "binary": "env!(CARGO_BIN_EXE_sshpool), 不是内部函数",
+        "asserted": [
+          "退出码 0",
+          "stdout 解析出的 JSON 数组长度与 /v1/jobs/{id}/events 相同",
+          "stdout 不含 test-only token"
+        ],
+        "pitfall": "测试是 current-thread 运行时；同步 wait 子进程会阻塞进程内 axum，实测 150s 超时。改用 spawn_blocking 后 8.6s 完成。"
       }
     },
     "nonzero_exit_is_reported_without_publishing_artifacts": {
@@ -96,5 +107,20 @@
     "不覆盖产物导出超时（60s）与下载中途断线重试；当前实现没有断点续传，重试需要重新 fetch 到新目录",
     "sshpool-anchor 的 sshd 会在 stderr 打印 `bash: warning: setlocale: LC_ALL` 噪声，被原样写进 log.txt；这属于远端宿主环境，不影响退出码与产物断言",
     "不替代真实生产入口的验收：这里用的是临时控制面目录与一次性容器标签"
-  ]
+  ],
+  "rerun_after_cli_audit": {
+    "checked_at": "2026-11-07T21:05:00+08:00",
+    "okm182-lan": {
+      "scenarios": 3,
+      "result": "all passed"
+    },
+    "sshpool-anchor": {
+      "scenarios": 3,
+      "result": "all passed"
+    },
+    "leftover_containers": {
+      "okm182-lan": 0,
+      "sshpool-anchor": 0
+    }
+  }
 }

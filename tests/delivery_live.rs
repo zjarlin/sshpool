@@ -44,7 +44,7 @@ async fn platform(node: &Node) -> Result<String> {
 }
 
 /// 隔离的控制面目录 + 进程内 HTTP 服务；返回临时根、状态与已就绪的客户端。
-async fn harness(node: &Node) -> Result<(tempfile::TempDir, Arc<State>, Client)> {
+async fn harness(node: &Node) -> Result<(tempfile::TempDir, Arc<State>, Client, String)> {
     let root = tempfile::tempdir()?;
     let token = "test-only-token-not-a-production-secret";
     fs::write(root.path().join("token"), token)?;
@@ -69,8 +69,9 @@ async fn harness(node: &Node) -> Result<(tempfile::TempDir, Arc<State>, Client)>
     tokio::spawn(async move {
         let _ = axum::serve(listener, routes).await;
     });
-    let client = Client::new(format!("http://{address}"), &root.path().join("token"))?;
-    Ok((root, state, client))
+    let endpoint = format!("http://{address}");
+    let client = Client::new(endpoint.clone(), &root.path().join("token"))?;
+    Ok((root, state, client, endpoint))
 }
 
 /// 一个只含公开演示内容的最小项目。
@@ -132,7 +133,7 @@ async fn assert_no_container(node: &Node, id: uuid::Uuid) -> Result<()> {
 #[ignore = "requires a reachable SSH worker with Docker"]
 async fn unified_entry_delivers_logs_exit_code_and_artifacts() -> Result<()> {
     let node = node()?;
-    let (root, _state, client) = harness(&node).await?;
+    let (root, _state, client, endpoint) = harness(&node).await?;
     let project = project(
         root.path(),
         "mkdir -p out\n\
@@ -224,6 +225,43 @@ async fn unified_entry_delivers_logs_exit_code_and_artifacts() -> Result<()> {
         "cleanup must be recorded as confirmed: {events}"
     );
 
+    // 审计还要能被 CLI 按任务 ID 查到：走真实二进制 + 真实 HTTP 入口，
+    // 不用 API 直接读文件，否则「CLI 可以按任务 ID 查询事件」这一步没有被证明。
+    //
+    // 必须用 spawn_blocking：本测试是 current-thread 运行时，同步等待子进程会把
+    // 进程内 axum 服务一起阻塞，请求永远等不到响应（实测 150s 超时）。
+    let cli = {
+        let home = root.path().to_path_buf();
+        let endpoint = endpoint.clone();
+        let id = job.id.to_string();
+        tokio::task::spawn_blocking(move || {
+            std::process::Command::new(env!("CARGO_BIN_EXE_sshpool"))
+                .arg("--home")
+                .arg(&home)
+                .arg("--endpoint")
+                .arg(&endpoint)
+                .args(["events", &id])
+                .output()
+        })
+        .await??
+    };
+    ensure!(
+        cli.status.success(),
+        "sshpool events failed: {}",
+        String::from_utf8_lossy(&cli.stderr)
+    );
+    let cli_events: Vec<serde_json::Value> = serde_json::from_slice(&cli.stdout)?;
+    ensure!(
+        cli_events.len() == kinds.len(),
+        "the CLI must return the same event count as the API: {} vs {}",
+        cli_events.len(),
+        kinds.len()
+    );
+    ensure!(
+        !String::from_utf8_lossy(&cli.stdout).contains("test-only-token"),
+        "the CLI must not print the controller token"
+    );
+
     // 产物：解到全新目录，内容必须与容器里算出来的完全一致。
     let output = root.path().join("results");
     let unpacked = client.fetch(job.id, &output).await?;
@@ -263,7 +301,7 @@ async fn unified_entry_delivers_logs_exit_code_and_artifacts() -> Result<()> {
 #[ignore = "requires a reachable SSH worker with Docker"]
 async fn nonzero_exit_is_reported_without_publishing_artifacts() -> Result<()> {
     let node = node()?;
-    let (root, _state, client) = harness(&node).await?;
+    let (root, _state, client, _endpoint) = harness(&node).await?;
     let project = project(
         root.path(),
         "mkdir -p out\n\
@@ -308,7 +346,7 @@ async fn nonzero_exit_is_reported_without_publishing_artifacts() -> Result<()> {
 #[ignore = "requires a reachable SSH worker with Docker"]
 async fn missing_declared_output_fails_closed() -> Result<()> {
     let node = node()?;
-    let (root, _state, client) = harness(&node).await?;
+    let (root, _state, client, _endpoint) = harness(&node).await?;
     // 声明 out，却只写了别处：导出的 tar 会因为没有匹配路径而失败。
     let project = project(
         root.path(),

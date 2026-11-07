@@ -84,10 +84,13 @@ SSHPOOL_LIVE_NODE=okm182-lan \
 | 非零退出 | `client.run` 返回 7，任务 `failed` 且 `exit_code=7`，`artifacts=false`，产物接口明确报错而不是回空归档，容器仍然被清理 |
 | 产物缺失 | 命令 `exit 0` 但声明的 `out` 不存在 → 任务 `failed`，消息含 `artifact export failed`，不发布任何产物 |
 | 不覆盖 | 对同一目录二次 `fetch` 必须失败（复用 030 的 `fetching_never_overwrites_existing_directory`） |
+| 审计 | 用真实 `sshpool` 二进制执行 `sshpool events <id>`，事件数量与 API 一致且不打印 token |
 
 实测：`okm182-lan`（linux/amd64）与 `sshpool-anchor`（linux/arm64）各一轮，三个场景全部通过；每轮结束后两台 Worker 上 `docker ps -aq --filter label=io.sshpool.job | wc -l` 均为 0。证据在 [evidence/delivery-20261107.json](evidence/delivery-20261107.json)。
 
 虚构一条「交付成功」比失败危险：这里刻意把三类失败也写成自动化断言（非零退出、缺产物、重复回取），因为它们的共同失效模式都是「报告成功但工作台没有可用产物」。
+
+审计事件这条也补上了 CLI 那一半：先前只有 API 返回事件链，`sshpool events <id>` 从未被真实执行过。现在用 `CARGO_BIN_EXE_sshpool` 走同一份真实入口，比对事件数量并断言输出不含 token。这里踩到一个测试写法问题：本文件是 current-thread 运行时，同步等待子进程会**把进程内 axum 服务一起阻塞**（实测 150s 超时），必须放进 `spawn_blocking`。
 
 顺带修掉一处重复：`Client::follow` 原先内联了一份取日志的代码，且 `Client` 没有对外暴露读取日志的方法。现在统一为 `Client::log(id, offset)`（返回原始字节，一次最多 256 KiB），`follow` 与新测试共用同一实现。
 
