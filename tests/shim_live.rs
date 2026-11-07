@@ -62,7 +62,7 @@ async fn harness(node: &Node) -> Result<(tempfile::TempDir, Arc<State>, Client, 
         let _ = axum::serve(listener, routes).await;
     });
     let endpoint = format!("http://{address}");
-    let client = Client::new(endpoint.clone(), &root.path().join("token"))?;
+    let client = Client::new(endpoint.clone(), &root.path().join("token"), None)?;
     Ok((root, state, client, endpoint))
 }
 

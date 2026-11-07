@@ -160,6 +160,70 @@ async fn sequential_node_switches_preserve_earlier_choices_after_reload() -> Res
     Ok(())
 }
 
+/// 动态凭据与根 token 各自独立：撤销只看凭据库，坏文件也只影响动态凭据。
+#[tokio::test]
+async fn dynamic_credentials_authenticate_and_a_corrupt_store_still_denies() -> Result<()> {
+    let (_root, state) = state()?;
+    let app = sshpool::api::routes(state.clone());
+    let (_summary, token) = sshpool::credentials::issue(&state.home, "workbench", 3_600, now())?;
+
+    let allowed = app
+        .clone()
+        .oneshot(
+            Request::get("/v1/status")
+                .header("authorization", format!("Bearer {token}"))
+                .body(Body::empty())?,
+        )
+        .await?;
+    assert_eq!(allowed.status(), StatusCode::OK);
+
+    // 撤销后同一请求 401，且不影响根 token。
+    sshpool::credentials::revoke(&state.home, _summary.id, now())?;
+    let denied = app
+        .clone()
+        .oneshot(
+            Request::get("/v1/status")
+                .header("authorization", format!("Bearer {token}"))
+                .body(Body::empty())?,
+        )
+        .await?;
+    assert_eq!(denied.status(), StatusCode::UNAUTHORIZED);
+    let root = app
+        .clone()
+        .oneshot(
+            Request::get("/v1/status")
+                .header("authorization", format!("Bearer {}", state.token))
+                .body(Body::empty())?,
+        )
+        .await?;
+    assert_eq!(root.status(), StatusCode::OK);
+
+    // 凭据库损坏：动态凭据一律拒绝，且是 401 而不是 500；
+    // 根 token 不读该文件，所以仍然可用（控制面不会被一个坏文件锁在门外）。
+    let (second, second_token) = sshpool::credentials::issue(&state.home, "laptop", 3_600, now())?;
+    let store = sshpool::credentials::path(&state.home);
+    fs::write(&store, b"{ not json")?;
+    let broken = app
+        .clone()
+        .oneshot(
+            Request::get("/v1/status")
+                .header("authorization", format!("Bearer {second_token}"))
+                .body(Body::empty())?,
+        )
+        .await?;
+    assert_eq!(broken.status(), StatusCode::UNAUTHORIZED);
+    let root = app
+        .oneshot(
+            Request::get("/v1/status")
+                .header("authorization", format!("Bearer {}", state.token))
+                .body(Body::empty())?,
+        )
+        .await?;
+    assert_eq!(root.status(), StatusCode::OK);
+    assert_eq!(second.subject, "laptop");
+    Ok(())
+}
+
 #[tokio::test]
 async fn node_switch_requires_authentication_and_preserves_unknown_names() -> Result<()> {
     let (_root, state) = state()?;

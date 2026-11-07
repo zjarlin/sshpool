@@ -29,6 +29,8 @@ impl From<anyhow::Error> for ApiError {
 }
 impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
+        // 只认 `unauthorized` 这一个字面量，其余一律 400：鉴权失败不区分原因，
+        // 避免通过状态码或正文探测「凭据库坏了」「标识存在但摘要不匹配」这类差异。
         let status = if self.0.to_string() == "unauthorized" {
             StatusCode::UNAUTHORIZED
         } else {
@@ -38,22 +40,52 @@ impl IntoResponse for ApiError {
     }
 }
 type ApiResult<T> = Result<T, ApiError>;
-fn authorized(headers: &HeaderMap, state: &State) -> Result<()> {
+
+/// 请求主体：根 token 用于控制面运维，短期凭据用于借出的工作台或一次性脚本。
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Principal {
+    Root,
+    Credential(crate::credentials::Grant),
+}
+
+impl Principal {
+    /// 审计与日志用的主体名；根 token 没有主体，用固定字符串代替。
+    pub fn subject(&self) -> &str {
+        match self {
+            Self::Root => "root",
+            Self::Credential(grant) => &grant.subject,
+        }
+    }
+}
+
+/// 鉴权：先比根 token（恒时比较），不匹配再查短期凭据库。
+///
+/// 凭据库损坏必须拒绝（fail-closed），错误写到 stderr 供运维发现；
+/// 对客户端只回 401，不泄露存储状态。
+fn authorized(headers: &HeaderMap, state: &State) -> ApiResult<Principal> {
     let actual = headers
         .get("authorization")
         .and_then(|v| v.to_str().ok())
         .unwrap_or("");
     let expected = format!("Bearer {}", state.token);
-    ensure!(
-        actual.len() == expected.len()
-            && actual
-                .bytes()
-                .zip(expected.bytes())
-                .fold(0_u8, |v, (a, b)| v | (a ^ b))
-                == 0,
-        "unauthorized"
-    );
-    Ok(())
+    let root_match = actual.len() == expected.len()
+        && actual
+            .bytes()
+            .zip(expected.bytes())
+            .fold(0_u8, |v, (a, b)| v | (a ^ b))
+            == 0;
+    if root_match {
+        return Ok(Principal::Root);
+    }
+    let token = actual.strip_prefix("Bearer ").unwrap_or("");
+    match crate::credentials::verify(&state.home, token, crate::model::now()) {
+        Ok(Some(grant)) => Ok(Principal::Credential(grant)),
+        Ok(None) => Err(anyhow::anyhow!("unauthorized").into()),
+        Err(error) => {
+            eprintln!("sshpool: credential store unusable, rejecting request: {error:#}");
+            Err(anyhow::anyhow!("unauthorized").into())
+        }
+    }
 }
 pub fn routes(state: Arc<State>) -> Router {
     Router::new()
@@ -74,7 +106,7 @@ async fn status(
     AppState(state): AppState<Arc<State>>,
     headers: HeaderMap,
 ) -> ApiResult<impl IntoResponse> {
-    authorized(&headers, &state)?;
+    let _principal = authorized(&headers, &state)?;
     let nodes = state.nodes().await;
     // 状态查询本身就是一次探测：它不在调度锁内，可以让调度复用同一份新鲜快照。
     Ok(axum::Json(state.refresh_health(&nodes).await))
@@ -99,7 +131,7 @@ async fn set_node_enabled(
     name: String,
     enabled: bool,
 ) -> ApiResult<axum::Json<crate::config::Node>> {
-    authorized(&headers, &state)?;
+    let _principal = authorized(&headers, &state)?;
     let node = state.set_node_enabled(&name, enabled).await?;
     Ok(axum::Json(node))
 }
@@ -109,7 +141,7 @@ async fn reconcile_node(
     headers: HeaderMap,
     Path(name): Path<String>,
 ) -> ApiResult<axum::Json<crate::reconcile::Report>> {
-    authorized(&headers, &state)?;
+    let _principal = authorized(&headers, &state)?;
     Ok(axum::Json(
         crate::reconcile::reconcile(&state, Some(&name)).await?,
     ))
@@ -118,7 +150,7 @@ async fn reconcile_all(
     AppState(state): AppState<Arc<State>>,
     headers: HeaderMap,
 ) -> ApiResult<axum::Json<crate::reconcile::Report>> {
-    authorized(&headers, &state)?;
+    let _principal = authorized(&headers, &state)?;
     Ok(axum::Json(crate::reconcile::reconcile(&state, None).await?))
 }
 
@@ -126,7 +158,7 @@ async fn jobs(
     AppState(state): AppState<Arc<State>>,
     headers: HeaderMap,
 ) -> ApiResult<impl IntoResponse> {
-    authorized(&headers, &state)?;
+    let _principal = authorized(&headers, &state)?;
     let mut jobs = state
         .jobs
         .lock()
@@ -142,7 +174,7 @@ async fn job(
     headers: HeaderMap,
     Path(id): Path<Uuid>,
 ) -> ApiResult<impl IntoResponse> {
-    authorized(&headers, &state)?;
+    let _principal = authorized(&headers, &state)?;
     let job = state
         .jobs
         .lock()
@@ -157,7 +189,7 @@ async fn cancel(
     headers: HeaderMap,
     Path(id): Path<Uuid>,
 ) -> ApiResult<impl IntoResponse> {
-    authorized(&headers, &state)?;
+    let _principal = authorized(&headers, &state)?;
     // 与首次领取任务共用调度锁，避免取消和进入 Running 的窄竞态。
     let _scheduling = state.scheduling.lock().await;
     let _transition = state.transitions.lock().await;
@@ -178,7 +210,7 @@ async fn submit(
     AppState(state): AppState<Arc<State>>,
     request: Request,
 ) -> ApiResult<impl IntoResponse> {
-    authorized(request.headers(), &state)?;
+    let _principal = authorized(request.headers(), &state)?;
     let encoded = request
         .headers()
         .get("x-sshpool-build")
@@ -306,7 +338,7 @@ async fn log(
     Path(id): Path<Uuid>,
     axum::extract::Query(query): axum::extract::Query<std::collections::HashMap<String, String>>,
 ) -> ApiResult<Response> {
-    authorized(&headers, &state)?;
+    let _principal = authorized(&headers, &state)?;
     ensure_job(&state, id).await?;
     let offset = query
         .get("offset")
@@ -345,7 +377,7 @@ async fn artifacts(
     headers: HeaderMap,
     Path(id): Path<Uuid>,
 ) -> ApiResult<Response> {
-    authorized(&headers, &state)?;
+    let _principal = authorized(&headers, &state)?;
     if !ensure_job(&state, id).await?.artifacts {
         return Err(anyhow::anyhow!("no artifacts available").into());
     }
@@ -364,7 +396,7 @@ async fn events(
     headers: HeaderMap,
     Path(id): Path<Uuid>,
 ) -> ApiResult<impl IntoResponse> {
-    authorized(&headers, &state)?;
+    let _principal = authorized(&headers, &state)?;
     ensure_job(&state, id).await?;
     let path = state.dir(id).join("events.jsonl");
     // 和追加事件共用锁，避免读取到尚未写完的 JSON 行。

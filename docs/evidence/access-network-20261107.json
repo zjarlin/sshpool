@@ -1,0 +1,84 @@
+{
+  "checked_at": "2026-11-07T20:25:00+08:00",
+  "scope": "070 跨不可信网络的控制面：证书校验的 HTTPS、并发 TLS 握手、短期可撤销凭据",
+  "environment": {
+    "os": "Darwin arm64",
+    "binary": "target/release/sshpool（release 构建）",
+    "tls": "rustls 0.23 (ring), TLS1.2+1.3, ALPN h2+http/1.1",
+    "cert": "openssl 4.1.0 自建 CA 签发叶证书（CN=localhost, SAN DNS:localhost, IP:127.0.0.1, CA:FALSE, serverAuth）",
+    "controller": "127.0.0.1:18877 (https)；SSH 12222/12223 明文",
+    "home": "临时目录，一次性生成 token 与 credentials.json；不涉及生产状态目录"
+  },
+  "implementation": {
+    "modules": ["src/tls.rs（新建）", "src/credentials.rs（新建）", "src/api.rs::authorized", "src/client.rs::new(ca_file)", "src/config.rs tls_cert/tls_key"],
+    "config": "config.toml 的 tls_cert 与 tls_key 必须同时给出且为绝对路径；私钥必须 0600",
+    "client": "CLI 全局 --ca-file / SSHPOOL_CA_FILE；仅 https 端点可配；无跳过校验开关",
+    "credentials": "home/credentials.json（0600）+ home/credentials.lock（0600）；只存 SHA-256"
+  },
+  "automated": {
+    "suites": [
+      "src/credentials.rs（9 个单测）",
+      "src/tls.rs（3 个单测）",
+      "tests/access_network.rs（6 个端到端测试）",
+      "tests/api.rs::dynamic_credentials_authenticate_and_a_corrupt_store_still_denies"
+    ],
+    "verified": [
+      "无 CA 时自建 CA 证书被拒；给了 CA 后可正常对话",
+      "明文 HTTP 打 TLS 端口在握手层失败，不进入路由",
+      "http 端点 + --ca-file 在建立连接前被拒绝",
+      "只配证书或只配私钥、相对路径均拒绝启动",
+      "私钥组/其他可读（0644）拒绝启动；空/非 PEM/不匹配密钥在绑定前失败",
+      "垃圾字节与只连不说的客户端不阻塞后续握手（并发握手 + 64 上限 + 10s 超时）",
+      "签发后 token 可验证、磁盘无明文与 secret、摘要为 64 位小写 hex",
+      "到期为半开区间（created_at <= at < expires_at）",
+      "撤销同秒生效且幂等，保留最早的 revoked_at",
+      "伪造/异库 token 不写磁盘；坏库 fail-closed",
+      "并发 8 次签发不丢记录（去掉写锁时只剩 1 条）",
+      "prune 只清理已过期且已撤销的记录",
+      "坏 credentials.json 时动态凭据 401，根 token 仍 200"
+    ]
+  },
+  "curl_matrix": {
+    "auto": {"exit": 0, "result": "2 200"},
+    "forced_http1_1": {"exit": 0, "result": "1.1 200"},
+    "forced_http2": {"exit": 0, "result": "2 200"},
+    "without_ca": {"exit": 60, "status": "000", "stderr": "curl: (60) SSL certificate problem: unable to get local issuer certificate"},
+    "plaintext_http_to_tls_port": {"exit": 1, "status": "000", "stderr": "curl: (1) Received HTTP/0.9 when not allowed"}
+  },
+  "cli": {
+    "https_with_ca": {"exit": 0, "stdout": "[]"},
+    "https_without_ca": {"exit": 1, "stderr": "invalid peer certificate: UnknownIssuer"}
+  },
+  "credential_flow": {
+    "issue": {"exit": 0, "subject": "workbench", "ttl_secs": 3600, "token_prefix": "spt_", "token_length": 101, "suffix_is_64_hex": true},
+    "store": {"plaintext_in_store": false, "secret_in_store": false, "store_mode": "0o600", "lock_mode": "0o600"},
+    "one_time_notice": "This token is shown only once. Store it in a file with mode 0600; `sshpool credential revoke <id>` disables it immediately.",
+    "use": {"jobs": {"exit": 0}, "status": {"exit": 0}},
+    "revoke": {"exit": 0, "reuse_after_revoke": {"exit": 1, "stderr": "controller: unauthorized"}, "revoke_again_unchanged": true},
+    "root_token_unaffected": {"exit": 0},
+    "list_after_revoke": {"active": false, "contains_digest": false},
+    "ttl_over_limit": {"ttl_hours": 2161, "exit": 1, "stderr": "credential lifetime must not exceed 90 days"},
+    "prune_dry_run": {"exit": 0, "planned": 0, "stderr": "dry run: 0 expired-and-revoked record(s) would be dropped; pass --apply to execute"}
+  },
+  "fail_closed": {
+    "corrupt_store": {"dynamic_credential_exit": 1, "stderr": "unauthorized", "server_log": "credential store unusable", "root_token_exit": 0},
+    "loose_key_0644": {"startup": "failed", "stderr": "TLS key ... must not be readable by group or others (chmod 600)"},
+    "only_tls_key": {"startup": "failed", "stderr": "tls_cert and tls_key must be configured together"}
+  },
+  "slow_client": {
+    "scenario": "先发垃圾字节，再建一条只连不说的连接",
+    "subsequent_request": "code=200 time=0.0016s",
+    "server_stderr": ["InvalidContentType", "tls handshake eof"]
+  },
+  "defects_found": [
+    "axum 未启用 http2 feature 时 ALPN 协商成 h2 但服务端只说 HTTP/1.1，curl 报 Error in the HTTP2 framing layer；加 features=[\"http2\"] 后三种协商全部 200",
+    "TLS 握手最初串行执行，一个只连不说的客户端会卡住整个控制面；改为每连接独立任务 + 并发上限 64 + 10s 超时"
+  ],
+  "not_covered": [
+    "证书轮换与热重载（换证书需重启控制面）",
+    "客户端证书（mTLS）；当前只做服务端证书校验",
+    "凭据分级权限：短期凭据与根 token 权限相同，Principal 仅为后续审计预留",
+    "跨公网真实 RTT 与丢包",
+    "CA 文件轮换与吊销列表"
+  ]
+}

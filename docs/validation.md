@@ -205,6 +205,38 @@ _（本节标题锚点为 `upgrade-and-retention`。）_
 
 尚未覆盖：跨主机副本的保留（远端副本仍需 `replica sync` 自行管理）、`backups/jobs/` 自身的容量上限与再压缩、`--purge` 后的归档恢复演练（`install_bundle` 只在临时目录验证，没有替换过真实控制面状态）。
 
+### 跨不可信网络的控制面 {#access-network}
+
+_（本节标题锚点为 `access-network`。）_
+
+控制面默认仍是回环上的明文 HTTP：默认配置没有 `tls_cert` / `tls_key`，行为与之前一致。需要跨不可信网络时，`config.toml` 同时给出证书链与私钥（绝对路径、私钥 `0600`）即可让同一个 `serve` 改用 rustls 终止 TLS，ALPN 为 `h2` + `http/1.1`；客户端用 `--ca-file` 或 `SSHPOOL_CA_FILE` 指定信任的 CA，没有"跳过校验"的开关。客户端拒绝把 CA 文件用于 `http://` 端点，因为这个组合只可能来自误配置。
+
+| 不变量 | 实现 | 自动化 |
+| --- | --- | --- |
+| 不校验证书就失败 | 未提供 CA 时用系统信任链；自建 CA 的证书必须显式 `--ca-file` | `https_verifies_the_certificate_and_short_lived_credentials_can_be_revoked` |
+| 明文不能顶替 TLS | 向 TLS 端口发 HTTP/1.1 明文请求在握手层失败，不落到路由 | 同上（`Received HTTP/0.9 when not allowed`） |
+| CA 只对 HTTPS 有意义 | `http://` + `--ca-file` 在建立客户端前就报错 | `a_ca_file_with_a_plaintext_endpoint_is_refused` |
+| TLS 配置必须成对 | 只配证书或只配私钥都拒绝启动；相对路径也拒绝 | `half_configured_tls_is_refused` |
+| 私钥不能组/其他可读 | 启动时检查 `mode & 0o077`，失败即拒绝绑定端口 | `a_world_readable_key_blocks_startup`、`a_world_readable_key_is_refused` |
+| 空/非 PEM/不匹配的密钥 | `server_config` 在绑定前失败 | `an_empty_or_missing_certificate_fails_at_startup`、`a_mismatched_key_is_refused` |
+| 慢连接不阻塞控制面 | 每次握手在独立任务里完成，`accept()` 只取已完成握手的连接（信号量 64，超时 10s） | `garbage_and_silent_connections_do_not_block_the_listener` |
+| 只存凭据摘要 | 磁盘只有 SHA-256；token 明文只在签发时打印一次 | `issued_tokens_verify_and_never_store_the_secret`、`summaries_never_carry_the_digest` |
+| 到期是半开区间 | `created_at <= at < expires_at`，边界秒即失效 | `issued_tokens_verify_and_never_store_the_secret`（4599/4600 秒） |
+| 撤销立即生效且幂等 | 撤销后下一次请求即 401（已通过鉴权的进行中请求不被中断）；重复撤销保留最早的 `revoked_at` | `revoke_takes_effect_immediately_and_is_idempotent` |
+| 伪造 token 不碰磁盘 | 前缀不符或摘要不符都直接拒绝，不做任何写入 | `foreign_and_forged_tokens_do_not_touch_the_store` |
+| 坏库失败即拒绝 | 非 JSON、错 schema、未知字段、空 subject、坏摘要都 `Err`（fail-closed） | `a_corrupt_store_fails_closed`、`duplicate_identifiers_and_bad_lifetimes_are_rejected` |
+| 并发签发不丢记录 | `issue`/`revoke`/`prune` 先取 `credentials.lock` 排他锁再读改写 | `concurrent_issuance_does_not_lose_records`（去掉锁后 8 次并发只剩 1 条） |
+| 只清理已撤销且已过期 | 仍有效或"过期但没撤销"的记录都保留 | `prune_only_drops_credentials_that_expired_after_revocation` |
+| 坏库不锁死控制面 | 动态凭据校验 `Err` 时记 stderr 并返回 401，主 token 照常通过 | `dynamic_credentials_authenticate_and_a_corrupt_store_still_denies` |
+
+真实二进制（macOS ARM64 release，rustls 0.23/ring，TLS1.2+1.3，openssl 4.1.0 自建 CA → `CA:FALSE` 叶证书）在 `127.0.0.1:18877` 的实测矩阵：`curl --cacert` 三种协商全部 `200`（auto/h2、强制 `--http1.1`、强制 `--http2`）；不带 CA 时 curl 退出码 60、`unable to get local issuer certificate`、状态 `000`；向 TLS 端口发明文 HTTP 退出码 1、`Received HTTP/0.9 when not allowed`。CLI 带 `--ca-file` 访问 `https://` 成功返回 `[]`，不带 CA 报 `invalid peer certificate: UnknownIssuer`。
+
+凭据侧：`credential issue --subject workbench --ttl-hours 1` 输出 `spt_` 前缀、101 字符、后 64 位十六进制的 token；`credentials.json` 与 `credentials.lock` 均为 `0600`，且磁盘上既没有明文也没有 secret 片段。该 token 能正常调用 `jobs` / `status`；`revoke` 后立刻复用得到 `controller: unauthorized`；重复 `revoke` 时 `revoked_at` 保持不变；根 token 全程不受影响；`--ttl-hours 2161` 被拒（`credential lifetime must not exceed 90 days`）；`prune` 默认 dry-run 只打印计划。向 `credentials.json` 写入坏内容后，CLI 用动态凭据退出码 1（`unauthorized`），服务端 stderr 出现 `credential store unusable`，根 token 仍是 200。松散私钥（`0644`）启动报 `TLS key … must not be readable by group or others (chmod 600)`；只配 `tls_key` 报 `tls_cert and tls_key must be configured together`；先发垃圾字节再建一条只连不说的连接，随后的正常请求仍在 1.6ms 内返回 200。证据见 [evidence/access-network-20261107.json](evidence/access-network-20261107.json)。
+
+抓到的两个真实缺陷：`axum` 未启用 `http2` feature 时，ALPN 协商成 `h2` 但服务端只会说 HTTP/1.1，curl 报 `Error in the HTTP2 framing layer` —— 打开 `features = ["http2"]` 后三种协商全部正常。握手最初串行执行，被"只连不说"的客户端卡住整个控制面；改成每连接独立任务 + 64 并发上限 + 10 秒超时后，该测试与真实链路都恢复正常。
+
+尚未覆盖：证书轮换/热重载（换证书需重启控制面）、客户端证书（mTLS，当前只做服务端证书校验）、凭据分级授权（短期凭据与根 token 权限相同，都能提交和取消任务，`Principal` 只为后续审计预留）、跨公网真实 RTT、CA 文件轮换与吊销列表。
+
 ## hardware-proof
 
 2026-11-07 起，这条链路有可复跑的 `#[ignore]` 测试：`tests/hardware_live.rs`。它在测试进程内启动临时控制面（临时 home + 回环随机端口），由 **ARM64 工作台执行真实 CLI** 通过 `host.lima.internal` 访问该控制面，再派发到独立 x86_64 Worker。

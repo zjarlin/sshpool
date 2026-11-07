@@ -30,7 +30,9 @@ Feature: 身份与网络边界
     Then 节点可以接单而不覆盖现有 LAN 路由
     And 已可用的 LAN 公网映射或 frp 入口无需被替换
 
-  @planned @p1
+  # evidence: docs/validation.md#access-network
+  # evidence: tests/access_network.rs::https_verifies_the_certificate_and_short_lived_credentials_can_be_revoked
+  @verified @automated @p1
   Scenario: 跨不可信网络的控制面
     Given 工作台与控制面跨越不可信网络
     When 传输任务输入与访问 token

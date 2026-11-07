@@ -169,6 +169,35 @@ export SSHPOOL_TOKEN_FILE="$HOME/.sshpool/token"
 
 仅把控制面 token 放到可信工作台，权限设为 `0600`。节点 SSH 私钥留在 Mac。默认 API 只监听宿主回环；跨不可信网络使用 SSH 转发或 HTTPS，不能把明文 HTTP 暴露到公网。
 
+### 控制面 HTTPS 与短期凭据
+
+默认配置不启用 TLS，行为与之前一致。要跨不可信网络直连，在 `config.toml` 同时给出证书链与私钥（绝对路径，私钥必须 `0600`）：
+
+```toml
+tls_cert = "/etc/sshpool/fullchain.pem"
+tls_key = "/etc/sshpool/privkey.pem"
+```
+
+只配其中一个、用相对路径、或私钥对组/其他可读都会让 `serve` 在绑定端口前失败。启用后同一个 `serve` 用 rustls 终止 TLS，ALPN 为 `h2` 和 `http/1.1`。客户端用自己的 CA 时显式指定：
+
+```sh
+export SSHPOOL_ENDPOINT=https://controller.example:8877
+export SSHPOOL_CA_FILE=/etc/sshpool/ca.pem      # 或每次传 --ca-file
+```
+
+不提供跳过证书校验的开关；客户端只接受系统信任链或显式给的 CA。`--ca-file` 与 `http://` 端点组合会被直接拒绝，因为这一定是误配置。
+
+多用户或多工作台可以签发短期凭据，不必分发根 token：
+
+```sh
+sshpool credential issue --subject workbench --ttl-hours 12   # stdout 里有一次性的 token
+sshpool credential list
+sshpool credential revoke <id>
+sshpool credential prune --apply                                # 只清理已过期且已撤销的记录
+```
+
+明文 token 只在 `issue` 时打印一次，磁盘上只保存 SHA-256 摘要；有效期上限 90 天，到期是半开区间，撤销对之后发起的请求立即生效（已通过鉴权的进行中请求不会被中断）且可重复执行。根 token 仍然可用，并且是坏掉的 `credentials.json` 之外唯一的入口 —— 凭据库损坏时动态凭据一律 401，但根 token 不会因此被锁在门外。当前短期凭据与根 token 权限相同，都能提交和取消任务；按主体分级授权尚未实现。
+
 ## 已知限制
 
 - 使用整个任务分派；尚未集成 sccache/Icecream 的编译单元拆分或远程缓存。原型借鉴 Slurm 的资源预约、OpenSSH 的连接面和容器运行时的隔离机制，不依赖这些项目的源码。
@@ -178,6 +207,8 @@ export SSHPOOL_TOKEN_FILE="$HOME/.sshpool/token"
 - 不自动同步已有工程或清理公司文件。任务记录与源码归档当前保留供诊断。清理必须离线执行：`jobs prune` 会独占 `controller.lock`，控制面在跑时直接拒绝。只有 `succeeded`/`failed`/`cancelled`、结束时间已知、且清理逐个确认的任务才可能进入候选；`interrupted` 可能被自动重跑，永不清理。任何无法解释的任务目录（非规范 UUID、缺 `job.json`、摘要不符、版本预留超前、未知文件）都会阻塞整批清理，而不是被静默跳过。执行时先写出经摘要核对、并实际重新安装验证过的归档到 `backups/jobs/`，再把任务目录移到 `backups/jobs/pruned-<ts>-<uuid>/`；加 `--purge` 才回收这份移动目录，归档始终保留。
 - 不保证入口 Mac 关机、休眠或重启时会话在线。任务状态副本能保存已确认记录，但入口 SSH 和控制器不会自动漂移；恢复机需要独立保存的配置、token 与 SSH 凭据。
 - 不提供 NAT 穿透；复用已有 SSH ProxyJump/ProxyCommand 或受控网络。没有新增路由、隧道或端口映射。
+- HTTPS 只做服务端证书校验，没有客户端证书（mTLS）。改证书必须重启控制面，没有热重载或轮换；信任的 CA 需要用 `--ca-file` 指定，没有吊销列表。
+- 短期凭据只解决"能撤销"，尚未按主体限制权限：拿到任一条有效凭据就能提交、取消任务和查询全部记录。逐主体的授权与审计见 [验证文档](docs/validation.md#access-network)。
 
 ## 开发与验证
 

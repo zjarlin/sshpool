@@ -76,7 +76,11 @@ async fn harness(nodes: Vec<Node>) -> Result<(tempfile::TempDir, Arc<State>, Cli
     tokio::spawn(async move {
         let _ = axum::serve(listener, routes).await;
     });
-    let client = Client::new(format!("http://{address}"), &root.path().join("token"))?;
+    let client = Client::new(
+        format!("http://{address}"),
+        &root.path().join("token"),
+        None,
+    )?;
     Ok((root, state, client))
 }
 

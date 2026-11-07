@@ -20,18 +20,33 @@ pub struct Client {
     token: String,
 }
 impl Client {
-    pub fn new(endpoint: String, token_file: &Path) -> Result<Self> {
+    /// `ca_file` 为空时使用系统信任链；显式给出时只信任该 CA 文件。
+    ///
+    /// 不提供「跳过校验」参数：跨不可信网络时能关掉的校验等于没有校验。
+    pub fn new(endpoint: String, token_file: &Path, ca_file: Option<&Path>) -> Result<Self> {
         let url = reqwest::Url::parse(&endpoint)?;
         ensure!(
             ["http", "https"].contains(&url.scheme()),
             "endpoint must be HTTP(S)"
         );
+        ensure!(
+            url.scheme() == "https" || ca_file.is_none(),
+            "a CA file only applies to an https endpoint"
+        );
         let token = std::fs::read_to_string(token_file)?.trim().to_string();
-        let http = reqwest::Client::builder()
+        let mut builder = reqwest::Client::builder()
             .connect_timeout(Duration::from_secs(10))
             .timeout(Duration::from_secs(150))
-            .no_proxy()
-            .build()?;
+            .no_proxy();
+        if let Some(ca_file) = ca_file {
+            let mut roots = crate::tls::client_roots(ca_file)?;
+            // 只用这份 CA，不叠加系统根：内网部署的信任边界应当是明确的。
+            builder = builder.tls_built_in_root_certs(false);
+            for certificate in roots.drain(..) {
+                builder = builder.add_root_certificate(certificate);
+            }
+        }
+        let http = builder.build()?;
         Ok(Self {
             http,
             endpoint: endpoint.trim_end_matches('/').into(),

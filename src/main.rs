@@ -18,6 +18,9 @@ struct Cli {
     endpoint: Option<String>,
     #[arg(long, global = true, env = "SSHPOOL_TOKEN_FILE")]
     token_file: Option<PathBuf>,
+    /// HTTPS 控制面的信任根（PEM）；不设时使用系统信任链。
+    #[arg(long, global = true, env = "SSHPOOL_CA_FILE")]
+    ca_file: Option<PathBuf>,
     #[command(subcommand)]
     command: Action,
 }
@@ -65,6 +68,11 @@ enum Action {
     },
     /// 从运行中的控制面读取节点状态。
     Status,
+    /// 管理短期访问凭据；明文只在签发时打印一次。
+    Credential {
+        #[command(subcommand)]
+        command: CredentialAction,
+    },
     /// 查看任务记录，或离线核对与清理任务库。
     Jobs {
         #[command(subcommand)]
@@ -105,6 +113,27 @@ enum Action {
         tool: String,
         #[arg(last = true)]
         arguments: Vec<String>,
+    },
+}
+#[derive(Subcommand)]
+enum CredentialAction {
+    /// 签发一条短期凭据，并把明文 token 打印到标准输出。
+    Issue {
+        /// 审计用的主体名，例如工作台或人名。
+        #[arg(long)]
+        subject: String,
+        /// 有效期（小时）；上限 90 天。
+        #[arg(long, default_value_t = 12)]
+        ttl_hours: u64,
+    },
+    /// 立即撤销一条凭据；撤销后新请求被拒绝（已通过鉴权的进行中请求不会被中断）。
+    Revoke { id: uuid::Uuid },
+    /// 列出凭据及其到期/撤销状态（不含明文）。
+    List,
+    /// 清理「已过期且已撤销」的记录；默认只打印计划。
+    Prune {
+        #[arg(long)]
+        apply: bool,
     },
 }
 #[derive(Subcommand)]
@@ -232,7 +261,7 @@ fn client(cli: &Cli, home: &std::path::Path) -> Result<Client> {
         .clone()
         .unwrap_or_else(|| "http://127.0.0.1:8877".into());
     let token = cli.token_file.clone().unwrap_or_else(|| home.join("token"));
-    Client::new(endpoint, &token)
+    Client::new(endpoint, &token, cli.ca_file.as_deref())
 }
 async fn dispatch(cli: Cli) -> Result<i32> {
     let home = cli
@@ -295,6 +324,7 @@ async fn dispatch(cli: Cli) -> Result<i32> {
                 2
             });
         }
+        Action::Credential { command } => return credential_command(&home, command),
         Action::Dr { command } => return dr_command(command),
         Action::Doctor => {
             println!(
@@ -395,6 +425,66 @@ async fn dispatch(cli: Cli) -> Result<i32> {
         }
         Action::InstallShims => install_shims(&home)?,
         Action::Shim { tool, arguments } => return shim(&cli, &home, tool, arguments).await,
+    }
+    Ok(0)
+}
+fn credential_command(home: &std::path::Path, command: &CredentialAction) -> Result<i32> {
+    use sshpool::credentials;
+    match command {
+        CredentialAction::Issue { subject, ttl_hours } => {
+            let ttl_secs = ttl_hours
+                .checked_mul(3_600)
+                .context("credential lifetime overflows seconds")?;
+            let (summary, token) =
+                credentials::issue(home, subject, ttl_secs, sshpool::model::now())?;
+            // 标准输出只有一份 JSON：脚本要能直接取 token，人类会在提示里看到一次性说明。
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&serde_json::json!({
+                    "id": summary.id,
+                    "subject": summary.subject,
+                    "created_at": summary.created_at,
+                    "expires_at": summary.expires_at,
+                    "token": token,
+                }))?
+            );
+            eprintln!(
+                "This token is shown only once. Store it in a file with mode 0600; \
+                 `sshpool credential revoke {}` disables it immediately.",
+                summary.id
+            );
+        }
+        CredentialAction::Revoke { id } => {
+            let summary = credentials::revoke(home, *id, sshpool::model::now())?;
+            println!("{}", serde_json::to_string_pretty(&summary)?);
+        }
+        CredentialAction::List => {
+            let at = sshpool::model::now();
+            let listed = credentials::list(home)?
+                .iter()
+                .map(|credential| {
+                    serde_json::json!({
+                        "id": credential.id,
+                        "subject": credential.subject,
+                        "created_at": credential.created_at,
+                        "expires_at": credential.expires_at,
+                        "revoked_at": credential.revoked_at,
+                        "active": credential.active(at),
+                    })
+                })
+                .collect::<Vec<_>>();
+            println!("{}", serde_json::to_string_pretty(&listed)?);
+        }
+        CredentialAction::Prune { apply } => {
+            let removed = credentials::prune(home, sshpool::model::now(), *apply)?;
+            if !*apply {
+                eprintln!(
+                    "dry run: {} expired-and-revoked record(s) would be dropped; pass --apply to execute",
+                    removed.len()
+                );
+            }
+            println!("{}", serde_json::to_string_pretty(&removed)?);
+        }
     }
     Ok(0)
 }
@@ -647,17 +737,34 @@ async fn serve(home: PathBuf) -> Result<()> {
             restored.len()
         );
     }
+    // 证书与私钥在绑定端口之前解析：配置错误不应先占端口再失败。
+    let tls = match (&config.tls_cert, &config.tls_key) {
+        (Some(cert), Some(key)) => Some(sshpool::tls::server_config(cert, key)?),
+        (None, None) => None,
+        _ => anyhow::bail!("tls_cert and tls_key must be configured together"),
+    };
     let api = tokio::net::TcpListener::bind(config.api_listen).await?;
     let ssh = tokio::net::TcpListener::bind(config.ssh_listen).await?;
     let backend = config.ssh_backend;
     let state = State::load(home, config)?;
     runner::recover(&state).await?;
     eprintln!(
-        "SSHPool API={} SSH={} backend={backend}",
-        state.config.api_listen, state.config.ssh_listen
+        "SSHPool API={} ({}) SSH={} backend={backend}",
+        state.config.api_listen,
+        if tls.is_some() { "https" } else { "http" },
+        state.config.ssh_listen
     );
+    let routes = sshpool::api::routes(state.clone());
+    // 两种监听器类型不同，各自走一遍 `axum::serve`；分支在外面写清楚，
+    // 免得在 select! 里塞类型擦除或动态分发。
+    let serve_api = async {
+        match tls {
+            Some(config) => axum::serve(sshpool::tls::TlsListener::new(api, config), routes).await,
+            None => axum::serve(api, routes).await,
+        }
+    };
     tokio::select! {
-        result = axum::serve(api, sshpool::api::routes(state.clone())) => result?,
+        result = serve_api => result?,
         result = gateway::serve(ssh, backend) => result?,
         result = shutdown_signal() => { result?; shutdown_jobs(&state).await?; }
     }

@@ -25,6 +25,12 @@ pub struct Config {
     pub nodes: Vec<Node>,
     #[serde(default)]
     pub replicas: Vec<Replica>,
+    /// PEM 证书链；与 `tls_key` 必须同时设置，否则 API 只监听明文 HTTP。
+    #[serde(default)]
+    pub tls_cert: Option<PathBuf>,
+    /// PEM 私钥；权限必须是 `0600`，否则启动直接失败。
+    #[serde(default)]
+    pub tls_key: Option<PathBuf>,
 }
 impl Default for Config {
     fn default() -> Self {
@@ -40,6 +46,8 @@ impl Default for Config {
             replica_min_ack: 0,
             nodes: Vec::new(),
             replicas: Vec::new(),
+            tls_cert: None,
+            tls_key: None,
         }
     }
 }
@@ -241,6 +249,21 @@ pub fn validate(config: &Config) -> Result<()> {
         config.ssh_listen != config.ssh_backend,
         "SSH proxy cannot forward to itself"
     );
+    // TLS 只能「全有或全无」：只配一半会让启动悄悄退回明文，是最危险的失败模式。
+    ensure!(
+        config.tls_cert.is_some() == config.tls_key.is_some(),
+        "tls_cert and tls_key must be configured together"
+    );
+    for path in [config.tls_cert.as_ref(), config.tls_key.as_ref()]
+        .into_iter()
+        .flatten()
+    {
+        ensure!(
+            path.is_absolute(),
+            "TLS paths must be absolute: {}",
+            path.display()
+        );
+    }
     let mut names = HashSet::new();
     for node in &config.nodes {
         validate_node(node)?;
