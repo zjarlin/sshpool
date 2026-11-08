@@ -7,7 +7,8 @@ from pathlib import Path
 import subprocess
 import sys
 import tempfile
-import time
+import selectors
+import signal
 import unittest
 
 worker = None
@@ -109,41 +110,33 @@ os.read(0, 1)
             lock_path = Path(directory) / 'runtime.lock'
             helper = subprocess.Popen([sys.executable, '-c', script, str(source.parent), str(lock_path)],
                                       stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
-            child = None
+            child_fd = None
             try:
                 child = int(helper.stdout.readline())
+                child_fd = os.pidfd_open(child)
                 with lock_path.open('rb') as lock:
                     with self.assertRaises(BlockingIOError):
                         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
                     helper.kill()
                     helper.wait(timeout=5)
-                    deadline = time.monotonic() + 5
-                    while True:
-                        try:
-                            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                            break
-                        except BlockingIOError:
-                            if time.monotonic() >= deadline:
-                                self.fail('orphan still holds runtime lock')
-                            time.sleep(0.02)
-                    status = Path(f'/proc/{child}/status')
-                    while status.exists():
-                        try:
-                            if 'State:\tZ' in status.read_text():
-                                break
-                        except FileNotFoundError:
-                            break
-                        if time.monotonic() >= deadline:
-                            self.fail('orphan did not finish after releasing its lock')
-                        time.sleep(0.02)
+                    # pidfd 绑定实际子进程，避免读取退出中的 /proc 文件或命中复用的 PID。
+                    with selectors.DefaultSelector() as selector:
+                        selector.register(child_fd, selectors.EVENT_READ)
+                        self.assertTrue(selector.select(5), 'orphan did not exit after helper death')
+                    fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
             finally:
                 if helper.poll() is None:
                     helper.kill()
                 helper.wait(timeout=5)
                 helper.stdin.close()
                 helper.stdout.close()
-                if child is not None and Path(f'/proc/{child}').exists():
-                    os.kill(child, 9)
+                if child_fd is not None:
+                    try:
+                        signal.pidfd_send_signal(child_fd, signal.SIGKILL)
+                    except ProcessLookupError:
+                        pass
+                    finally:
+                        os.close(child_fd)
 
     def test_parent_change_during_installation_prevents_exec(self):
         result = subprocess.run(['/bin/true'], preexec_fn=lambda: worker.parent_death(-1), timeout=5)

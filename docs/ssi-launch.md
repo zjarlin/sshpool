@@ -75,6 +75,6 @@ sshpool ssi-launch --plan lab-plan.json --ssh-config lab-ssh-config --output new
 
 控制 JSONL 每行最多 64 KiB，每个节点累计最多 256 KiB，控制器事件队列最多 16 条，连续小报文也不能无限积压。接收端先保留有界原始字节再校验；截断、超长、字段缺失和过期身份均会留下可复核的失败输入。新增三项 Rust 测试覆盖拒绝记录、报文顺序和累计上限。
 
-新增 Linux 管道测试覆盖半帧等待期限、半帧 EOF、超长输入和同次读取中的多条报文。这些测试验证文件和控制流边界；两台专用 VM 的混版本、半许可及断连 QEMU 实验仍未完成，场景保持 partial。
+新增 Linux 管道测试覆盖半帧等待期限、半帧 EOF、超长输入和同次读取中的多条报文。父进程死亡测试用 pidfd 绑定实际子进程并等待退出，再验证运行锁释放；[首次 Linux CI](https://github.com/zjarlin/sshpool/actions/runs/42445400605) 暴露了旧 `/proc` 观察方式在进程已消失时抛出 `ProcessLookupError` 的竞态，失败记录保留。这些测试验证文件和控制流边界；两台专用 VM 的混版本、半许可及断连 QEMU 实验仍未完成，场景保持 partial。
 
 代码阅读顺序：[启动计划和校验](../src/ssi_launch/model.rs) → [控制流程](../src/ssi_launch.rs) → [远端执行与监督](../src/ssi_launch_worker.py)。
