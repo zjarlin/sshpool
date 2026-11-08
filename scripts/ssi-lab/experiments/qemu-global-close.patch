@@ -1,0 +1,440 @@
+--- a/interrupt-router.c
++++ b/interrupt-router.c
+@@ -24,7 +24,7 @@
+ #include "system/cpus.h"
+ 
+ /* 启动版本包含 MMIO 完成确认与关机排空协议，拒绝旧版混用。 */
+-#define ROUTER_PROTOCOL_VERSION 5
++#define ROUTER_PROTOCOL_VERSION 6
+ #define ROUTER_HELLO 0x53534948
+ #define ROUTER_HELLO_ACK 0x53534941
+ #define ROUTER_STARTUP_TIMEOUT_MS 15000
+@@ -61,11 +61,18 @@
+ /* 主线程和各入站处理器共同维护单次关闭屏障，不用 EOF 代替确认。 */
+ static QemuMutex drain_mutex;
+ static QemuCond drain_cond;
+-static bool drain_started;
+-static bool drain_finished;
+-static uint64_t drain_seen;
+-static uint64_t drain_received;
+-static uint64_t drain_nonce;
++typedef struct RouterBarrier {
++    bool started;
++    bool finished;
++    uint64_t seen;
++    uint64_t received;
++    uint64_t nonce;
++    const char *name;
++} RouterBarrier;
++
++static RouterBarrier quiesce = { .name = "QUIESCE" };
++static RouterBarrier drain = { .name = "DRAIN" };
++static uint64_t close_generation;
+ 
+ static unsigned int router_index(void)
+ {
+@@ -171,7 +178,7 @@
+ static void router_forward_lock(void)
+ {
+     qemu_mutex_lock(&io_forwarding_mutex);
+-    if (qatomic_read(&drain_started)) {
++    if (qatomic_read(&drain.started)) {
+         error_report("SSI router generated traffic after local drain");
+         exit(EXIT_FAILURE);
+     }
+@@ -179,10 +186,11 @@
+ 
+ static void *router_drain_watchdog(void *opaque)
+ {
++    RouterBarrier *barrier = opaque;
+     int64_t deadline = qemu_clock_get_ms(QEMU_CLOCK_REALTIME) + ROUTER_DRAIN_TIMEOUT_MS;
+ 
+     qemu_mutex_lock(&drain_mutex);
+-    while (!drain_finished) {
++    while (!barrier->finished) {
+         int64_t left = deadline - qemu_clock_get_ms(QEMU_CLOCK_REALTIME);
+         if (left <= 0) {
+             error_report("SSI router drain deadline expired");
+@@ -260,6 +268,7 @@
+     EXIT,
+     DRAIN,
+     CLOCK_BARRIER,
++    QUIESCE,
+ };
+ 
+ enum rdma_role {
+@@ -573,7 +582,9 @@
+                 qemu_system_shutdown_request_with_code(cause, code);
+                 break;
+             }
++            case QUIESCE:
+             case DRAIN: {
++                RouterBarrier *barrier = type == QUIESCE ? &quiesce : &drain;
+                 MachineState *ms = MACHINE(qdev_get_machine());
+                 uint32_t version = qemu_get_be32(req_file);
+                 uint32_t sender = qemu_get_be32(req_file);
+@@ -587,14 +598,21 @@
+                     exit(EXIT_FAILURE);
+                 }
+                 qemu_mutex_lock(&drain_mutex);
+-                if (drain_seen & (UINT64_C(1) << sender)) {
++                if (barrier->seen & (UINT64_C(1) << sender)) {
+                     error_report("SSI duplicate drain marker");
+                     exit(EXIT_FAILURE);
+                 }
+-                drain_seen |= UINT64_C(1) << sender;
++                if (type == DRAIN && !(quiesce.received & (UINT64_C(1) << sender))) {
++                    error_report("SSI device drain preceded CPU quiescence");
++                    _exit(EXIT_FAILURE);
++                }
++                if (type == QUIESCE && sender == 0) {
++                    close_generation = nonce;
++                }
++                barrier->seen |= UINT64_C(1) << sender;
+                 int64_t deadline = qemu_clock_get_ms(QEMU_CLOCK_REALTIME) + ROUTER_DRAIN_TIMEOUT_MS;
+                 /* 本流的先前设备操作已完成；本地尚未排空时不能提前确认。 */
+-                while (!qatomic_read(&drain_started)) {
++                while (!qatomic_read(&barrier->started)) {
+                     int64_t left = deadline - qemu_clock_get_ms(QEMU_CLOCK_REALTIME);
+                     if (left <= 0) {
+                         error_report("SSI local quiescence deadline expired");
+@@ -615,10 +633,10 @@
+                     exit(EXIT_FAILURE);
+                 }
+                 qemu_mutex_lock(&drain_mutex);
+-                drain_received |= UINT64_C(1) << sender;
+-                drained = true;
+-                fprintf(stderr, "SSI_DRAIN_ACK_SENT node=%u peer=%u nonce=%" PRIu64 "\n",
+-                        target, sender, nonce);
++                barrier->received |= UINT64_C(1) << sender;
++                drained = type == DRAIN;
++                fprintf(stderr, "SSI_%s_ACK_SENT node=%u peer=%u nonce=%" PRIu64 "\n",
++                        barrier->name, target, sender, nonce);
+                 qemu_cond_broadcast(&drain_cond);
+                 qemu_mutex_unlock(&drain_mutex);
+                 break;
+@@ -994,7 +1012,7 @@
+ 
+ 
+ /* 在 vCPU 停止且块层排空之后执行；路由处理器在此期间仍负责完成先前请求。 */
+-void drain_io_router(void)
++static void router_barrier(RouterBarrier *barrier, unsigned int type)
+ {
+     MachineState *ms = MACHINE(qdev_get_machine());
+     QemuThread watchdog;
+@@ -1015,14 +1033,21 @@
+     }
+     expected = (UINT64_MAX >> (64 - ms->qemu_nums)) & ~(UINT64_C(1) << index);
+     /* 序号只关联同一 TCP 会话内的确认，不提供协议认证或跨连接重放保护。 */
+-    drain_nonce = qemu_clock_get_ns(QEMU_CLOCK_REALTIME) | UINT64_C(1);
++    barrier->nonce = qemu_clock_get_ns(QEMU_CLOCK_REALTIME) | UINT64_C(1);
+     qemu_thread_create(&watchdog, "ssi-drain-deadline", router_drain_watchdog,
+-                       NULL, QEMU_THREAD_JOINABLE);
++                       barrier, QEMU_THREAD_JOINABLE);
+     qemu_mutex_lock(&io_forwarding_mutex);
+     qemu_mutex_lock(&drain_mutex);
+-    qatomic_set(&drain_started, true);
+-    fprintf(stderr, "SSI_DRAIN_LOCAL node=%u stopped=%u nonce=%" PRIu64 "\n",
+-            index, stopped, drain_nonce);
++    if (barrier->started) {
++        error_report("SSI duplicate local barrier");
++        _exit(EXIT_FAILURE);
++    }
++    if (type == QUIESCE && index == 0) {
++        close_generation = barrier->nonce;
++    }
++    qatomic_set(&barrier->started, true);
++    fprintf(stderr, "SSI_%s_LOCAL node=%u stopped=%u nonce=%" PRIu64 "\n",
++            barrier->name, index, stopped, barrier->nonce);
+     qemu_cond_broadcast(&drain_cond);
+     qemu_mutex_unlock(&drain_mutex);
+     /* 先向所有对端发送标记，再读取确认，避免不同遍历顺序导致互等。 */
+@@ -1034,12 +1059,12 @@
+             error_report("SSI missing drain connection");
+             exit(EXIT_FAILURE);
+         }
+-        qemu_put_be16(req_files[peer], DRAIN);
++        qemu_put_be16(req_files[peer], type);
+         qemu_put_sbe32(req_files[peer], CPU_INDEX_ANY);
+         qemu_put_be32(req_files[peer], ROUTER_PROTOCOL_VERSION);
+         qemu_put_be32(req_files[peer], index);
+         qemu_put_be32(req_files[peer], peer);
+-        qemu_put_be64(req_files[peer], drain_nonce);
++        qemu_put_be64(req_files[peer], barrier->nonce);
+         qemu_fflush(req_files[peer]);
+         if (qemu_file_get_error(req_files[peer])) {
+             error_report("SSI drain marker send failed");
+@@ -1057,23 +1082,36 @@
+         uint64_t nonce = qemu_get_be64(rsp_files[peer]);
+         if (qemu_file_get_error(rsp_files[peer]) || magic != ROUTER_DRAIN_ACK ||
+             version != ROUTER_PROTOCOL_VERSION || sender != peer ||
+-            target != index || nonce != drain_nonce) {
++            target != index || nonce != barrier->nonce) {
+             error_report("SSI missing or invalid drain acknowledgement");
+             exit(EXIT_FAILURE);
+         }
+-        fprintf(stderr, "SSI_DRAIN_ACK_RECEIVED node=%u peer=%u nonce=%" PRIu64 "\n",
+-                index, peer, nonce);
++        fprintf(stderr, "SSI_%s_ACK_RECEIVED node=%u peer=%u nonce=%" PRIu64 "\n",
++                barrier->name, index, peer, nonce);
+     }
+     qemu_mutex_unlock(&io_forwarding_mutex);
+     qemu_mutex_lock(&drain_mutex);
+-    while (drain_received != expected) {
++    while (barrier->received != expected) {
+         qemu_cond_wait(&drain_cond, &drain_mutex);
+     }
+-    drain_finished = true;
++    barrier->finished = true;
+     qemu_cond_broadcast(&drain_cond);
+     qemu_mutex_unlock(&drain_mutex);
+     qemu_thread_join(&watchdog);
+-    fprintf(stderr, "SSI_DRAIN_COMPLETE node=%u peers=%u\n", index, ms->qemu_nums - 1);
++    fprintf(stderr, "SSI_%s_COMPLETE node=%u peers=%u\n", barrier->name, index, ms->qemu_nums - 1);
++}
++
++/* 双端停止所有 vCPU 并处理此前的路由报文，设备清理仍允许产生中断。 */
++uint64_t quiesce_io_router(void)
++{
++    router_barrier(&quiesce, QUIESCE);
++    return close_generation;
++}
++
++/* 所有设备清理完成后才禁止新的转发，随后进入内核关闭协议。 */
++void drain_io_router(void)
++{
++    router_barrier(&drain, DRAIN);
+ }
+ 
+ void disconnect_io_router(void)
+--- a/interrupt-router.h
++++ b/interrupt-router.h
+@@ -50,6 +50,7 @@
+ int kvmclock_barrier(uint64_t epoch, uint32_t phase,
+                      uint64_t clock_floor, uint64_t tsc_floor);
+ 
++uint64_t quiesce_io_router(void);
+ void drain_io_router(void);
+ void disconnect_io_router(void);
+ 
+--- a/system/runstate.c
++++ b/system/runstate.c
+@@ -936,9 +936,15 @@
+     notifier_remove(notify);
+ }
+ 
++static bool exit_notifiers_called;
++
+ static void qemu_run_exit_notifiers(void)
+ {
+     BQL_LOCK_GUARD();
++    if (exit_notifiers_called) {
++        return;
++    }
++    exit_notifiers_called = true;
+     notifier_list_notify(&exit_notifiers, NULL);
+ }
+ 
+@@ -976,8 +982,13 @@
+ }
+ 
+ 
++#include "ssi-close.inc"
++
+ void qemu_cleanup(int status)
+ {
++    bool ssi_close = ssi_close_begin();
++    uint64_t generation = 0;
++
+     gdb_exit(status);
+ 
+     /*
+@@ -1016,7 +1027,9 @@
+         }
+     }
+     replay_finish();
+-
++    if (ssi_close) {
++        generation = quiesce_io_router();
++    }
+ 
+     /*
+      * We must cancel all block jobs while the block layer is drained,
+@@ -1029,9 +1042,9 @@
+      */
+     bdrv_drain_all_begin();
+     job_cancel_sync_all();
+-    /* 先保留路由完成双向排空，再允许设备与连接销毁。 */
+-    drain_io_router();
+-    disconnect_io_router();
++    if (ssi_close) {
++        ssi_close_unrealize_devices();
++    }
+     bdrv_close_all();
+ 
+     /* vhost-user must be cleaned up before chardevs.  */
+@@ -1041,5 +1054,14 @@
+     monitor_cleanup();
+     qemu_chr_cleanup();
+     user_creatable_cleanup();
++    if (ssi_close) {
++        /* 退出通知也可能执行设备清理，必须在内核封闭之前完成且只执行一次。 */
++        qemu_run_exit_notifiers();
++        drain_call_rcu();
++        drain_io_router();
++        ssi_close_kernel(generation);
++        disconnect_io_router();
++        ssi_close_end();
++    }
+     /* TODO: unref root container, check all devices are ok */
+ }
+--- /dev/null
++++ b/system/ssi-close.inc
+@@ -0,0 +1,147 @@
++/* SPDX-License-Identifier: GPL-2.0-or-later */
++/* 独占 PF28 实验的设备清理与内核关闭接线；普通单节点不进入此路径。 */
++#include "system/kvm.h"
++#include "hw/virtio/virtio.h"
++#include "hw/virtio/virtio-net.h"
++#include "hw/virtio/virtio-blk.h"
++#include "system/iothread.h"
++#include "qemu/rcu.h"
++#include <sys/utsname.h>
++
++static QemuMutex ssi_close_mutex;
++static QemuCond ssi_close_cond;
++static QemuThread ssi_close_thread;
++static bool ssi_close_finished;
++static GPtrArray *ssi_close_devices;
++
++static void ssi_close_fail(const char *reason)
++{
++    error_report("SSI close failed: %s", reason);
++    /* 失败线程可能与主线程争用 BQL，不等待进程退出通知造成二次死锁。 */
++    _exit(EXIT_FAILURE);
++}
++
++/* 设备清理、两次路由屏障和内核协议共用进程级的最终期限。 */
++static void *ssi_close_watchdog(void *opaque)
++{
++    int64_t deadline = qemu_clock_get_ms(QEMU_CLOCK_REALTIME) + 30000;
++
++    qemu_mutex_lock(&ssi_close_mutex);
++    while (!ssi_close_finished) {
++        int64_t left = deadline - qemu_clock_get_ms(QEMU_CLOCK_REALTIME);
++        if (left <= 0) {
++            ssi_close_fail("total shutdown deadline expired");
++        }
++        qemu_cond_timedwait(&ssi_close_cond, &ssi_close_mutex, left);
++    }
++    qemu_mutex_unlock(&ssi_close_mutex);
++    return NULL;
++}
++
++/* 先收集再销毁，避免 unrealize 改变对象树时使遍历失效。 */
++static int ssi_close_collect(Object *obj, void *opaque)
++{
++    VirtIODevice *vdev = (VirtIODevice *)object_dynamic_cast(obj, TYPE_VIRTIO_DEVICE);
++    VirtioDeviceClass *klass;
++    const char *type;
++
++    if (object_dynamic_cast(obj, TYPE_IOTHREAD)) {
++        ssi_close_fail("IOThread producers are outside this experiment");
++    }
++    if (!vdev || !DEVICE(vdev)->realized) {
++        return 0;
++    }
++    type = object_get_typename(obj);
++    if (strcmp(type, TYPE_VIRTIO_NET) && strcmp(type, TYPE_VIRTIO_BLK)) {
++        ssi_close_fail("unverified virtio device type");
++    }
++    klass = VIRTIO_DEVICE_GET_CLASS(vdev);
++    if (klass->get_vhost && klass->get_vhost(vdev)) {
++        ssi_close_fail("vhost producer is outside this experiment");
++    }
++    object_ref(obj);
++    g_ptr_array_add(ssi_close_devices, obj);
++    return 0;
++}
++
++static bool ssi_close_begin(void)
++{
++    MachineState *ms = MACHINE(qdev_get_machine());
++    const char *enabled = getenv("SSHPOOL_LAB_GLOBAL_CLOSE");
++    struct utsname system;
++
++    if (ms->local_cpus == ms->smp.cpus) {
++        return false;
++    }
++    if (!enabled || strcmp(enabled, "1") || !kvm_enabled() || ms->shm_path ||
++        ms->smp.cpus != 4 || ms->local_cpus != 2 || ms->qemu_nums != 2 ||
++        uname(&system) || strcmp(system.release, "7.1.0-rc3-sshpool-gvm-pf28")) {
++        ssi_close_fail("requires the explicit two-node PF28 lab profile");
++    }
++    qemu_mutex_init(&ssi_close_mutex);
++    qemu_cond_init(&ssi_close_cond);
++    qemu_thread_create(&ssi_close_thread, "ssi-close-deadline", ssi_close_watchdog,
++                       NULL, QEMU_THREAD_JOINABLE);
++    ssi_close_devices = g_ptr_array_new_with_free_func((GDestroyNotify)object_unref);
++    object_child_foreach_recursive(object_get_root(), ssi_close_collect, NULL);
++    return true;
++}
++
++static void ssi_close_unrealize_devices(void)
++{
++    for (unsigned int i = 0; i < ssi_close_devices->len; i++) {
++        VirtIODevice *vdev = g_ptr_array_index(ssi_close_devices, i);
++
++        /* 先停 dataplane，再调用已修复的 unrealize 取消保留请求并解除 DMA 映射。 */
++        if (virtio_set_status(vdev, 0)) {
++            ssi_close_fail("device refused stopped status");
++        }
++        qdev_unrealize(DEVICE(vdev));
++        fprintf(stderr, "SSI_DEVICE_UNREALIZED type=%s\n", object_get_typename(OBJECT(vdev)));
++    }
++    g_ptr_array_unref(ssi_close_devices);
++    ssi_close_devices = NULL;
++    drain_call_rcu();
++}
++
++static void ssi_close_kernel(uint64_t generation)
++{
++    struct {
++        uint32_t version, active_ops;
++        uint64_t read_refs, write_refs;
++        int32_t error;
++        uint32_t reserved;
++    } pins = { 0 };
++    struct {
++        uint32_t version, flags;
++        uint64_t generation;
++        uint32_t timeout_ms, reserved;
++    } request = { .version = 1, .generation = generation, .timeout_ms = 15000 };
++    int ret;
++
++    ret = kvm_vm_ioctl(kvm_state, 0x8020aef9, &pins);
++    fprintf(stderr, "SSI_CLOSE_PINS ret=%d version=%u active=%u read=%" PRIu64
++            " write=%" PRIu64 " error=%d reserved=%u\n", ret, pins.version,
++            pins.active_ops, pins.read_refs, pins.write_refs, pins.error, pins.reserved);
++    if (ret || pins.version != 1 || pins.active_ops || pins.read_refs || pins.write_refs ||
++        pins.error || pins.reserved || !generation) {
++        ssi_close_fail("device cleanup did not release native DSM pins");
++    }
++    fprintf(stderr, "SSI_KERNEL_CLOSE_BEGIN generation=%" PRIu64 " timeout_ms=%u\n",
++            generation, request.timeout_ms);
++    ret = kvm_vm_ioctl(kvm_state, 0x4018aefb, &request);
++    fprintf(stderr, "SSI_KERNEL_CLOSE_RESULT generation=%" PRIu64 " ret=%d\n", generation, ret);
++    if (ret) {
++        ssi_close_fail("native global close failed");
++    }
++}
++
++static void ssi_close_end(void)
++{
++    qemu_mutex_lock(&ssi_close_mutex);
++    ssi_close_finished = true;
++    qemu_cond_broadcast(&ssi_close_cond);
++    qemu_mutex_unlock(&ssi_close_mutex);
++    qemu_thread_join(&ssi_close_thread);
++    fprintf(stderr, "SSI_DEVICE_CLOSE_COMPLETE\n");
++}

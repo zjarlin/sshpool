@@ -152,8 +152,40 @@ Feature: SSI 传输等待与启动资源生命周期
     And 故障唤醒全部等待者并保留错误而不能以计数归零冒充成功
     And 此项不证明后台设备 DMA 固定页面出站缓存响应或整个 VM 已经排空
 
+  # evidence: docs/evidence/ssi-kernel-close-20261108.json
+  @verified @p0
+  Scenario: 原生 DSM 关闭使用同一代际确认所有连接并等待根线程回收
+    Given 两个独占 PF28 实验 VM 创建没有 vCPU 和磁盘的真实 KVM
+    When 双向页面传输后使用同一代际发起关闭
+    Then 普通调用先结束监听集合真正冻结且每条数据连接完成 CLOSE 与确认
+    And 全节点 READY 与 FINISH 之后才接受帧边界 EOF
+    And 根线程释放所有入站连接后关闭调用才能返回成功
+    And 半帧未知连接建连阻塞发送阻塞及缺失确认均受同一总期限约束
+    And 保留错误代际晚到请求与 PF27 成功返回却残留根线程的失败记录
+    And 完整原生跟踪实际页面与受控对端字节均独立检查且不冒充 QEMU 整机关闭
+
+  # evidence: docs/evidence/ssi-qemu-close-20261108.json
+  @verified @p0
+  Scenario: 限定 QEMU 设备清理后完成双节点 DSM 正常关闭
+    Given 两个独占 PF28 VM 使用协议六候选和保存的四 vCPU virtio-net 或 virtio-blk 配置
+    When 实际 Ubuntu 客体关机或正常块写入后由主节点发起 QMP quit
+    Then 双端 QUIESCE 确认所有 vCPU 停止之后才销毁设备
+    And 设备解除和退出通知完成后双端 DRAIN 再查询真实零页引用
+    And 使用同一代际关闭原生 DSM 且根线程回收先于成功返回
+    And 两端退出零且完整跟踪中最终关闭以后不再发起 VM ioctl
+    And 保留客体 watchdog 与 workqueue 告警而不声明完整 SSI 或持久化通过
+
+  # evidence: docs/evidence/ssi-qemu-close-20261108.json
+  @verified @p0
+  Scenario: 正常关闭接线不能覆盖真实块设备错误
+    Given 实际双节点 virtio-blk 客体注入 EIO 或交换实验 VM 角色后注入 ENOSPC
+    When 最终刷盘返回零但失败请求仍在队列且后端错误未恢复
+    Then 两端退出一并保留原始块请求错误与副节点屏障失败
+    And 不调用正常内核关闭协议也不输出设备正常关闭完成
+    And 故障销毁回收 DSM 根线程但不冒充数据恢复或存储副本
+
   @research @p0
-  Scenario: 封闭入口之前验证跨调用资源和后台生产者已经停止
+  Scenario: 封闭入口之前验证其余跨调用资源和后台生产者已经停止
     Given 设备持有 DMA 固定页面或存在 device fd irqfd 定时器及后台任务
     When 管理器准备封闭 VM 与 vCPU ioctl 入口
     Then 所有需要后续 ioctl 的设备清理和 unpin 须先完成并有真实证据

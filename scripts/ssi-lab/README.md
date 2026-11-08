@@ -206,3 +206,11 @@ timeout --kill-after=5 45 python3 scripts/ssi-lab/probe-dsm-device.py \
 ## 双端启动准入证据
 
 `check-launch-admission.py docs/evidence/ssi-launch-admission-20261108.json` 复核 `sshpool ssi-launch --trace-syscalls` 采集的四种混版本矩阵。它核对完整原生进程退出、实际 worker 源码摘要、三份 memfd 封条和独立远端/控制日志，缺失跟踪不会被计为零次 KVM 执行。证据绑定采集时且仍为当前的 helper 字节；修改 helper 后需要重新取证，不能改旧记录迎合新代码。`test_launch_admission.py` 同时复核同版本工作区、故障回收和保留的 RTC/DSM 失败，详见 [启动准入](../../docs/ssi-launch.md)。
+
+## PF28 原生关闭与限定 QEMU 接线
+
+`probe-kernel-close.py` 与 `check-kernel-close.py` 核对原生关闭的代际、总期限、全部连接与根线程回收；二十类场景在两台独占 VM 各执行一次，并有真正跨 VM 的双向页面传输。探针只允许精确 PF28，不能在生产 KVM 上运行。完整用法、合成对端、发送压力失败记录与内核补丁见 [原生关闭](../../docs/ssi-kernel-close.md)。
+
+`trace-kernel-close.py --pid <实验QEMU> --node <0或1> --output <新文件>` 记录实际 QEMU 关闭窗口，ready 后由驱动执行关机，收到标准输入 `stop` 后保存完整原生事件；`check-qemu-close.py <双节点条目.json>` 校验设备销毁、QUIESCE/DRAIN、零引用、相同代际与根线程回收。`probe-close-devices.py` 复用实际 virtio-blk 客体采集器，限定 PF28 和 `--pin-query none`；`check-close-devices.py <块实验条目.json>` 区分正常握手与 EIO/ENOSPC 失败停止。保存的驱动与启动参数、源码来源、证据提取方式见 [QEMU 关闭](../../docs/ssi-qemu-close.md)。
+
+`test_kernel_close.py` 与 `test_qemu_close.py` 在普通 CI 重放证据及篡改测试，不在 CI 启动研究内核。两个补丁仍仅位于 `experiments/`，默认构建不应用。watchdog、任意后台设备、跨物理机、持久化和完整 SSI 仍待完成。

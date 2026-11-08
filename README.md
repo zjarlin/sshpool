@@ -4,6 +4,8 @@
 
 **目标差距：当前产品不满足“一个 Linux/数据库实例使用多台机器合计资源”的完整 SSI 要求。** 资源池与有状态恢复仍未交付。最新 GiantVM 调研、实际 KVM/ISA 阻塞和容量边界见 [严格 SSI 可行性](docs/ssi-feasibility.md)；不要把任务调度器的验收数量当作 SSI 完成度。
 
+**PF28 正常关闭进展：** 原生关闭协议完成两台 VM 的四十组探针与跨 VM 双向传输，限定 QEMU 配置也完成设备销毁、双端屏障、零引用和根线程回收后成功退出。正常 virtio-blk 写入通过，EIO 与反向 ENOSPC 仍让两端退出一。双节点客体保留 watchdog 和 workqueue 告警，**完整 SSI、跨物理容量、持久化与数据库恢复仍未验收**。候选不进入默认运行时或 CLI 准入，见 [原生关闭](docs/ssi-kernel-close.md) 和 [QEMU 接线与边界](docs/ssi-qemu-close.md)。以下旧轮次结果保留作历史对照。
+
 **启动准入 CLI：** `sshpool ssi-launch` 已在两台 PF24 实验 VM 完成四种混版本拒绝，双方首次 KVM_RUN 前均失败，原生跟踪中没有 QEMU 执行。实际 QEMU 的封存路径替换、半许可、断连、租约和锁冲突回收已验证；工作区仍有 RTC 与 DSM 关闭失败，完整 SSI 未通过。见 [启动准入与实机证据](docs/ssi-launch.md)。
 
 **跨物理机预检与真实卸载：** `sshpool ssi-preflight <SSH目标一> <SSH目标二>` 通过已有 SSH 查询真实 KVM 频率和接口，不安装软件或运行客体。独立物理候选与 ESXi 实验 VM 的原生 TSC 分别为 2,095,147 与 2,394,374 kHz，双方无硬件缩放；当前 SSI 运行时明确拒绝配对。该独立 x86 物理机已作为真实 Docker/Cargo Worker 接入，并从 ARM64 工作台完成一次离线编译、产物执行和清理；**这仍是任务调度，不是跨物理 SSI**。实测及无 RAID 存储边界见 [物理接入记录](docs/ssi-physical-storage.md) 和 [验证记录](docs/validation.md#physical-host-and-build-proof)。

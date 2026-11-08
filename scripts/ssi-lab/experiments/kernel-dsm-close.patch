@@ -1,0 +1,1344 @@
+--- a/arch/x86/include/asm/kvm_host.h
++++ b/arch/x86/include/asm/kvm_host.h
+@@ -1777,6 +1777,7 @@
+ 	kconnection_t *dsm_listen_sock;
+ 	kconnection_t **dsm_conn_socks;
+ 	bool dsm_stopped;
++	struct dsm_close *dsm_close;
+ 	/* 首次失败一旦锁存，本 VM 不再恢复页面服务。 */
+ 	int dsm_error;
+ 	/* 只统计 VM/vCPU ioctl；设备后台任务和页面服务线程不属于此计数。 */
+--- a/arch/x86/kvm/Makefile
++++ b/arch/x86/kvm/Makefile
+@@ -13,7 +13,7 @@
+ kvm-$(CONFIG_KVM_HYPERV) += hyperv.o
+ kvm-$(CONFIG_KVM_XEN)	+= xen.o
+ kvm-$(CONFIG_KVM_SMM)	+= smm.o
+-kvm-$(CONFIG_KVM_DSM)	+= dsm.o dsm-util.o ktcp.o ivy.o
++kvm-$(CONFIG_KVM_DSM)	+= dsm.o dsm-util.o dsm-close.o ktcp.o ivy.o
+ 
+ kvm-intel-y		+= vmx/vmx.o vmx/vmenter.o vmx/pmu_intel.o vmx/vmcs12.o \
+ 			   vmx/nested.o vmx/posted_intr.o vmx/main.o
+--- /dev/null
++++ b/arch/x86/kvm/dsm-close.c
+@@ -0,0 +1,721 @@
++// SPDX-License-Identifier: GPL-2.0
++#include <linux/kvm_host.h>
++#include <linux/kvm.h>
++#include "dsm-util.h"
++#include "dsm-close.h"
++#include "ktcp.h"
++
++#define DSM_CLOSE_VERSION 1
++#define DSM_CLOSE_MAGIC 0x44534d43
++#define DSM_CLOSE_MAX_MS 30000
++
++struct dsm_close_ack {
++	__le32 magic;
++	__le16 version;
++	__le16 phase;
++	__le16 sender;
++	__le16 target;
++	__le32 reserved;
++	__le64 generation;
++};
++
++enum dsm_close_wait {
++	DSM_WAIT_SEALED,
++	DSM_WAIT_CONTROLS,
++	DSM_WAIT_FROZEN,
++	DSM_WAIT_PREPARED,
++	DSM_WAIT_IDLE,
++	DSM_WAIT_CLOSED,
++	DSM_WAIT_READY,
++	DSM_WAIT_ALL_READY,
++	DSM_WAIT_FINISHED,
++	DSM_WAIT_EOF,
++	DSM_WAIT_ROOT,
++};
++
++static u32 dsm_close_peers(struct kvm *kvm)
++{
++	return (BIT(kvm->arch.cluster_iplist_len) - 1) & ~BIT(kvm->arch.dsm_id);
++}
++
++/* 只有一个绝对期限；所有阶段、网络等待和提前到达的管理连接共用它。 */
++static int dsm_close_error(struct kvm *kvm)
++{
++	struct dsm_close *close = kvm->arch.dsm_close;
++	int ret = READ_ONCE(kvm->arch.dsm_error);
++
++	if (ret) {
++		return ret;
++	}
++	if (READ_ONCE(kvm->arch.dsm_stopped)) {
++		return -EPIPE;
++	}
++	if (READ_ONCE(close->generation) &&
++	    time_after_eq(jiffies, READ_ONCE(close->deadline))) {
++		return -ETIMEDOUT;
++	}
++	return 0;
++}
++
++static void dsm_close_watchdog(struct work_struct *work)
++{
++	struct dsm_close *close = container_of(to_delayed_work(work),
++						struct dsm_close, watchdog);
++	struct kvm *kvm = close->kvm;
++	unsigned long flags;
++	int ret = 0;
++
++	spin_lock_irqsave(&kvm->arch.dsm_admission_lock, flags);
++	if (!close->complete || !close->root_done) {
++		ret = dsm_close_error(kvm);
++		if (!ret) {
++			mod_delayed_work(system_wq, &close->watchdog,
++					 close->deadline - jiffies);
++		}
++	}
++	spin_unlock_irqrestore(&kvm->arch.dsm_admission_lock, flags);
++	if (ret) {
++		kvm_dsm_fail(kvm, ret);
++	}
++}
++
++int dsm_close_alloc(struct kvm *kvm)
++{
++	struct dsm_close *close = kzalloc(sizeof(*close), GFP_KERNEL);
++
++	if (!close) {
++		return -ENOMEM;
++	}
++	close->kvm = kvm;
++	mutex_init(&close->caller);
++	INIT_DELAYED_WORK(&close->watchdog, dsm_close_watchdog);
++	kvm->arch.dsm_close = close;
++	return 0;
++}
++
++void dsm_close_cancel(struct kvm *kvm)
++{
++	if (kvm->arch.dsm_close) {
++		cancel_delayed_work_sync(&kvm->arch.dsm_close->watchdog);
++	}
++}
++
++void dsm_close_free(struct kvm *kvm)
++{
++	struct dsm_close *close = kvm->arch.dsm_close;
++	int i;
++
++	if (!close) {
++		return;
++	}
++	dsm_close_cancel(kvm);
++	for (i = 0; i < DSM_MAX_INSTANCES; i++) {
++		if (close->outgoing[i]) {
++			ktcp_release(close->outgoing[i]);
++		}
++	}
++	kfree(close);
++	kvm->arch.dsm_close = NULL;
++}
++
++void dsm_close_abort(struct kvm *kvm, int error)
++{
++	struct dsm_close *close = kvm->arch.dsm_close;
++	kconnection_t *cb;
++	int i;
++
++	for (i = 0; i < DSM_MAX_INSTANCES; i++) {
++		cb = smp_load_acquire(&close->outgoing[i]);
++		if (cb) {
++			ktcp_abort(cb, error);
++		}
++	}
++}
++
++bool dsm_close_complete(struct kvm *kvm)
++{
++	return READ_ONCE(kvm->arch.dsm_close->complete);
++}
++
++/* 根线程释放全部入站连接后才发布完成；关闭调用不能依赖随后释放 VM 来唤醒它。 */
++void dsm_close_root_done(struct kvm *kvm)
++{
++	unsigned long flags;
++
++	spin_lock_irqsave(&kvm->arch.dsm_admission_lock, flags);
++	kvm->arch.dsm_close->root_done = true;
++	spin_unlock_irqrestore(&kvm->arch.dsm_admission_lock, flags);
++	wake_up_all(&kvm->arch.dsm_ioctl_wait);
++}
++
++/* 每个阶段的错误检查、状态提交和唤醒保持同一顺序。 */
++static int dsm_close_advance(struct kvm *kvm, bool *phase)
++{
++	unsigned long flags;
++	int ret;
++
++	spin_lock_irqsave(&kvm->arch.dsm_admission_lock, flags);
++	ret = dsm_close_error(kvm);
++	if (!ret) {
++		*phase = true;
++	}
++	spin_unlock_irqrestore(&kvm->arch.dsm_admission_lock, flags);
++	wake_up_all(&kvm->arch.dsm_ioctl_wait);
++	return ret;
++}
++
++/* 根线程独占连接清单；此计数把尚无首帧和只收到半帧的连接也纳入验收。 */
++int dsm_close_accept(struct kvm *kvm)
++{
++	struct dsm_close *close = kvm->arch.dsm_close;
++	unsigned long flags;
++	int ret;
++
++	spin_lock_irqsave(&kvm->arch.dsm_admission_lock, flags);
++	ret = READ_ONCE(kvm->arch.dsm_error);
++	if (!ret && close->prepared) {
++		ret = -ESHUTDOWN;
++	}
++	if (!ret) {
++		close->accepted++;
++	}
++	spin_unlock_irqrestore(&kvm->arch.dsm_admission_lock, flags);
++	return ret;
++}
++
++bool dsm_close_frozen(struct kvm *kvm)
++{
++	return READ_ONCE(kvm->arch.dsm_close->frozen);
++}
++
++/* 根线程读尽等待队列后关监听器；关闭集合不能靠某次计数快照冻结。 */
++int dsm_close_freeze_listener(struct kvm *kvm)
++{
++	struct dsm_close *close = kvm->arch.dsm_close;
++	unsigned long flags;
++	int ret;
++
++	if (!READ_ONCE(close->freeze_requested)) {
++		return 0;
++	}
++	ret = ktcp_shutdown_listener(kvm->arch.dsm_listen_sock);
++	if (ret) {
++		return ret;
++	}
++	spin_lock_irqsave(&kvm->arch.dsm_admission_lock, flags);
++	close->frozen = true;
++	spin_unlock_irqrestore(&kvm->arch.dsm_admission_lock, flags);
++	pr_info("DSM_CLOSE_FROZEN node=%d accepted=%u\n", kvm->arch.dsm_id, close->accepted);
++	wake_up_all(&kvm->arch.dsm_ioctl_wait);
++	return 0;
++}
++
++static int dsm_close_arm(struct kvm *kvm, u64 generation, u32 timeout_ms)
++{
++	struct dsm_close *close = kvm->arch.dsm_close;
++	unsigned long flags, deadline = jiffies + msecs_to_jiffies(timeout_ms);
++	int ret;
++
++	spin_lock_irqsave(&kvm->arch.dsm_admission_lock, flags);
++	ret = dsm_close_error(kvm);
++	if (!ret && close->generation && close->generation != generation) {
++		ret = -ESTALE;
++	}
++	if (!ret && close->complete) {
++		ret = -EALREADY;
++	}
++	if (!ret) {
++		if (!close->generation || time_before(deadline, close->deadline)) {
++			close->deadline = deadline;
++		}
++		close->generation = generation;
++		mod_delayed_work(system_wq, &close->watchdog, close->deadline - jiffies);
++	}
++	spin_unlock_irqrestore(&kvm->arch.dsm_admission_lock, flags);
++	return ret;
++}
++
++static bool dsm_close_reached(struct kvm *kvm, enum dsm_close_wait stage)
++{
++	struct dsm_close *close = kvm->arch.dsm_close;
++	u32 peers = dsm_close_peers(kvm);
++
++	switch (stage) {
++	case DSM_WAIT_SEALED:
++		return READ_ONCE(close->begun) && !READ_ONCE(kvm->arch.dsm_active_ioctls);
++	case DSM_WAIT_CONTROLS:
++		return READ_ONCE(close->controls) == peers;
++	case DSM_WAIT_FROZEN:
++		return READ_ONCE(close->frozen);
++	case DSM_WAIT_PREPARED:
++		return READ_ONCE(close->prepared);
++	case DSM_WAIT_IDLE:
++		return !READ_ONCE(kvm->arch.dsm_active_exchanges) &&
++		       !READ_ONCE(kvm->arch.dsm_cached_responses) &&
++		       !READ_ONCE(kvm->arch.dsm_active_requests);
++	case DSM_WAIT_CLOSED:
++		return READ_ONCE(close->closed) + hweight32(peers) == READ_ONCE(close->accepted);
++	case DSM_WAIT_READY:
++		return READ_ONCE(close->ready);
++	case DSM_WAIT_ALL_READY:
++		return READ_ONCE(close->all_ready);
++	case DSM_WAIT_FINISHED:
++		return READ_ONCE(close->finished) == peers;
++	case DSM_WAIT_EOF:
++		return READ_ONCE(close->eof) == READ_ONCE(close->accepted);
++	case DSM_WAIT_ROOT:
++		return READ_ONCE(close->root_done);
++	}
++	return false;
++}
++
++static int dsm_close_wait(struct kvm *kvm, enum dsm_close_wait stage)
++{
++	struct dsm_close *close = kvm->arch.dsm_close;
++	long left, waited;
++	int ret;
++
++	for (;;) {
++		ret = dsm_close_error(kvm);
++		if (ret) {
++			return ret;
++		}
++		if (dsm_close_reached(kvm, stage)) {
++			return 0;
++		}
++		left = (long)(READ_ONCE(close->deadline) - jiffies);
++		if (left <= 0) {
++			return -ETIMEDOUT;
++		}
++		waited = wait_event_killable_timeout(kvm->arch.dsm_ioctl_wait,
++			dsm_close_reached(kvm, stage) || READ_ONCE(kvm->arch.dsm_error) ||
++			READ_ONCE(kvm->arch.dsm_stopped), left);
++		if (waited < 0) {
++			return READ_ONCE(kvm->arch.dsm_error) ?: waited;
++		}
++	}
++}
++
++/* requester 是当前转发节点；msg_sender 是原始源，不能据后者绑定物理连接。 */
++int dsm_close_classify(struct dsm_conn *conn, const struct dsm_request *req)
++{
++	struct kvm *kvm = conn->kvm;
++	struct dsm_close *close = kvm->arch.dsm_close;
++	bool control = req->req_type >= DSM_REQ_PREPARE;
++	unsigned long flags;
++	int ret = 0;
++
++	if (conn->classified) {
++		return conn->peer == req->requester && conn->control == control ? 0 : -EPROTO;
++	}
++	spin_lock_irqsave(&kvm->arch.dsm_admission_lock, flags);
++	if (control && (req->req_type != DSM_REQ_PREPARE ||
++			close->controls & BIT(req->requester))) {
++		ret = -EPROTO;
++	}
++	if (!ret) {
++		conn->classified = true;
++		conn->control = control;
++		conn->peer = req->requester;
++		if (control) {
++			close->controls |= BIT(conn->peer);
++		}
++	}
++	spin_unlock_irqrestore(&kvm->arch.dsm_admission_lock, flags);
++	wake_up_all(&kvm->arch.dsm_ioctl_wait);
++	return ret;
++}
++
++/* 管理连接不持页锁、SRCU 或数据连接的 dispatch_lock，不阻塞反向请求。 */
++int dsm_close_request(struct dsm_conn *conn, const struct dsm_request *req, tx_add_t *tx)
++{
++	struct kvm *kvm = conn->kvm;
++	struct dsm_close *close = kvm->arch.dsm_close;
++	struct dsm_close_ack ack = {
++		.magic = cpu_to_le32(DSM_CLOSE_MAGIC),
++		.version = cpu_to_le16(DSM_CLOSE_VERSION),
++		.phase = cpu_to_le16(req->req_type),
++		.sender = cpu_to_le16(kvm->arch.dsm_id),
++		.target = cpu_to_le16(req->requester),
++		.generation = cpu_to_le64(req->gfn),
++	};
++	enum dsm_close_wait stage;
++	unsigned long flags;
++	int ret;
++
++	if (!req->gfn || req->version != DSM_CLOSE_VERSION || req->is_smm ||
++	    req->msg_sender != req->requester || tx->txid == 0xff ||
++	    tx->inv_copyset || tx->version) {
++		return -EPROTO;
++	}
++	switch (req->req_type) {
++	case DSM_REQ_PREPARE:
++		if (conn->close_phase) {
++			return -EPROTO;
++		}
++		ret = dsm_close_arm(kvm, req->gfn, DSM_CLOSE_MAX_MS);
++		if (ret) {
++			return ret;
++		}
++		stage = DSM_WAIT_SEALED;
++		break;
++	case DSM_REQ_CLOSE:
++		if (conn->close_phase) {
++			return -EPROTO;
++		}
++		stage = DSM_WAIT_PREPARED;
++		break;
++	case DSM_REQ_READY:
++		if (conn->close_phase != DSM_REQ_PREPARE) {
++			return -EPROTO;
++		}
++		stage = DSM_WAIT_READY;
++		break;
++	case DSM_REQ_FINISH:
++		if (conn->close_phase != DSM_REQ_READY) {
++			return -EPROTO;
++		}
++		stage = DSM_WAIT_ALL_READY;
++		break;
++	default:
++		return -EPROTO;
++	}
++	if (READ_ONCE(close->generation) != req->gfn) {
++		return -ESTALE;
++	}
++	ret = dsm_close_wait(kvm, stage);
++	if (ret) {
++		return ret;
++	}
++	if (req->req_type == DSM_REQ_CLOSE && atomic_read(&conn->active_requests)) {
++		/* 全节点根调用已结束仍可能有响应后的释放尾声，等待本地完整封闭。 */
++		ret = dsm_close_wait(kvm, DSM_WAIT_IDLE);
++		if (ret) {
++			return ret;
++		}
++	}
++	ret = ktcp_send(conn->sock, (const char *)&ack, sizeof(ack), 0, tx);
++	if (ret < 0) {
++		return ret;
++	}
++	spin_lock_irqsave(&kvm->arch.dsm_admission_lock, flags);
++	ret = dsm_close_error(kvm);
++	if (!ret) {
++		conn->close_phase = req->req_type;
++		if (req->req_type == DSM_REQ_CLOSE) {
++			close->closed++;
++		}
++		if (req->req_type == DSM_REQ_FINISH) {
++			close->finished |= BIT(conn->peer);
++		}
++	}
++	spin_unlock_irqrestore(&kvm->arch.dsm_admission_lock, flags);
++	pr_info("DSM_CLOSE_ACK node=%d peer=%u phase=%u generation=%llu result=%d\n",
++		kvm->arch.dsm_id, conn->peer, req->req_type, req->gfn, ret);
++	wake_up_all(&kvm->arch.dsm_ioctl_wait);
++	return ret;
++}
++
++/* 仅帧边界 EOF 可以走这里；半帧 EOF 仍由 KTCP 返回 ECONNRESET。 */
++int dsm_close_eof(struct dsm_conn *conn)
++{
++	struct kvm *kvm = conn->kvm;
++	struct dsm_close *close = kvm->arch.dsm_close;
++	unsigned long flags;
++	int ret;
++
++	spin_lock_irqsave(&kvm->arch.dsm_admission_lock, flags);
++	ret = dsm_close_error(kvm);
++	if (!ret && (!conn->classified || !close->all_ready ||
++		     !(close->finished & BIT(conn->peer)) ||
++		     conn->close_phase != (conn->control ? DSM_REQ_FINISH : DSM_REQ_CLOSE))) {
++		ret = -ECONNRESET;
++	}
++	spin_unlock_irqrestore(&kvm->arch.dsm_admission_lock, flags);
++	if (ret) {
++		return ret;
++	}
++	ret = ktcp_shutdown_write(conn->sock);
++	if (ret) {
++		return ret;
++	}
++	spin_lock_irqsave(&kvm->arch.dsm_admission_lock, flags);
++	conn->eof = true;
++	close->eof++;
++	spin_unlock_irqrestore(&kvm->arch.dsm_admission_lock, flags);
++	wake_up_all(&kvm->arch.dsm_ioctl_wait);
++	return KTCP_EOF;
++}
++
++static int dsm_close_exchange(struct kvm *kvm, kconnection_t *cb, int peer, int phase)
++{
++	struct dsm_close *close = kvm->arch.dsm_close;
++	struct dsm_request req = {
++		.requester = kvm->arch.dsm_id,
++		.msg_sender = kvm->arch.dsm_id,
++		.gfn = close->generation,
++		.req_type = phase,
++		.version = DSM_CLOSE_VERSION,
++	};
++	struct dsm_close_ack ack;
++	struct ktcp_transaction transaction;
++	tx_add_t tx = {};
++	int ret;
++
++	ret = dsm_close_error(kvm);
++	if (ret) {
++		return ret;
++	}
++	ret = ktcp_begin_transaction(cb, kvm, &transaction);
++	if (ret) {
++		return ret;
++	}
++	tx.txid = transaction.id;
++	ret = ktcp_send(cb, (const char *)&req, sizeof(req), 0, &tx);
++	if (ret < 0) {
++		goto out;
++	}
++	ret = ktcp_receive(cb, (char *)&ack, sizeof(ack), 0, &tx);
++	if (ret < 0) {
++		goto out;
++	}
++	if (ret != sizeof(ack) || le32_to_cpu(ack.magic) != DSM_CLOSE_MAGIC ||
++	    le16_to_cpu(ack.version) != DSM_CLOSE_VERSION || le16_to_cpu(ack.phase) != phase ||
++	    le16_to_cpu(ack.sender) != peer || le16_to_cpu(ack.target) != kvm->arch.dsm_id ||
++	    ack.reserved || le64_to_cpu(ack.generation) != close->generation ||
++	    tx.inv_copyset || tx.version) {
++		ret = -EPROTO;
++		goto out;
++	}
++	ret = dsm_close_error(kvm);
++out:
++	ktcp_end_transaction(cb, &transaction);
++	pr_info("DSM_CLOSE_RECEIVED node=%d peer=%d phase=%d generation=%llu result=%d\n",
++		kvm->arch.dsm_id, peer, phase, close->generation, ret);
++	return ret;
++}
++
++static int dsm_close_controls(struct kvm *kvm, int phase)
++{
++	struct dsm_close *close = kvm->arch.dsm_close;
++	int peer, ret;
++
++	for (peer = 0; peer < kvm->arch.cluster_iplist_len; peer++) {
++		if (peer == kvm->arch.dsm_id) {
++			continue;
++		}
++		if (phase == DSM_REQ_PREPARE) {
++			ret = kvm_dsm_connect(kvm, peer, &close->outgoing[peer]);
++			if (ret) {
++				return ret;
++			}
++		}
++		ret = dsm_close_exchange(kvm, close->outgoing[peer], peer, phase);
++		if (ret) {
++			return ret;
++		}
++	}
++	return 0;
++}
++
++static int dsm_close_data(struct kvm *kvm)
++{
++	kconnection_t *cb;
++	int i, ret;
++
++	for (i = 0; i < DSM_MAX_INSTANCES * 2; i++) {
++		cb = smp_load_acquire(&kvm->arch.dsm_conn_socks[i]);
++		if (!cb) {
++			continue;
++		}
++		ret = dsm_close_exchange(kvm, cb, i % DSM_MAX_INSTANCES, DSM_REQ_CLOSE);
++		if (ret) {
++			return ret;
++		}
++	}
++	return 0;
++}
++
++/* 先半关闭全部发送方向，再收尽所有 EOF，避免节点逐连接等待构成环。 */
++static int dsm_close_sockets(struct kvm *kvm, bool send_eof)
++{
++	struct dsm_close *close = kvm->arch.dsm_close;
++	kconnection_t *cb;
++	tx_add_t tx;
++	char byte;
++	int i, ret;
++
++	for (i = 0; i < DSM_MAX_INSTANCES * 3; i++) {
++		cb = i < DSM_MAX_INSTANCES * 2 ? kvm->arch.dsm_conn_socks[i] :
++			close->outgoing[i - DSM_MAX_INSTANCES * 2];
++		if (!cb) {
++			continue;
++		}
++		if (send_eof) {
++			ret = ktcp_shutdown_write(cb);
++		} else {
++			memset(&tx, 0, sizeof(tx));
++			tx.txid = 0xff;
++			ret = ktcp_receive(cb, &byte, sizeof(byte), KTCP_ALLOW_EOF, &tx);
++			ret = ret == KTCP_EOF ? 0 : (ret < 0 ? ret : -EPROTO);
++		}
++		if (ret) {
++			return ret;
++		}
++	}
++	return 0;
++}
++
++static int dsm_close_run(struct kvm *kvm)
++{
++	struct dsm_close *close = kvm->arch.dsm_close;
++	int ret;
++
++	ret = dsm_close_wait(kvm, DSM_WAIT_SEALED);
++	if (ret) {
++		return ret;
++	}
++	ret = dsm_close_controls(kvm, DSM_REQ_PREPARE);
++	if (ret) {
++		return ret;
++	}
++	ret = dsm_close_wait(kvm, DSM_WAIT_CONTROLS);
++	if (ret) {
++		return ret;
++	}
++	/* 所有根调用已返回，等待根线程真正停止监听并登记此前接受的每个连接。 */
++	ret = dsm_close_advance(kvm, &close->freeze_requested);
++	if (ret) {
++		return ret;
++	}
++	ret = dsm_close_wait(kvm, DSM_WAIT_FROZEN);
++	if (ret) {
++		return ret;
++	}
++	ret = dsm_close_wait(kvm, DSM_WAIT_IDLE);
++	if (ret) {
++		return ret;
++	}
++	ret = dsm_transport_try_fence(kvm, close->generation);
++	if (ret) {
++		return ret;
++	}
++	/* 本地页面准入已真正封闭后，才允许入站连接确认 CLOSE。 */
++	ret = dsm_close_advance(kvm, &close->prepared);
++	if (ret) {
++		return ret;
++	}
++	ret = dsm_close_data(kvm);
++	if (ret) {
++		return ret;
++	}
++	ret = dsm_close_wait(kvm, DSM_WAIT_CLOSED);
++	if (ret) {
++		return ret;
++	}
++	ret = dsm_close_advance(kvm, &close->ready);
++	if (ret) {
++		return ret;
++	}
++	ret = dsm_close_controls(kvm, DSM_REQ_READY);
++	if (ret) {
++		return ret;
++	}
++	ret = dsm_close_advance(kvm, &close->all_ready);
++	if (ret) {
++		return ret;
++	}
++	ret = dsm_close_controls(kvm, DSM_REQ_FINISH);
++	if (ret) {
++		return ret;
++	}
++	ret = dsm_close_wait(kvm, DSM_WAIT_FINISHED);
++	if (ret) {
++		return ret;
++	}
++	ret = dsm_close_sockets(kvm, true);
++	if (ret) {
++		return ret;
++	}
++	ret = dsm_close_sockets(kvm, false);
++	if (ret) {
++		return ret;
++	}
++	ret = dsm_close_wait(kvm, DSM_WAIT_EOF);
++	if (ret) {
++		return ret;
++	}
++	ret = dsm_close_advance(kvm, &close->complete);
++	if (ret) {
++		return ret;
++	}
++	return dsm_close_wait(kvm, DSM_WAIT_ROOT);
++}
++
++int dsm_close_ioctl(struct kvm *kvm, void __user *argp)
++{
++	struct kvm_dsm_ioctl_drain params;
++	struct dsm_close *close = kvm->arch.dsm_close;
++	unsigned long flags;
++	int ret;
++
++	if (copy_from_user(&params, argp, sizeof(params))) {
++		return -EFAULT;
++	}
++	if (params.version != 1 || params.flags || !params.generation ||
++	    !params.timeout_ms || params.timeout_ms > DSM_CLOSE_MAX_MS || params.reserved ||
++	    !READ_ONCE(kvm->arch.dsm_enabled)) {
++		return -EINVAL;
++	}
++	if (!mutex_trylock(&close->caller)) {
++		return -EBUSY;
++	}
++	spin_lock_irqsave(&kvm->arch.dsm_admission_lock, flags);
++	ret = READ_ONCE(kvm->arch.dsm_error);
++	if (!ret && (kvm->arch.dsm_active_pin_ops || kvm->arch.dsm_read_pins ||
++		     kvm->arch.dsm_write_pins)) {
++		ret = -EBUSY;
++	}
++	if (!ret && kvm->arch.dsm_ioctl_generation &&
++	    kvm->arch.dsm_ioctl_generation != params.generation) {
++		ret = -ESTALE;
++	}
++	spin_unlock_irqrestore(&kvm->arch.dsm_admission_lock, flags);
++	if (ret) {
++		goto out;
++	}
++	ret = dsm_close_arm(kvm, params.generation, params.timeout_ms);
++	if (ret) {
++		goto out;
++	}
++	spin_lock_irqsave(&kvm->arch.dsm_admission_lock, flags);
++	/* 二次检查与封闭原子执行，固定调用不能在两段临界区之间漏入。 */
++	ret = dsm_close_error(kvm);
++	if (!ret && (kvm->arch.dsm_active_pin_ops || kvm->arch.dsm_read_pins ||
++		     kvm->arch.dsm_write_pins)) {
++		ret = -EBUSY;
++	}
++	if (!ret && kvm->arch.dsm_ioctl_generation &&
++	    kvm->arch.dsm_ioctl_generation != params.generation) {
++		ret = -ESTALE;
++	}
++	if (!ret) {
++		kvm->arch.dsm_ioctl_generation = params.generation;
++		close->begun = true;
++	}
++	spin_unlock_irqrestore(&kvm->arch.dsm_admission_lock, flags);
++	wake_up_all(&kvm->arch.dsm_ioctl_wait);
++	if (!ret) {
++		ret = dsm_close_run(kvm);
++	}
++	if (ret) {
++		kvm_dsm_fail(kvm, ret);
++		ret = READ_ONCE(kvm->arch.dsm_error);
++	}
++	dsm_close_cancel(kvm);
++	pr_info("DSM_CLOSE_RESULT node=%d generation=%llu accepted=%u closed=%u eof=%u result=%d\n",
++		kvm->arch.dsm_id, close->generation, close->accepted, close->closed, close->eof, ret);
++out:
++	mutex_unlock(&close->caller);
++	return ret;
++}
+--- /dev/null
++++ b/arch/x86/kvm/dsm-close.h
+@@ -0,0 +1,68 @@
++/* SPDX-License-Identifier: GPL-2.0 */
++#ifndef KVM_DSM_CLOSE_H
++#define KVM_DSM_CLOSE_H
++
++#include <linux/workqueue.h>
++
++enum kvm_dsm_request_type {
++	DSM_REQ_INVALIDATE,
++	DSM_REQ_READ,
++	DSM_REQ_WRITE,
++	DSM_REQ_DRAIN,
++	DSM_REQ_CLOSE,
++	DSM_REQ_PREPARE,
++	DSM_REQ_READY,
++	DSM_REQ_FINISH,
++};
++
++/* 页面请求保持原有二十四字节布局；关闭消息使用 gfn 携带非零世代。 */
++struct dsm_request {
++	unsigned char requester;
++	unsigned char msg_sender;
++	gfn_t gfn;
++	unsigned char req_type;
++	unsigned char is_smm;
++	u16 version;
++};
++
++/* 状态由准入锁保护；连接对象直到根线程或 VM 销毁时才释放。 */
++struct dsm_close {
++	struct kvm *kvm;
++	struct delayed_work watchdog;
++	struct mutex caller;
++	u64 generation;
++	unsigned long deadline;
++	bool begun;
++	bool freeze_requested;
++	bool frozen;
++	bool prepared;
++	bool ready;
++	bool all_ready;
++	bool complete;
++	bool root_done;
++	u32 accepted;
++	u32 closed;
++	u32 eof;
++	u32 controls;
++	u32 finished;
++	kconnection_t *outgoing[DSM_MAX_INSTANCES];
++};
++
++struct dsm_conn;
++int dsm_close_alloc(struct kvm *kvm);
++void dsm_close_free(struct kvm *kvm);
++void dsm_close_cancel(struct kvm *kvm);
++void dsm_close_abort(struct kvm *kvm, int error);
++int dsm_close_accept(struct kvm *kvm);
++int dsm_close_freeze_listener(struct kvm *kvm);
++bool dsm_close_frozen(struct kvm *kvm);
++bool dsm_close_complete(struct kvm *kvm);
++void dsm_close_root_done(struct kvm *kvm);
++int dsm_close_classify(struct dsm_conn *conn, const struct dsm_request *req);
++int dsm_close_request(struct dsm_conn *conn, const struct dsm_request *req,
++		      tx_add_t *tx);
++int dsm_close_eof(struct dsm_conn *conn);
++int dsm_close_ioctl(struct kvm *kvm, void __user *argp);
++int dsm_transport_try_fence(struct kvm *kvm, u64 generation);
++
++#endif
+--- a/arch/x86/kvm/dsm-util.c
++++ b/arch/x86/kvm/dsm-util.c
+@@ -204,7 +204,7 @@
+ 		return ret;
+ 	}
+ 
+-	ret = network_ops.connect(addr.host, addr.port, conn_sock);
++	ret = network_ops.connect(kvm, addr.host, addr.port, conn_sock);
+ 	if (ret < 0) {
+ 		pr_err("kvm-dsm: node-%d failed to connect to node-%d\n",
+ 		       kvm->arch.dsm_id, dest_id);
+--- a/arch/x86/kvm/dsm-util.h
++++ b/arch/x86/kvm/dsm-util.h
+@@ -31,7 +31,7 @@
+ 		    unsigned long flags, const tx_add_t *tx_add);
+ 	int (*receive)(kconnection_t *conn, char *buf, size_t capacity,
+ 		       unsigned long flags, tx_add_t *tx_add);
+-	int (*connect)(const char *host, u16 port, kconnection_t **conn);
++	int (*connect)(struct kvm *kvm, const char *host, u16 port, kconnection_t **conn);
+ 	int (*listen)(const char *host, u16 port, kconnection_t **conn);
+ 	int (*accept)(kconnection_t *listen_conn, kconnection_t **accept_conn,
+ 		      unsigned long flags);
+@@ -63,6 +63,11 @@
+ 	atomic_t active_requests;
+ 	wait_queue_head_t drain_wait;
+ 	bool drain_seen;
++	bool classified;
++	bool control;
++	bool eof;
++	u8 peer;
++	u8 close_phase;
+ };
+ 
+ /* mmu.c */
+--- a/arch/x86/kvm/dsm.c
++++ b/arch/x86/kvm/dsm.c
+@@ -21,6 +21,7 @@
+ #include <linux/limits.h>
+ #include <linux/kvm.h>
+ #include "dsm.h"
++#include "dsm-close.h"
+ #include "mmu.h"
+ #include "ioapic.h"
+ #include "lapic.h"
+@@ -511,8 +512,26 @@
+ 	char comm[TASK_COMM_LEN];
+ 
+ 	allow_signal(SIGKILL);
+-	while (!kthread_should_stop() && !READ_ONCE(kvm->arch.dsm_error)) {
+-		ret = network_ops.accept(kvm->arch.dsm_listen_sock, &accept_sock, 0);
++	while (!kthread_should_stop() && !fatal_signal_pending(current) &&
++	       !READ_ONCE(kvm->arch.dsm_stopped) && !READ_ONCE(kvm->arch.dsm_error) &&
++	       !dsm_close_complete(kvm)) {
++		if (dsm_close_frozen(kvm)) {
++			wait_event_interruptible(kvm->arch.dsm_ioctl_wait,
++				dsm_close_complete(kvm) || READ_ONCE(kvm->arch.dsm_error) ||
++				READ_ONCE(kvm->arch.dsm_stopped) || kthread_should_stop());
++			continue;
++		}
++		ret = network_ops.accept(kvm->arch.dsm_listen_sock, &accept_sock, O_NONBLOCK);
++		if (ret == -EAGAIN) {
++			ret = dsm_close_freeze_listener(kvm);
++			if (ret) {
++				break;
++			}
++			wait_event_interruptible_timeout(kvm->arch.dsm_ioctl_wait,
++				dsm_close_complete(kvm) || READ_ONCE(kvm->arch.dsm_error) ||
++				kthread_should_stop(), msecs_to_jiffies(10));
++			continue;
++		}
+ 		if (ret < 0) {
+ 			if (ret == -ERESTARTSYS)
+ 				ret = 0;
+@@ -524,6 +543,12 @@
+ 			ret = -ENOMEM;
+ 			break;
+ 		}
++		ret = dsm_close_accept(kvm);
++		if (ret) {
++			network_ops.release(accept_sock);
++			kfree(conn);
++			break;
++		}
+ 		conn->kvm = kvm;
+ 		conn->sock = accept_sock;
+ 		mutex_init(&conn->dispatch_lock);
+@@ -546,10 +571,17 @@
+ 			wake_up_process(thread);
+ 		}
+ 	}
++	if (!ret && fatal_signal_pending(current) && !dsm_close_complete(kvm)) {
++		ret = -EINTR;
++	}
+ out:
+ 	if (ret && !READ_ONCE(kvm->arch.dsm_stopped))
+ 		kvm_dsm_fail(kvm, ret);
++	if (dsm_close_complete(kvm) && !READ_ONCE(kvm->arch.dsm_error)) {
++		goto join;
++	}
+ 	abort_error = READ_ONCE(kvm->arch.dsm_error) ?: -EPIPE;
++	dsm_close_abort(kvm, abort_error);
+ 	/* 先中断网络，避免处理线程或 vCPU 持页锁等待永远不会到来的响应。 */
+ 	network_ops.abort(kvm->arch.dsm_listen_sock, abort_error);
+ 	for (i = 0; i < DSM_MAX_INSTANCES * 2; i++) {
+@@ -567,6 +599,7 @@
+ 				send_sig(SIGKILL, conn->threads[i], 1);
+ 		}
+ 	}
++join:
+ 	while (!list_empty(&conn_list)) {
+ 		conn = list_first_entry(&conn_list, struct dsm_conn, link);
+ 		list_del(&conn->link);
+@@ -587,6 +620,7 @@
+ 		kfree(conn);
+ 	}
+ 	clean_couter();
++	dsm_close_root_done(kvm);
+ 	return READ_ONCE(kvm->arch.dsm_error) ?: ret;
+ }
+ 
+@@ -691,6 +725,11 @@
+ 	if (!kvm->arch.dsm_hvaslots)
+ 		return -ENOMEM;
+ 
++	if (dsm_close_alloc(kvm)) {
++		kvfree(kvm->arch.dsm_hvaslots);
++		kvm->arch.dsm_hvaslots = NULL;
++		return -ENOMEM;
++	}
+ 	return 0;
+ }
+ 
+@@ -703,6 +742,8 @@
+ 		pr_devel("kvm-dsm: node-%d stopping dsm server\n",
+ 			 kvm->arch.dsm_id);
+ 		WRITE_ONCE(kvm->arch.dsm_stopped, true);
++		dsm_close_cancel(kvm);
++		wake_up_all(&kvm->arch.dsm_ioctl_wait);
+ 		/* Ensure dsm_enabled is visible before checking dsm_thread */
+ 		smp_mb();
+ 		send_sig(SIGKILL, kvm->arch.dsm_thread, 1);
+@@ -725,6 +766,7 @@
+ 	kvm_dsm_stop(kvm);
+ 	/* 监听器归 VM 所有，即使线程尚未运行就被停止，也必须释放。 */
+ 	kvm_dsm_free_config(kvm);
++	dsm_close_free(kvm);
+ 
+ 	slots = kvm->arch.dsm_hvaslots;
+ 	if (!slots)
+@@ -1084,7 +1126,8 @@
+ 			 ioctl == KVM_DSM_IOCTL_STATUS ||
+ 			 ioctl == KVM_DSM_TRANSPORT_STATUS ||
+ 			 ioctl == KVM_DSM_PIN_STATUS ||
+-			 ioctl == KVM_DSM_TRANSPORT_FENCE))
++			 ioctl == KVM_DSM_TRANSPORT_FENCE ||
++			 ioctl == KVM_DSM_CLOSE))
+ 		return 0;
+ 	spin_lock_irqsave(&kvm->arch.dsm_admission_lock, flags);
+ 	ret = READ_ONCE(kvm->arch.dsm_error);
+@@ -1278,7 +1321,7 @@
+ }
+ 
+ /* 返回 EAGAIN 表示仍有真实工作；该路径不改变任何准入状态。 */
+-static int dsm_transport_try_fence(struct kvm *kvm, u64 generation)
++int dsm_transport_try_fence(struct kvm *kvm, u64 generation)
+ {
+ 	unsigned long flags;
+ 	int ret;
+@@ -1336,6 +1379,8 @@
+ 	int r = -EFAULT;
+ 
+ 	switch (ioctl) {
++	case KVM_DSM_CLOSE:
++		return dsm_close_ioctl(kvm, argp);
+ 	case KVM_DSM_TRANSPORT_FENCE:
+ 		return kvm_dsm_transport_fence(kvm, argp);
+ 	case KVM_DSM_PIN_STATUS:
+--- a/arch/x86/kvm/ivy.c
++++ b/arch/x86/kvm/ivy.c
+@@ -24,6 +24,7 @@
+ #include <linux/kvm_host.h>
+ #include <linux/kvm.h>
+ #include "dsm-util.h"
++#include "dsm-close.h"
+ #include "ivy.h"
+ #include "mmu.h"
+ 
+@@ -36,13 +37,6 @@
+ static u64 write_req_counter;
+ static u64 read_req_counter;
+ 
+-enum kvm_dsm_request_type {
+-	DSM_REQ_INVALIDATE,
+-	DSM_REQ_READ,
+-	DSM_REQ_WRITE,
+-	DSM_REQ_DRAIN,
+-};
+-
+ static char *req_desc[3] = { "INV", "READ", "WRITE" };
+ 
+ static inline copyset_t *dsm_get_copyset(struct kvm_dsm_memory_slot *slot,
+@@ -62,25 +56,6 @@
+ {
+ 	bitmap_zero(dsm_get_copyset(slot, vfn), DSM_MAX_INSTANCES);
+ }
+-
+-/*
+- * @requester:	the requester (real message sender or manager or probOwner) of
+- * this invalidate request.
+- * @msg_sender: the real message sender.
+- */
+-struct dsm_request {
+-	unsigned char requester;
+-	unsigned char msg_sender;
+-	gfn_t gfn;
+-	unsigned char req_type;
+-	unsigned char is_smm;
+-
+-	/*
+-	 * If version of two pages in different nodes are the same, the contents
+-	 * are the same.
+-	 */
+-	u16 version;
+-};
+ 
+ struct dsm_response {
+ 	copyset_t inv_copyset;
+@@ -607,15 +582,35 @@
+ 
+ 	if (mutex_lock_killable(&conn->dispatch_lock))
+ 		return -EINTR;
+-	ret = network_ops.receive(conn->sock, (char *)req, sizeof(*req), 0, tx_add);
++	if (conn->eof) {
++		ret = KTCP_EOF;
++		goto out;
++	}
++	ret = network_ops.receive(conn->sock, (char *)req, sizeof(*req), KTCP_ALLOW_EOF, tx_add);
++	if (ret == KTCP_EOF) {
++		ret = dsm_close_eof(conn);
++		goto out;
++	}
+ 	if (ret < 0)
+ 		goto out;
+ 	/* 屏障后不接受页面请求或第二个标记；EOF 也仍由传输层报告故障。 */
+ 	if (conn->drain_seen || ret != sizeof(*req) ||
+-	    req->req_type > DSM_REQ_DRAIN || req->is_smm > 1 ||
++	    req->req_type > DSM_REQ_FINISH || req->is_smm > 1 ||
+ 	    req->requester >= kvm->arch.cluster_iplist_len ||
+ 	    req->msg_sender >= kvm->arch.cluster_iplist_len ||
+ 	    req->requester == kvm->arch.dsm_id) {
++		ret = -EPROTO;
++		goto out;
++	}
++	ret = dsm_close_classify(conn, req);
++	if (ret) {
++		goto out;
++	}
++	if (req->req_type >= DSM_REQ_CLOSE) {
++		ret = dsm_close_request(conn, req, tx_add);
++		goto out;
++	}
++	if (conn->close_phase) {
+ 		ret = -EPROTO;
+ 		goto out;
+ 	}
+@@ -630,7 +625,7 @@
+ 	ret = sizeof(*req);
+ out:
+ 	/* 先锁存流内错误再允许下一读者进入，避免后续屏障越过已识别的故障。 */
+-	if (ret < 0 && !(READ_ONCE(kvm->arch.dsm_stopped) &&
++	if (ret < 0 && ret != KTCP_EOF && !(READ_ONCE(kvm->arch.dsm_stopped) &&
+ 			 (ret == -EINTR || ret == -EPIPE)))
+ 		kvm_dsm_fail(kvm, ret);
+ 	mutex_unlock(&conn->dispatch_lock);
+@@ -670,12 +665,20 @@
+ 			.txid = 0xFF,
+ 		};
+ 
++		if (READ_ONCE(conn->eof)) {
++			ret = 0;
++			goto out;
++		}
+ 		if (kthread_should_stop()) {
+ 			ret = -EPIPE;
+ 			goto out;
+ 		}
+ 
+ 		len = dsm_receive_request(conn, &req, &tx_add);
++		if (len == KTCP_EOF) {
++			ret = 0;
++			goto out;
++		}
+ 		if (len < 0) {
+ 			ret = len;
+ 			goto out;
+--- a/arch/x86/kvm/ktcp.c
++++ b/arch/x86/kvm/ktcp.c
+@@ -51,6 +51,8 @@
+ 	struct socket *socket;
+ 	/* 不依赖收发锁，故障线程可以唤醒持锁的网络等待者。 */
+ 	int error;
++	bool connected;
++	wait_queue_head_t connect_wait;
+ };
+ 
+ #define KTCP_BUFFER_SIZE (sizeof(struct ktcp_hdr) + PAGE_SIZE)
+@@ -63,13 +65,34 @@
+ 	if (WARN_ON_ONCE(error >= 0))
+ 		error = -EIO;
+ 	first = cmpxchg(&cb->error, 0, error);
+-	if (!first) {
+-		kernel_sock_shutdown(cb->socket, SHUT_RDWR);
+-		first = error;
+-	}
+-	return first;
++	/* 发布与非阻塞 connect 可交错，再次取消也必须关闭实际 socket。 */
++	kernel_sock_shutdown(cb->socket, SHUT_RDWR);
++	wake_up_all(&cb->connect_wait);
++	return first ?: error;
+ }
+ 
++/* 只在根线程收尽已接受队列后停止监听；已接受 socket 保留至握手完成。 */
++int ktcp_shutdown_listener(struct ktcp_cb *cb)
++{
++	return kernel_sock_shutdown(cb->socket, SHUT_RD);
++}
++
++int ktcp_shutdown_write(struct ktcp_cb *cb)
++{
++	int ret = READ_ONCE(cb->error);
++
++	return ret ?: kernel_sock_shutdown(cb->socket, SHUT_WR);
++}
++
++/* 首个建连者发布后其他取页线程也能看到对象，但不能在连接完成前发帧。 */
++static int ktcp_wait_connected(struct ktcp_cb *cb)
++{
++	int ret = wait_event_killable(cb->connect_wait,
++		READ_ONCE(cb->connected) || READ_ONCE(cb->error));
++
++	return READ_ONCE(cb->error) ?: ret;
++}
++
+ static bool ktcp_should_stop(void)
+ {
+ 	return fatal_signal_pending(current) ||
+@@ -157,6 +180,10 @@
+ {
+ 	int id, ret;
+ 
++	ret = ktcp_wait_connected(cb);
++	if (ret) {
++		return ret;
++	}
+ 	memset(tx, 0, sizeof(*tx));
+ 	if (mutex_lock_killable(&cb->rlock))
+ 		return ktcp_abort(cb, -EINTR);
+@@ -241,8 +268,9 @@
+ 	ret = kernel_recvmsg(sock, &msg, &vec, 1, expected_size - len,
+ 			     recv_flags);
+ 
+-	if (ret == 0)
+-		return -ECONNRESET;
++	if (ret == 0) {
++		return len ? -ECONNRESET : KTCP_EOF;
++	}
+ 
+ 	/* 让外层释放接收锁并退避，避免多事务之间互相阻塞。 */
+ 	if (len == 0 && nonblock &&
+@@ -324,6 +352,12 @@
+ 			goto repoll;
+ 		}
+ 		kfree(local_buffer);
++		if (ret == KTCP_EOF && (flags & KTCP_ALLOW_EOF)) {
++			goto out;
++		}
++		if (ret == KTCP_EOF) {
++			ret = -ECONNRESET;
++		}
+ 		pr_err("%s: __ktcp_receive error, ret %d\n", __func__, ret);
+ 		goto out;
+ 	}
+@@ -356,7 +390,7 @@
+ 	}
+ 	ret = build_ktcp_recv_output(local_buffer, buffer, capacity, tx_add);
+ out:
+-	if (ret < 0)
++	if (ret < 0 && ret != KTCP_EOF)
+ 		ret = ktcp_abort(cb, ret);
+ 	mutex_unlock(&cb->rlock);
+ 	return ret;
+@@ -371,51 +405,71 @@
+ 	mutex_init(&cb->slock);
+ 	mutex_init(&cb->rlock);
+ 	idr_init(&cb->transactions);
++	init_waitqueue_head(&cb->connect_wait);
+ 	*cbp = cb;
+ 	return 0;
+ }
+ 
+-int ktcp_connect(const char *host, u16 port, struct ktcp_cb **conn_cb)
++/* 先发布可取消的 socket；非阻塞建连不能躲过根线程的故障扫描。 */
++int ktcp_connect(struct kvm *kvm, const char *host, u16 port, struct ktcp_cb **conn_cb)
+ {
+-	int ret;
+ 	struct sockaddr_in saddr = {};
+ 	struct ktcp_cb *cb;
+-	struct socket *conn_socket;
++	struct socket *sock;
++	int ret;
+ 
+-	if (!host || !conn_cb)
++	if (!host || !conn_cb) {
+ 		return -EINVAL;
++	}
+ 	ret = ktcp_create_cb(&cb);
+-	if (ret)
++	if (ret) {
+ 		return ret;
+-	ret = sock_create(PF_INET, SOCK_STREAM, IPPROTO_TCP, &conn_socket);
+-	if (ret)
+-		goto out_cb;
++	}
++	ret = sock_create(PF_INET, SOCK_STREAM, IPPROTO_TCP, &sock);
++	if (ret) {
++		kfree(cb);
++		return ret;
++	}
++	cb->socket = sock;
++	smp_store_release(conn_cb, cb);
+ 	saddr.sin_family = AF_INET;
+ 	saddr.sin_port = htons(port);
+ 	saddr.sin_addr.s_addr = in_aton(host);
+-re_connect:
+-	if (ktcp_should_stop()) {
+-		ret = -EINTR;
+-		goto out_socket;
++	ret = READ_ONCE(kvm->arch.dsm_error);
++	if (!ret && READ_ONCE(kvm->arch.dsm_stopped)) {
++		ret = -EPIPE;
+ 	}
+-	ret = conn_socket->ops->connect(conn_socket,
+-					(struct sockaddr_unsized *)&saddr,
+-					sizeof(saddr), O_RDWR);
+-	if (ret == -EAGAIN || ret == -ERESTARTSYS)
+-		goto re_connect;
++	if (ret) {
++		return ktcp_abort(cb, ret);
++	}
++	ret = sock->ops->connect(sock, (struct sockaddr_unsized *)&saddr,
++				sizeof(saddr), O_NONBLOCK);
+ 	if (ret && ret != -EINPROGRESS) {
+-		pr_err("%s: connect failed, return %d\n", __func__, ret);
+-		goto out_socket;
++		return ktcp_abort(cb, ret);
+ 	}
+-	cb->socket = conn_socket;
+-	/* 根线程可无锁读取已完成初始化的连接，以中断网络等待。 */
+-	smp_store_release(conn_cb, cb);
+-	return 0;
+-out_socket:
+-	sock_release(conn_socket);
+-out_cb:
+-	kfree(cb);
+-	return ret;
++	for (;;) {
++		ret = READ_ONCE(cb->error) ?: READ_ONCE(kvm->arch.dsm_error);
++		if (!ret && (ktcp_should_stop() || READ_ONCE(kvm->arch.dsm_stopped))) {
++			ret = -EINTR;
++		}
++		if (!ret && READ_ONCE(sock->sk->sk_err)) {
++			ret = -READ_ONCE(sock->sk->sk_err);
++		}
++		if (ret) {
++			return ktcp_abort(cb, ret);
++		}
++		if (READ_ONCE(sock->sk->sk_state) == TCP_ESTABLISHED) {
++			WRITE_ONCE(cb->connected, true);
++			wake_up_all(&cb->connect_wait);
++			return 0;
++		}
++		if (READ_ONCE(sock->sk->sk_state) == TCP_CLOSE) {
++			return ktcp_abort(cb, -ECONNREFUSED);
++		}
++		wait_event_interruptible_timeout(*sk_sleep(sock->sk),
++			READ_ONCE(sock->sk->sk_state) != TCP_SYN_SENT ||
++			READ_ONCE(cb->error), msecs_to_jiffies(10));
++	}
+ }
+ 
+ int ktcp_listen(const char *host, u16 port, struct ktcp_cb **listen_cb)
+@@ -489,6 +543,7 @@
+ 	if (ret)
+ 		goto out_socket;
+ 	cb->socket = accept_socket;
++	cb->connected = true;
+ 	*accept_cb = cb;
+ 	return 0;
+ out_socket:
+--- a/arch/x86/kvm/ktcp.h
++++ b/arch/x86/kvm/ktcp.h
+@@ -46,8 +46,13 @@
+ int ktcp_receive(struct ktcp_cb *cb, char *buffer, size_t capacity,
+ 		 unsigned long flags, tx_add_t *tx_add);
+ 
+-int ktcp_connect(const char *host, u16 port, struct ktcp_cb **conn_cb);
++#define KTCP_ALLOW_EOF BIT(30)
++#define KTCP_EOF (-ENODATA)
+ 
++int ktcp_shutdown_write(struct ktcp_cb *cb);
++int ktcp_shutdown_listener(struct ktcp_cb *cb);
++int ktcp_connect(struct kvm *kvm, const char *host, u16 port, struct ktcp_cb **conn_cb);
++
+ int ktcp_listen(const char *host, u16 port, struct ktcp_cb **listen_cb);
+ 
+ int ktcp_accept(struct ktcp_cb *listen_cb, struct ktcp_cb **accept_cb,
+--- a/include/uapi/linux/kvm.h
++++ b/include/uapi/linux/kvm.h
+@@ -1451,6 +1451,9 @@
+ /* 研究 ABI：要求相同世代的 ioctl 封闭，等待本地计数归零后永久封闭传输。 */
+ #define KVM_DSM_TRANSPORT_FENCE _IOW(KVMIO, 0xfa, struct kvm_dsm_ioctl_drain)
+ 
++/* 全节点调用排空、逐连接关闭、最终确认和双向 EOF 共用一次期限。 */
++#define KVM_DSM_CLOSE _IOW(KVMIO, 0xfb, struct kvm_dsm_ioctl_drain)
++
+ /**
+  * struct kvm_dsm_memcpy - Parameters for DSM memory copy between guest and userspace.
+  *
