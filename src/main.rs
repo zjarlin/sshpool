@@ -279,6 +279,11 @@ enum NodeAction {
         name: String,
         image: String,
     },
+    /// 撤销镜像授权：只收缩允许清单，不删除 Worker 上的镜像层；不重启控制面。
+    Revoke {
+        name: String,
+        image: String,
+    },
 }
 #[derive(Subcommand)]
 enum ReplicaAction {
@@ -843,6 +848,32 @@ async fn node_command(cli: &Cli, home: &std::path::Path, command: &NodeAction) -
             }
             return Ok(());
         }
+        NodeAction::Revoke { name, image } => {
+            // 与 prepare 一致：本地先拒绝一次明显非法的名字，服务端才是权威。
+            sshpool::config::validate_image(image)?;
+            // 撤销同样分两条路。离线时直接改配置是安全的：没有控制面就没有需要
+            // 同步的内存视图；`controller.lock` 独占成功才说明确实没有。
+            if let Some(lock) = offline_controller_home(home)? {
+                let config = config::read(home)?;
+                let state = State::load(home.to_path_buf(), config)?;
+                let (_, revoked) = state.revoke_node_image(name, image).await?;
+                drop(lock);
+                if revoked {
+                    println!("Image {image} is no longer approved for {name}.");
+                } else {
+                    println!("Image {image} was not approved for {name}; nothing changed.");
+                }
+                return Ok(());
+            }
+            let applied = client(cli, home)?.revoke_node_image(name, image).await?;
+            let revoked = applied["revoked"].as_bool().unwrap_or(false);
+            if revoked {
+                println!("Image {image} is no longer approved for {name}.");
+            } else {
+                println!("Image {image} was not approved for {name}; nothing changed.");
+            }
+            return Ok(());
+        }
         NodeAction::Update {
             name,
             max_jobs,
@@ -928,7 +959,8 @@ async fn node_command(cli: &Cli, home: &std::path::Path, command: &NodeAction) -
         | NodeAction::Disable { .. }
         | NodeAction::Reconcile { .. }
         | NodeAction::Update { .. }
-        | NodeAction::Prepare { .. } => {
+        | NodeAction::Prepare { .. }
+        | NodeAction::Revoke { .. } => {
             anyhow::bail!("node online command was not dispatched")
         }
     }

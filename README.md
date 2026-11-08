@@ -107,11 +107,14 @@ sshpool node update linux-builder --max-swap-used-mib 2048 --max-memory-pressure
 sshpool node update linux-builder --max-jobs 2 --reserve-memory-mib 8192
 sshpool node update linux-builder --clear-slo max-swap-used-mib   # 取消这一项预算
 sshpool node prepare linux-builder rust:1.93                     # 拉取并授权，立即参与调度
+sshpool node revoke linux-builder rust:1.93                      # 只收回授权，不删镜像层
 ```
 
 `node update` 只改显式给出的字段，省略等于保持原值；先校验、再原子落盘、最后替换内存中的节点视图，三步都在调度锁内，所以不会出现按半套设置派发任务的中间态。仍有活动任务的节点不能被禁用。控制面运行期间手改了 `config.toml` 的话，在线更新会拒绝并提示重启加载，而不是把那处手改覆盖掉。
 
 `node prepare` 是**唯一**会拉取镜像的操作，普通构建不会自动拉；它同时把镜像加入该节点的允许清单，所以「已安装的业务镜像」仍然不会因为装在机器上就自动开放给任务。顺序是「先在 Worker 上真实 `docker pull` 成功 → 才写进配置」：拉不到就不改配置，不会留下「已授权但机器上没有」的镜像。镜像已在清单里时直接返回、不重复拉取。CLI 连接的是运行中的控制面，因此授权对下一次派发立即生效；控制面没在跑时 `node prepare` 会连不上，而不是悄悄改文件（那样会绕开在线一致性检查）。
+
+`node revoke` 是 prepare 的反向操作，同样对下一次派发立即生效：它只把镜像从该节点的允许清单里移除，**不删除 Worker 上的镜像层，也不终止已经运行的容器**，所以没有远端副作用。正在这台节点上执行该镜像的活动任务会让撤销被拒绝，错误里带着 job id —— 撤销不会杀死容器，放任下去只会留下「容器在跑、授权已经消失」这种事后才被发现的状态；需要立刻止血时先 `cancel` 或等清理确认。清单里本来就没有这张镜像时返回 `revoked=false`，不写盘；控制面运行期间手改过 `config.toml` 的话同样拒绝并提示重启加载。
 
 稳定 Linux 工作台可以是已有 Linux 主机，或 Mac 上无宿主目录挂载的 Lima VM。把 `ssh_backend` 指向它的 SSH 端口，客户端只连接 `ssh_listen`。默认两者为 `127.0.0.1:2223` 和 `127.0.0.1:2222`。
 

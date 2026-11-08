@@ -232,6 +232,7 @@ pub fn routes(state: Arc<State>) -> Router {
         .route("/v1/status", get(status))
         .route("/v1/nodes/{name}", post(update_node))
         .route("/v1/nodes/{name}/prepare", post(prepare_node))
+        .route("/v1/nodes/{name}/revoke", post(revoke_node_image))
         .route("/v1/nodes/{name}/enable", post(enable_node))
         .route("/v1/nodes/{name}/disable", post(disable_node))
         .route("/v1/nodes/{name}/reconcile", post(reconcile_node))
@@ -463,7 +464,7 @@ async fn prepare_node(
     let bytes = axum::body::to_bytes(request.into_body(), 65536)
         .await
         .map_err(anyhow::Error::from)?;
-    let body: PrepareImage = serde_json::from_slice(&bytes).map_err(anyhow::Error::from)?;
+    let body: ImageRequest = serde_json::from_slice(&bytes).map_err(anyhow::Error::from)?;
     let (node, pulled) = state.prepare_node(&name, &body.image).await?;
     Ok(axum::Json(serde_json::json!({
         "node": node,
@@ -472,13 +473,36 @@ async fn prepare_node(
     })))
 }
 
-/// `POST /v1/nodes/{name}/prepare` 的请求体。
+/// 撤销镜像授权：只收缩允许清单，不删除 Worker 上的镜像层。
+///
+/// 与 `prepare_node` 共用同一个请求体形状和同一套前置检查（`admin` 先于解析），
+/// 但它没有远端副作用，所以也不会像 prepare 那样需要 `pulled` 这样的返回值。
+async fn revoke_node_image(
+    AppState(state): AppState<Arc<State>>,
+    principal: Principal,
+    Path(name): Path<String>,
+    request: Request,
+) -> ApiResult<impl IntoResponse> {
+    principal.require(crate::credentials::Scope::Admin)?;
+    let bytes = axum::body::to_bytes(request.into_body(), 65536)
+        .await
+        .map_err(anyhow::Error::from)?;
+    let body: ImageRequest = serde_json::from_slice(&bytes).map_err(anyhow::Error::from)?;
+    let (node, revoked) = state.revoke_node_image(&name, &body.image).await?;
+    Ok(axum::Json(serde_json::json!({
+        "node": node,
+        "image": body.image,
+        "revoked": revoked
+    })))
+}
+
+/// `prepare` 与 `revoke` 的请求体。
 ///
 /// 只有一个字段：镜像名。`deny_unknown_fields` 让「顺手带个 enabled」之类的
 /// 请求直接失败，而不是被静默忽略后让人以为那部分也生效了。
 #[derive(serde::Deserialize)]
 #[serde(deny_unknown_fields)]
-struct PrepareImage {
+struct ImageRequest {
     image: String,
 }
 

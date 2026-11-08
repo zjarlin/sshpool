@@ -312,10 +312,77 @@ impl State {
         Ok((patched, true))
     }
 
+    /// 在线撤销镜像授权：只收缩允许清单，不删除 Worker 上的镜像层。
+    ///
+    /// 与 [`State::prepare_node`] 正好反向：那条路由要让远端真的具备镜像，这条只
+    /// 改变「谁可以申请它」。因此它没有远端副作用，整段在 `scheduling` 锁内完成，
+    /// 与 `update_node` 用同一条写入顺序。
+    ///
+    /// 撤销不会杀死已经启动的容器，所以「容器还在跑、授权已经没了」是一种只会在
+    /// 事后才被发现的错位状态。正在这台节点上执行这张镜像时直接拒绝，让运维先
+    /// `cancel` 或等清理确认 —— 需要立刻止血的场景应当先取消任务。
+    ///
+    /// 返回 `(节点, 是否真的删掉了授权)`；清单里本来就没有时返回 `false`，不写盘。
+    pub async fn revoke_node_image(&self, name: &str, image: &str) -> Result<(Node, bool)> {
+        config::validate_image(image)?;
+        let _scheduling = self.scheduling.lock().await;
+        let current = self.node(name).await?;
+        self.ensure_config_matches_memory(&current).await?;
+        if !current.images.iter().any(|approved| approved == image) {
+            return Ok((current, false));
+        }
+        self.ensure_image_not_running(name, image).await?;
+        let mut file = config::read(&self.home)?;
+        let mut patched = current;
+        patched.images.retain(|approved| approved != image);
+        // 撤销之后这份清单仍然必须自洽：重复项、空串之类的问题不能靠一次缩小蒙过去。
+        config::validate_node(&patched)?;
+        let index = file
+            .nodes
+            .iter()
+            .position(|node| node.name == name)
+            .expect("the node was just located");
+        file.nodes[index] = patched.clone();
+        config::validate(&file)?;
+        config::save(&self.home, &file)?;
+        {
+            let mut nodes = self.nodes.write().await;
+            if let Some(entry) = nodes.iter_mut().find(|node| node.name == name) {
+                *entry = patched.clone();
+            }
+        }
+        // 撤销会让排在后面的任务变得「前面那个已经跑不了」，队列需要重算一次。
+        self.wake_queue();
+        Ok((patched, true))
+    }
+
+    /// 这张镜像是否正由这台节点上的活动任务执行。
+    ///
+    /// 只看「最末一次尝试 + 未终止」：更早的尝试已经收尾，它的容器不该再存在。
+    async fn ensure_image_not_running(&self, name: &str, image: &str) -> Result<()> {
+        let jobs = self.jobs.lock().await;
+        let running = jobs.values().find(|job| {
+            !job.phase.terminal()
+                && job.build.image == image
+                && job
+                    .attempts
+                    .last()
+                    .is_some_and(|attempt| attempt.node == name)
+        });
+        let running = running.map(|job| (job.id, job.build.image.clone()));
+        drop(jobs);
+        if let Some((id, image)) = running {
+            anyhow::bail!(
+                "{image} is still running on {name} (job {id}); cancel it or wait for confirmed completion before revoking the approval"
+            );
+        }
+        Ok(())
+    }
+
     /// 控制面内存里的节点是否仍是 `config.toml` 里的那一份。
     ///
-    /// 在线改动（`update_node`、`prepare_node`）都以此为前提：手改过的配置要先重启
-    /// 加载，否则「落盘」会把别人的修改整份覆盖掉。
+    /// 在线改动（`update_node`、`prepare_node`、`revoke_node_image`）都以此为前提：
+    /// 手改过的配置要先重启加载，否则「落盘」会把别人的修改整份覆盖掉。
     async fn ensure_config_matches_memory(&self, current: &Node) -> Result<()> {
         let file = config::read(&self.home)?;
         let stored = file

@@ -686,3 +686,177 @@ async fn an_online_image_prepare_takes_effect_without_a_restart() -> Result<()> 
     println!("removed {image} from the worker");
     Ok(())
 }
+
+/// 在线撤销镜像授权必须免重启生效，判据是「同一张镜像从能跑变成被拒」。
+///
+/// 五段：`node prepare` 授权后不重启就真的跑起来 → `node revoke` 后内存与磁盘都
+/// 不再有这张镜像 → 不重启再提交同一张镜像被拒且 0 容器 → 重复撤销是幂等的
+/// `revoked=false` → 撤销一个从未授权的 tag 同样 `revoked=false` 且
+/// `config.toml` 一字未变。
+///
+/// 默认用 `busybox:1.35`（与 prepare 测试的 `busybox:1.36` 错开，避免两条 live
+/// 测试互相干扰）。如果 Worker 上本来没有这张镜像，就先 `prepare` 把它拉下来 ——
+/// 这一步既是前置条件，也顺带证明授权本身可用；结束时只删这次拉下来的那一张。
+#[tokio::test]
+#[ignore = "requires a reachable SSH worker with Docker and registry access"]
+async fn revoking_an_image_takes_effect_without_a_restart() -> Result<()> {
+    let live = live_node()?;
+    let image =
+        std::env::var("SSHPOOL_LIVE_REVOKE_IMAGE").unwrap_or_else(|_| "busybox:1.35".into());
+    ensure!(
+        !live.images.contains(&image),
+        "{image} is already approved in the harness node; pick another tag"
+    );
+    let present = sshpool::transport::capture(
+        &live,
+        &format!(
+            "docker image inspect {} >/dev/null 2>&1 && echo yes || echo no",
+            sshpool::transport::quote(&image)
+        ),
+        60,
+    )
+    .await?;
+    let pulled_here = String::from_utf8_lossy(&present.1).trim() == "no";
+
+    let (root, state, client) = harness(vec![live.clone()]).await?;
+    let platform = platform(&live).await?;
+    let build = Build {
+        image: image.clone(),
+        platform,
+        command: vec!["sh".into(), "-c".into(), "printf 'revoked\\n'".into()],
+        memory_mib: 256,
+        scratch_mib: 64,
+        cpus: 0.5,
+        timeout_secs: 120,
+        ..Build::default()
+    };
+
+    // 1. 授权：本来就是拉取，顺带把这张镜像写进允许清单。
+    let prepared = client.prepare_node("live", &image).await?;
+    ensure!(
+        prepared["pulled"] == serde_json::json!(true),
+        "the harness has not approved this image, so prepare must report a pull: {prepared}"
+    );
+    ensure!(
+        state.nodes().await[0]
+            .images
+            .iter()
+            .any(|item| item == &image),
+        "the running controller must see the new approval immediately"
+    );
+    println!("prepared {image}: {prepared}");
+
+    // 2. 授权可用：不重启就提交，任务必须真的跑起来并清理。
+    let seen = job_ids(&client).await?;
+    let approved = named_project(root.path(), "approved")?;
+    let code = client.run(&approved, build.clone()).await?;
+    ensure!(code == 0, "the approved image must run: {code}");
+    let job = new_job(&client, &seen).await?;
+    ensure!(
+        job.phase == Phase::Succeeded && job.cleanup_confirmed,
+        "the approved job must succeed and clean up: {:?} {:?}",
+        job.phase,
+        job.message
+    );
+    println!("approved image ran: {:?}", job.message);
+
+    // 3. 撤销：只有允许清单变化，没有远端动作。
+    let applied = client.revoke_node_image("live", &image).await?;
+    ensure!(
+        applied["revoked"] == serde_json::json!(true),
+        "the first revoke must remove the approval: {applied}"
+    );
+    ensure!(
+        !state.nodes().await[0]
+            .images
+            .iter()
+            .any(|item| item == &image),
+        "the running controller must drop the approval immediately"
+    );
+    let stored = sshpool::config::read(root.path())?;
+    ensure!(
+        stored.nodes[0].images.iter().all(|item| item != &image),
+        "the approval must also be gone from config.toml"
+    );
+    println!("revoked {image}: {applied}");
+
+    // 4. 不重启就提交同一张镜像：必须在派发前被拒，且不能留下容器。
+    let seen = job_ids(&client).await?;
+    let refused = named_project(root.path(), "after-revoke")?;
+    let code = client.run(&refused, build.clone()).await?;
+    ensure!(code != 0, "a revoked image must be refused: {code}");
+    let job = new_job(&client, &seen).await?;
+    ensure!(
+        job.phase == Phase::Failed && job.attempts.is_empty(),
+        "a revoked image must fail before an attempt exists: {:?} {:?}",
+        job.phase,
+        job.message
+    );
+    let message = job.message.as_deref().unwrap_or_default();
+    ensure!(
+        message.contains("image not approved"),
+        "the refusal must name the missing approval: {message}"
+    );
+    let containers = sshpool::transport::checked(
+        &live,
+        &format!(
+            "docker ps -a --filter {} --format {{.Names}} | wc -l",
+            sshpool::transport::quote(&format!("label=io.sshpool.job={}", job.id))
+        ),
+        20,
+    )
+    .await?;
+    ensure!(
+        String::from_utf8_lossy(&containers).trim() == "0",
+        "a revoked image must create no container"
+    );
+    println!("revoked image refused: {message}");
+
+    // 5. 幂等与反向对照：没有可删的授权时不写盘。
+    let again = client.revoke_node_image("live", &image).await?;
+    ensure!(
+        again["revoked"] == serde_json::json!(false),
+        "a second revoke must report no change: {again}"
+    );
+    let before = fs::read_to_string(root.path().join("config.toml"))?;
+    let never = client.revoke_node_image("live", "alpine:3.21").await?;
+    ensure!(
+        never["revoked"] == serde_json::json!(false),
+        "revoking a tag that was never approved must report no change: {never}"
+    );
+    ensure!(
+        fs::read_to_string(root.path().join("config.toml"))? == before,
+        "a no-op revoke must not touch config.toml"
+    );
+
+    // 还原本机镜像列表：只删这次拉下来的那一张。
+    //
+    // 清理失败不能让已经成立的功能结论变成失败：这台 Worker 的 ssh 走 aio 的
+    // Node ProxyCommand，机器负载高时偶发握手超过 `ConnectTimeout`。重试几次后
+    // 只打印提醒，让镜像列表本身成为唯一需要人工确认的东西。
+    if pulled_here {
+        let script = format!(
+            "docker rmi {} >/dev/null 2>&1 || true",
+            sshpool::transport::quote(&image)
+        );
+        let mut removed = false;
+        for attempt in 1..=3 {
+            match sshpool::transport::checked(&live, &script, 60).await {
+                Ok(_) => {
+                    removed = true;
+                    break;
+                }
+                Err(error) => {
+                    println!("cleanup attempt {attempt} failed: {error:#}");
+                    tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+                }
+            }
+        }
+        if removed {
+            println!("removed {image} from the worker");
+        } else {
+            println!("warning: could not reach the worker to remove {image}");
+        }
+    }
+    Ok(())
+}

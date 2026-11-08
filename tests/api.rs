@@ -1155,6 +1155,14 @@ async fn a_read_only_credential_is_refused_on_every_write_route() -> Result<()> 
         "node prepare needs its own scope check before body parsing"
     );
 
+    // 撤销授权同理：越权必须在解析之前拒绝。
+    let response = send("POST", "/v1/nodes/test-node/revoke", reader.clone()).await?;
+    assert_eq!(
+        response.status(),
+        StatusCode::FORBIDDEN,
+        "node revoke needs its own scope check before body parsing"
+    );
+
     let response = send("POST", "/v1/nodes/test-node/disable", reader.clone()).await?;
     assert_eq!(response.status(), StatusCode::FORBIDDEN);
     let body = String::from_utf8(
@@ -2041,6 +2049,251 @@ async fn node_prepare_rejects_bad_input_before_touching_the_worker() -> Result<(
     assert!(
         puller.calls().is_empty(),
         "invalid input must be refused before any remote pull"
+    );
+    Ok(())
+}
+
+/// 撤销镜像授权：只收缩允许清单，不碰 Worker、不碰别的节点，也不重复写盘。
+///
+/// 判据与 prepare 对称：返回后内存与磁盘同时没有这张镜像（生效）、
+/// 同一份健康读数从放行变成 `image not approved`（进入调度）、
+/// 再撤销一次 `revoked=false` 且配置文件一字节不变（幂等）。
+#[tokio::test]
+async fn node_revoke_removes_the_approval_and_reaches_the_next_decision() -> Result<()> {
+    let puller = Arc::new(Recorder::default());
+    let (root, state) = state_with(puller.clone())?;
+    let image = "alpine:3.22";
+
+    let body = serde_json::json!({ "image": image });
+    let response = sshpool::api::routes(state.clone())
+        .oneshot(
+            Request::post("/v1/nodes/test-node/revoke")
+                .header("authorization", format!("Bearer {}", state.token))
+                .header("content-type", "application/json")
+                .body(Body::from(serde_json::to_vec(&body)?))?,
+        )
+        .await?;
+    assert_eq!(response.status(), StatusCode::OK);
+    let bytes = axum::body::to_bytes(response.into_body(), 65536).await?;
+    let applied: serde_json::Value = serde_json::from_slice(&bytes)?;
+    assert_eq!(applied["revoked"], serde_json::json!(true));
+    assert_eq!(applied["image"], serde_json::json!(image));
+
+    // 撤销不产生远端动作：它只是不再允许申请这张镜像。
+    assert!(
+        puller.calls().is_empty(),
+        "revoking an approval must not touch the worker"
+    );
+
+    // 生效：内存与磁盘同时没有，且只影响这台节点。
+    let nodes = state.nodes().await;
+    let updated = nodes.iter().find(|node| node.name == "test-node").unwrap();
+    assert!(
+        !updated.images.iter().any(|approved| approved == image),
+        "the delta must be gone from the runtime view"
+    );
+    let sibling = nodes
+        .iter()
+        .find(|node| node.name == "second-node")
+        .unwrap();
+    assert_eq!(
+        sibling.images,
+        vec!["alpine:3.22".to_string()],
+        "another node's approvals must be untouched"
+    );
+    let stored = sshpool::config::read(root.path())?;
+    assert_eq!(
+        stored
+            .nodes
+            .iter()
+            .find(|node| node.name == "test-node")
+            .unwrap(),
+        updated
+    );
+
+    // 进入调度：同一份健康读数在撤销之前放行、之后拒绝。
+    let health = sshpool::model::Health {
+        name: "test-node".into(),
+        enabled: true,
+        os: "linux".into(),
+        arch: "x86_64".into(),
+        cpus: 8,
+        memory_available_mib: 32_000,
+        disk_available_mib: 100_000,
+        load: 0.1,
+        runtime_memory_mib: 32_000,
+        runtime_arch: "x86_64".into(),
+        swap_used_mib: None,
+        memory_pressure_percent: None,
+        io_pressure_percent: None,
+        error: None,
+    };
+    let build = Build {
+        image: image.into(),
+        platform: "linux/amd64".into(),
+        ..Build::default()
+    };
+    let mut before = updated.clone();
+    before.images.push(image.into());
+    assert!(
+        sshpool::scheduler::score(&before, &health, &build, &[]).is_ok(),
+        "the fixture must start schedulable"
+    );
+    let reason = sshpool::scheduler::score(updated, &health, &build, &[])
+        .expect_err("a revoked image must be refused");
+    assert!(reason.contains("image not approved"), "{reason}");
+
+    // 幂等：撤销一次已经不存在的授权不写盘。
+    let original = fs::read_to_string(root.path().join("config.toml"))?;
+    let response = sshpool::api::routes(state.clone())
+        .oneshot(
+            Request::post("/v1/nodes/test-node/revoke")
+                .header("authorization", format!("Bearer {}", state.token))
+                .header("content-type", "application/json")
+                .body(Body::from(serde_json::to_vec(&body)?))?,
+        )
+        .await?;
+    assert_eq!(response.status(), StatusCode::OK);
+    let bytes = axum::body::to_bytes(response.into_body(), 65536).await?;
+    let again: serde_json::Value = serde_json::from_slice(&bytes)?;
+    assert_eq!(again["revoked"], serde_json::json!(false));
+    assert_eq!(
+        fs::read_to_string(root.path().join("config.toml"))?,
+        original,
+        "a no-op revoke must not rewrite the configuration"
+    );
+    Ok(())
+}
+
+/// 正在这台节点上跑这张镜像时拒绝撤销：撤了授权不会杀死已启动的容器，
+/// 留下的是「容器在跑、授权已经没了」这种只能事后发现的错位状态。
+#[tokio::test]
+async fn node_revoke_refuses_while_that_image_is_running() -> Result<()> {
+    let (root, state) = state()?;
+    let mut job = active_job("test-node");
+    job.build.image = "alpine:3.22".into();
+    let id = job.id;
+    state.jobs.lock().await.insert(id, job);
+
+    let error = state
+        .revoke_node_image("test-node", "alpine:3.22")
+        .await
+        .expect_err("a running image must not be revoked under the job");
+    let message = format!("{error:#}");
+    assert!(message.contains("still running on test-node"), "{message}");
+    assert!(
+        message.contains(&id.to_string()),
+        "the refusal must name the job so the operator can cancel it: {message}"
+    );
+    assert!(
+        state
+            .node("test-node")
+            .await?
+            .images
+            .iter()
+            .any(|image| image == "alpine:3.22"),
+        "the approval must survive a refused revoke"
+    );
+    assert!(
+        sshpool::config::read(root.path())?
+            .nodes
+            .iter()
+            .any(|node| node.name == "test-node"
+                && node.images.iter().any(|image| image == "alpine:3.22")),
+        "the configuration must survive a refused revoke"
+    );
+
+    // 同一台机器上跑的是别的镜像时不受影响：门槛只针对被撤销的那一张。
+    state.jobs.lock().await.remove(&id);
+    let mut other = active_job("test-node");
+    other.build.image = "rust:1.93".into();
+    let other_id = other.id;
+    state.jobs.lock().await.insert(other_id, other);
+    state.revoke_node_image("test-node", "alpine:3.22").await?;
+    assert!(
+        !state
+            .node("test-node")
+            .await?
+            .images
+            .iter()
+            .any(|image| image == "alpine:3.22"),
+        "a different image running on the node must not block the revoke"
+    );
+    Ok(())
+}
+
+/// 撤销也要在解析请求体之前拒绝越权、在动配置之前拒绝非法输入。
+#[tokio::test]
+async fn node_revoke_rejects_bad_input_before_touching_the_configuration() -> Result<()> {
+    let puller = Arc::new(Recorder::default());
+    let (root, state) = state_with(puller.clone())?;
+    let original = fs::read_to_string(root.path().join("config.toml"))?;
+    for (name, image) in [
+        ("not-present", "alpine:3.22"),
+        ("test-node", ""),
+        ("test-node", "-f"),
+        ("test-node", "alpine 3.22"),
+    ] {
+        let body = serde_json::json!({ "image": image });
+        let response = sshpool::api::routes(state.clone())
+            .oneshot(
+                Request::post(format!("/v1/nodes/{name}/revoke"))
+                    .header("authorization", format!("Bearer {}", state.token))
+                    .header("content-type", "application/json")
+                    .body(Body::from(serde_json::to_vec(&body)?))?,
+            )
+            .await?;
+        assert!(
+            response.status().is_client_error(),
+            "{name} with {image:?} should be refused, got {}",
+            response.status()
+        );
+    }
+    // 多带一个字段同样是错误请求：撤销只接受镜像名。
+    let response = sshpool::api::routes(state.clone())
+        .oneshot(
+            Request::post("/v1/nodes/test-node/revoke")
+                .header("authorization", format!("Bearer {}", state.token))
+                .header("content-type", "application/json")
+                .body(Body::from(serde_json::to_vec(
+                    &serde_json::json!({ "image": "alpine:3.22", "enabled": false }),
+                )?))?,
+        )
+        .await?;
+    // 400 而不是 422：请求体由处理函数自己解析（先 `require(Admin)` 再解析），
+    // 所以多余的字段是普通错误请求，而不是框架提取器的语义错误。
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(
+        fs::read_to_string(root.path().join("config.toml"))?,
+        original,
+        "a rejected revoke must not touch the configuration"
+    );
+    assert!(puller.calls().is_empty());
+    Ok(())
+}
+
+/// 手改过的配置不能被撤销动作整份覆盖：与 prepare / update 同一条前提。
+#[tokio::test]
+async fn node_revoke_refuses_to_overwrite_an_external_config_edit() -> Result<()> {
+    let (root, state) = state()?;
+    let mut file = sshpool::config::read(root.path())?;
+    file.nodes[0].priority = 42;
+    sshpool::config::save(root.path(), &file)?;
+    let error = state
+        .revoke_node_image("test-node", "alpine:3.22")
+        .await
+        .expect_err("an external edit must be detected before the write");
+    let message = format!("{error:#}");
+    assert!(
+        message.contains("edited outside the controller"),
+        "{message}"
+    );
+    assert!(
+        sshpool::config::read(root.path())?.nodes[0]
+            .images
+            .iter()
+            .any(|image| image == "alpine:3.22"),
+        "the manual edit must be preserved as-is"
     );
     Ok(())
 }

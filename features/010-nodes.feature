@@ -56,6 +56,26 @@ Feature: 显式登记异构 SSH 节点
     Then 两处用同一条规则拒绝
     And Worker 上没有发生任何拉取
 
+  # evidence: tests/api.rs::node_revoke_removes_the_approval_and_reaches_the_next_decision
+  # evidence: tests/scheduling_live.rs::revoking_an_image_takes_effect_without_a_restart
+  # evidence: docs/evidence/node-revoke-20261108.json
+  @verified @automated @p1
+  Scenario: 在线撤销镜像授权
+    Given 控制面正在运行，某台 Worker 已获准使用某张镜像
+    When 执行 node revoke 指定该节点与镜像
+    Then 只收缩允许清单，不删除 Worker 上的镜像层
+    And 不重启控制面，下一次提交同一张镜像就在派发前被拒绝且不创建容器
+    But 重复撤销返回 revoked=false，不写盘
+
+  # evidence: tests/api.rs::node_revoke_refuses_while_that_image_is_running
+  @verified @automated @p1
+  Scenario: 运行中的镜像不能被撤销
+    Given 某台 Worker 上的活动任务正在使用某张镜像
+    When 执行 node revoke 撤销这张镜像
+    Then 拒绝，错误里带 job id
+    And 允许清单与 config.toml 都不变
+    But 撤销另一张没有在跑的镜像仍然成功
+
   @partial @p1
   Scenario: WSL2 计算节点
     Given Windows 的 SSH 直接进入 WSL2 Linux

@@ -112,6 +112,20 @@ impl Client {
         .json()
         .await?)
     }
+    /// 在线撤销镜像授权：只收缩允许清单，不删除 Worker 上的镜像层。
+    ///
+    /// 返回控制面实际应用的节点与「这次是否真的删掉了授权」——本来就没有时是 `false`。
+    pub async fn revoke_node_image(&self, name: &str, image: &str) -> Result<serde_json::Value> {
+        Ok(Self::response(
+            self.request(reqwest::Method::POST, &format!("/v1/nodes/{name}/revoke"))
+                .json(&serde_json::json!({ "image": image }))
+                .send()
+                .await?,
+        )
+        .await?
+        .json()
+        .await?)
+    }
     /// 在线核对未确认清理；只返回证据结果，不在客户端做任何推断。
     pub async fn reconcile_node(&self, name: Option<&str>) -> Result<serde_json::Value> {
         let path = match name {

@@ -105,6 +105,43 @@ sshpool node update linux-builder --clear-slo max-swap-used-mib
 
 离线侧的可注入点：`State::load_with_puller` 接受一个 `ImagePuller`，生产实现 `SshImagePuller` 只经 `transport::checked` 执行 `docker pull`。这样「先拉取后授权」不是靠读代码相信，而是靠替身记录调用时刻的 `config.toml` 内容来断言。
 
+### 在线撤销镜像授权 {#node-revoke}
+
+`node prepare` 的缺口在上一轮证据里已经写明：删除镜像授权只能改配置后重启控制面，或者直接手编 `config.toml`（后者会被在线写检测到）。现在撤销也是控制面动作：`POST /v1/nodes/{name}/revoke`，请求体同样是 `{"image": "..."}`，要求 `admin`；处理函数内 `to_bytes` 读体、先 `require(Admin)` 再解析，所以只读凭据拿到的是 403 而不是 415。CLI 对应 `sshpool node revoke <NAME> <IMAGE>`。
+
+语义是**只收缩允许清单**：不 `docker rmi`、不杀容器、不看 Worker。因此它没有远端副作用，整段可以留在 `scheduling` 锁内，写入顺序与 `node update` 完全一致。
+
+| 不变量 | 实现 | 自动化 |
+| --- | --- | --- |
+| 只收缩允许清单 | 保留式重建 `images`；不调用 `docker rmi`，`puller.calls()` 始终为空 | `node_revoke_removes_the_approval_and_reaches_the_next_decision` |
+| 立刻进入调度 | 同一份健康读数撤销前放行、撤销后报 `image not approved`；`scheduler::score` 前后相反 | 同上 |
+| 同时改内存与磁盘 | 先 `config::save` 再整份替换节点视图 | 同上 |
+| 不污染其他节点 | 只替换被点名的节点，兄弟节点逐字段不变 | 同上 |
+| 幂等 | 清单里本来没有 → `revoked=false`，不写盘、`config.toml` 字节不变 | 同上 |
+| 拒绝撤销运行中的镜像 | 未终止 + 最后一条 attempt 的 node 匹配 + `build.image` 匹配 → 拒绝，消息带 job id | `node_revoke_refuses_while_that_image_is_running` |
+| 门槛只针对被撤销的镜像 | 另一个镜像的任务仍在跑时，撤销被点名的那张仍然成功 | 同上 |
+| 不覆盖手改 | 落盘前比对 `config.toml` 与内存；不一致直接拒绝，手改保留 | `node_revoke_refuses_to_overwrite_an_external_config_edit` |
+| 非法输入不改配置 | 未知节点、空名、`-` 开头、含空白 → 4xx；多带字段 → 400 | `node_revoke_rejects_bad_input_before_touching_the_configuration` |
+| 越权先于解析 | 只读凭据 → 403（不是 415/422） | `a_read_only_credential_is_refused_on_every_write_route` |
+
+多带字段之所以是 **400** 而不是 **422**：这条路由和 `node update` 一样在函数内 `to_bytes` + `serde_json::from_slice`，`deny_unknown_fields` 的失败从 `ApiError` 出来是 `BAD_REQUEST`；只有走 `axum::Json` 提取器的路由才会得到 422。
+
+真实链路 `tests/scheduling_live.rs::revoking_an_image_takes_effect_without_a_restart`（`#[ignore]`，`okm182-lan`，12.68s）用 `busybox:1.35` 做五段对照，全程不重启控制面：
+
+| 段 | 操作 | 结果 |
+| --- | --- | --- |
+| 1 | `node prepare live busybox:1.35` | `pulled=true`，真实下载了 1.35 的层（digest `sha256:98ad9d1a…`），`config.toml` 与内存同时出现该镜像 |
+| 2 | 不重启就提交同一张镜像 | `Succeeded`、`exit_code=0`、`cleanup_confirmed=true`，执行在 `live` 上 |
+| 3 | `node revoke live busybox:1.35` | `revoked=true`；内存与 `config.toml` 都只剩 `["alpine:3.22"]` |
+| 4 | 不重启再提交同一张镜像 | 退出码非 0；`Failed`、`attempts` 为空，消息含 `image not approved for this worker; use node prepare`，**0 容器** |
+| 5 | 重复撤销、再撤销一个从未授权的 tag | 两次都是 `revoked=false`，`config.toml` 一字未变 |
+
+**为什么不删镜像层。** 撤销回答的是「谁还可以申请这张镜像」，不是「这台机器上还能不能留着它」。删镜像层会与正在使用它的容器、其它 tag 的共享层、以及运维自己的手工拉取纠缠在一起，而且一旦删除失败就没有回滚；把「授权」与「磁盘占用」分开，撤销才是可预测的、只改一行配置的动作。清理磁盘仍是运维动作，正确顺序见[部署文档](deployment.md#worker)。
+
+**为什么拒绝撤销正在跑的镜像。** 撤销不杀容器，所以放任撤销会得到「容器在跑、授权已经消失」的状态：任务记录里看不出异常，下次有人查看允许清单时也看不出这台机器上还有东西在跑。拒绝并要求先 `cancel`（或等清理确认）把这件事挪到能立刻看见的地方，错误消息里带 job id 就是为此。
+
+测试开始前若 Worker 上还没有这张镜像，先由 `node prepare` 拉下来；结束时只删这次拉下来的那一张，`busybox:latest` 之类别人的镜像不动。证据见 [evidence/node-revoke-20261108.json](evidence/node-revoke-20261108.json)。
+
 ### 探测在调度锁外，快照有 TTL
 
 `runner::run` 原先在持有全局 `state.scheduling` 锁时执行 `probe::all`。`transport` 固定 `ConnectTimeout=5`，所以只要有一台节点不可达，**所有任务派发都会被这 5 秒串行阻塞**。实测黑洞节点（`192.0.2.1`，RFC 5737）`ssh` 恰好耗时 5.01s；正常节点一次完整探测为 `okm182-lan` 0.35s、`sshpool-anchor` 0.18s、`macmini-lan` 1.15s。
