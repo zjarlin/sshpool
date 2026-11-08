@@ -20,6 +20,7 @@ use std::{
 ///
 /// 摘要按行计算再对排序后的行摘要做一次总摘要，所以它同时是「内容」和「多重集」的
 /// 指纹：行顺序变了不影响结论，行内容变了立刻不同。只读，且只读 `pg_catalog` 与用户表。
+/// 空表使用空串的 MD5，仍然是有效的内容摘要；不能与缺表或缺失摘要混为一谈。
 pub const POSTGRES_FINGERPRINT_SQL: &str = r#"
 with tables as (
   select n.nspname::text as sch, c.relname::text as tbl
@@ -27,7 +28,7 @@ with tables as (
   where c.relkind = 'r' and n.nspname not in ('pg_catalog', 'information_schema')
 ), agg as (
   select t.sch, t.tbl,
-    format('select count(*) as n, coalesce(md5(string_agg(md5(t::text), %L order by md5(t::text))), %L) as h from %I.%I t', '', '-', t.sch, t.tbl) as q
+    format('select count(*) as n, coalesce(md5(string_agg(md5(t::text), %L order by md5(t::text))), %L) as h from %I.%I t', '', md5(''), t.sch, t.tbl) as q
   from tables t
 ), digest as (
   select a.sch, a.tbl,
@@ -42,7 +43,7 @@ from pg_sequences where schemaname not in ('pg_catalog', 'information_schema')
 order by 1;
 "#;
 
-/// Redis 指纹：在服务端按 DB 枚举键，输出键名、值摘要与过期时间桶。
+/// Redis 指纹：在服务端按 DB 枚举键，输出键名、值摘要与绝对过期时间。
 ///
 /// 键名与值都可能含任意二进制（包括换行与 `|`），所以两侧都取 SHA-1 而不是原样输出；
 /// 这样输出永远是可解析的 ASCII，不会因为一个键名就把整份报告拆错。
@@ -75,8 +76,14 @@ for _, db in ipairs(dbs) do
         payload = redis.call('LRANGE', key, 0, -1)
       elseif kind == 'set' then
         payload = redis.call('SMEMBERS', key)
+        table.sort(payload)
       elseif kind == 'hash' then
-        payload = redis.call('HGETALL', key)
+        local flat = redis.call('HGETALL', key)
+        payload = {}
+        for i = 1, #flat, 2 do
+          payload[#payload + 1] = {flat[i], flat[i + 1]}
+        end
+        table.sort(payload, function(left, right) return left[1] < right[1] end)
       elseif kind == 'zset' then
         payload = redis.call('ZRANGE', key, 0, -1, 'WITHSCORES')
       elseif kind == 'stream' then
@@ -84,30 +91,12 @@ for _, db in ipairs(dbs) do
       else
         return redis.error_reply('unsupported type ' .. kind)
       end
-      local parts = {kind}
-      if type(payload) == 'string' then
-        parts[#parts + 1] = payload
-      else
-        for _, item in ipairs(payload) do
-          if type(item) == 'table' then
-            for _, field in ipairs(item) do
-              parts[#parts + 1] = tostring(field)
-            end
-          else
-            parts[#parts + 1] = tostring(item)
-          end
-        end
-      end
-      local blob = table.concat(parts, '\0')
-      -- 过期时间按分钟取桶：一次真实迁移在分钟量级完成，绝对毫秒会因观测时刻不同
-      -- 而永远不相等，那会把「数据一致」误判成「不一致」。
+      -- MessagePack 保留二进制内容和嵌套边界；拼接 NUL 会混淆不同的字段组合。
+      local blob = cmsgpack.pack({kind, payload})
+      -- PEXPIRETIME 已是绝对时刻，观测延迟不会改变它；不能按分钟取整掩盖 TTL 偏差。
       local expiry = redis.call('PEXPIRETIME', key)
-      local bucket = '-1'
-      if expiry >= 0 then
-        bucket = tostring(math.floor(expiry / 60000))
-      end
       lines[#lines + 1] = table.concat({
-        tostring(db), kind, redis.sha1hex(key), redis.sha1hex(blob), bucket
+        tostring(db), kind, redis.sha1hex(key), redis.sha1hex(blob), 'expires_at_ms=' .. tostring(expiry)
       }, '|')
     end
   until cursor == '0'
@@ -144,8 +133,8 @@ pub struct KeyPrint {
     pub kind: String,
     pub key_sha1: String,
     pub value_sha1: String,
-    /// `-1` 表示永不过期，否则是过期时刻的分钟桶。
-    pub expiry_bucket: i64,
+    /// `-1` 表示永不过期，否则是 Unix epoch 毫秒表示的绝对过期时刻。
+    pub expires_at_ms: i64,
 }
 
 /// Redis 侧指纹；`sizes` 记录每个库的键数，用来发现「键集合少了一半」这类差异。
@@ -270,15 +259,27 @@ pub fn parse_redis(source: &str) -> Result<RedisPrint> {
             );
             continue;
         }
-        ensure!(!fields[1].is_empty(), "missing Redis key type");
+        ensure!(
+            matches!(
+                fields[1],
+                "string" | "list" | "set" | "hash" | "zset" | "stream"
+            ),
+            "unsupported Redis key type"
+        );
+        let expires_at_ms = fields[4]
+            .strip_prefix("expires_at_ms=")
+            .context(
+                "Redis expiry must specify expires_at_ms (legacy minute buckets are not exact)",
+            )?
+            .parse::<i64>()
+            .with_context(|| format!("invalid Redis expiry in {line}"))?;
+        ensure!(expires_at_ms >= -1, "invalid Redis expiry in {line}");
         keys.push(KeyPrint {
             database,
             kind: fields[1].to_owned(),
             key_sha1: sha1_field(fields[2], "key")?,
             value_sha1: sha1_field(fields[3], "value")?,
-            expiry_bucket: fields[4]
-                .parse()
-                .with_context(|| format!("invalid Redis expiry in {line}"))?,
+            expires_at_ms,
         });
     }
     keys.sort_by(|left, right| {
@@ -318,6 +319,29 @@ pub fn fingerprint(postgres: &str, redis: &str) -> Result<(Fingerprint, String)>
 }
 
 impl Fingerprint {
+    /// 在同一个观测时刻比较快照：只排除已确定到期的键，仍保留库的存在性。
+    /// 调用方必须记录该时刻；未到期或永久键的丢失仍然是恢复失败。
+    pub fn at_time(&self, unix_millis: i64) -> Result<Self> {
+        ensure!(unix_millis >= 0, "comparison time must be nonnegative");
+        let mut current = self.clone();
+        current
+            .redis
+            .keys
+            .retain(|key| key.expires_at_ms == -1 || key.expires_at_ms > unix_millis);
+        for size in current.redis.sizes.values_mut() {
+            *size = 0;
+        }
+        for key in &current.redis.keys {
+            let size = current
+                .redis
+                .sizes
+                .get_mut(&key.database)
+                .context("missing Redis database size")?;
+            *size += 1;
+        }
+        Ok(current)
+    }
+
     /// 逐项差异；空表示一致。顺序稳定，输出可直接比较。
     pub fn differences(&self, other: &Fingerprint) -> Vec<Difference> {
         let mut out = Vec::new();
@@ -357,16 +381,16 @@ impl Fingerprint {
                 (Some(left), Some(right)) => out.push(Difference {
                     scope: "redis.key".into(),
                     name: name.clone(),
-                    before: format!("{}:{}:{}", left.kind, left.value_sha1, left.expiry_bucket),
+                    before: format!("{}:{}:{}", left.kind, left.value_sha1, left.expires_at_ms),
                     after: format!(
                         "{}:{}:{}",
-                        right.kind, right.value_sha1, right.expiry_bucket
+                        right.kind, right.value_sha1, right.expires_at_ms
                     ),
                 }),
                 (Some(left), None) => out.push(Difference {
                     scope: "redis.key".into(),
                     name: name.clone(),
-                    before: format!("{}:{}:{}", left.kind, left.value_sha1, left.expiry_bucket),
+                    before: format!("{}:{}:{}", left.kind, left.value_sha1, left.expires_at_ms),
                     after: "missing".into(),
                 }),
                 (None, Some(right)) => out.push(Difference {
@@ -375,7 +399,7 @@ impl Fingerprint {
                     before: "missing".into(),
                     after: format!(
                         "{}:{}:{}",
-                        right.kind, right.value_sha1, right.expiry_bucket
+                        right.kind, right.value_sha1, right.expires_at_ms
                     ),
                 }),
                 (None, None) => {}
@@ -679,6 +703,7 @@ mod tests {
         Difference, Fingerprint, Journal, POSTGRES_FINGERPRINT_SQL, REDIS_FINGERPRINT_LUA,
         parse_postgres, parse_redis, stage_paths,
     };
+    use anyhow::Context;
 
     const POSTGRES: &str = "sequence|billing.charge_id_seq|3\n\
         table|billing.account|3|c19369add11373fb9910a51df429e1c8\n\
@@ -686,10 +711,10 @@ mod tests {
         table|public.session|2|517b282f3e1f5e94560185d59c0713f5\n";
 
     const REDIS: &str = "0|dbsize|2|-|-1\n\
-        0|string|65e00fff84d2d7e34c703efc2d2f20c106039bf7|809690d94bbb98cbfdc63b0a10e9ea3d3857868e|-1\n\
-        0|string|d94d2e2f9b50c5a2c1d2e0c8b3f2a10b1f9c3e57|37f1d6b5b1f3c04a0d5a2f7e6c1b9a8d4e2f0c13|-1\n\
+        0|string|65e00fff84d2d7e34c703efc2d2f20c106039bf7|809690d94bbb98cbfdc63b0a10e9ea3d3857868e|expires_at_ms=-1\n\
+        0|string|d94d2e2f9b50c5a2c1d2e0c8b3f2a10b1f9c3e57|37f1d6b5b1f3c04a0d5a2f7e6c1b9a8d4e2f0c13|expires_at_ms=-1\n\
         3|dbsize|1|-|-1\n\
-        3|string|5d66c1800bab669516cd78c12aaebbf83266cb6e|5d66c1800bab669516cd78c12aaebbf83266cb6e|-1\n";
+        3|string|5d66c1800bab669516cd78c12aaebbf83266cb6e|5d66c1800bab669516cd78c12aaebbf83266cb6e|expires_at_ms=-1\n";
 
     fn print() -> Fingerprint {
         Fingerprint {
@@ -727,6 +752,22 @@ mod tests {
             before.differences(&before.clone()),
             Vec::<Difference>::new()
         );
+    }
+
+    /// 空表恢复正确与整张表遗漏必须得到不同结论。
+    #[test]
+    fn an_empty_table_is_valid_but_a_missing_table_is_a_difference() -> anyhow::Result<()> {
+        let source =
+            format!("{POSTGRES}table|public.empty_queue|0|d41d8cd98f00b204e9800998ecf8427e\n");
+        let mut before = print();
+        before.postgres = parse_postgres(&source)?;
+        assert!(before.differences(&before.clone()).is_empty());
+        let missing = print();
+        let differences = before.differences(&missing);
+        assert_eq!(differences.len(), 1);
+        assert_eq!(differences[0].name, "public.empty_queue");
+        assert_eq!(differences[0].after, "missing");
+        Ok(())
     }
 
     /// Redis 侧：键丢失、值变化、库大小变化都要单独报出来。
@@ -776,16 +817,47 @@ mod tests {
         );
     }
 
-    /// 过期时间只在同一个分钟桶里才算一致；跨桶就是真的不同。
+    /// 同一毫秒才算一致；分钟内的 TTL 偏差也必须被发现。
     #[test]
-    fn redis_expiry_is_compared_at_minute_granularity() {
+    fn redis_expiry_is_compared_at_millisecond_granularity() {
         let mut before = print();
         let mut after = print();
-        before.redis.keys[0].expiry_bucket = 29_901_245;
-        after.redis.keys[0].expiry_bucket = 29_901_245;
+        before.redis.keys[0].expires_at_ms = 1_794_103_915_000;
+        after.redis.keys[0].expires_at_ms = 1_794_103_915_000;
         assert!(before.differences(&after).is_empty());
-        after.redis.keys[0].expiry_bucket = 29_901_246;
+        after.redis.keys[0].expires_at_ms = 1_794_103_915_001;
         assert!(!before.differences(&after).is_empty());
+    }
+
+    /// 自然过期可以解释键消失，但永久键和未到期会话的丢失必须阻止恢复。
+    #[test]
+    fn only_keys_expired_at_the_recorded_time_can_be_ignored() -> anyhow::Result<()> {
+        let mut before = print();
+        before.redis.keys[0].expires_at_ms = 2_000;
+        let mut after = before.clone();
+        after.redis.keys.remove(0);
+        *after.redis.sizes.get_mut(&0).context("db0 missing")? -= 1;
+        assert!(
+            !before
+                .at_time(1_999)?
+                .differences(&after.at_time(1_999)?)
+                .is_empty()
+        );
+        assert!(
+            before
+                .at_time(2_000)?
+                .differences(&after.at_time(2_000)?)
+                .is_empty()
+        );
+        before.redis.keys[0].expires_at_ms = -1;
+        assert!(
+            !before
+                .at_time(2_000)?
+                .differences(&after.at_time(2_000)?)
+                .is_empty()
+        );
+        assert!(before.at_time(-1).is_err());
+        Ok(())
     }
 
     /// 解析必须失败关闭：字段数、摘要形状、重复对象、缺失 dbsize 都不能猜。
@@ -805,18 +877,28 @@ mod tests {
         }
         for bad in [
             "0|dbsize|1|-|-1\n",
-            "0|string|short|809690d94bbb98cbfdc63b0a10e9ea3d3857868e|-1\n",
-            "0|string|65e00fff84d2d7e34c703efc2d2f20c106039bf7|x|-1\n",
-            "0|mystery|65e00fff84d2d7e34c703efc2d2f20c106039bf7|809690d94bbb98cbfdc63b0a10e9ea3d3857868e|-1\n",
+            "0|string|short|809690d94bbb98cbfdc63b0a10e9ea3d3857868e|expires_at_ms=-1\n",
+            "0|string|65e00fff84d2d7e34c703efc2d2f20c106039bf7|x|expires_at_ms=-1\n",
+            "0|mystery|65e00fff84d2d7e34c703efc2d2f20c106039bf7|809690d94bbb98cbfdc63b0a10e9ea3d3857868e|expires_at_ms=-1\n",
             "0|string|65e00fff84d2d7e34c703efc2d2f20c106039bf7|809690d94bbb98cbfdc63b0a10e9ea3d3857868e\n",
         ] {
             assert!(parse_redis(bad).is_err(), "{bad:?}");
+        }
+        // 使用其余字段完整的输入，确保拒绝原因确实是旧协议或非法到期时刻。
+        assert!(parse_redis(REDIS).is_ok());
+        for expiry in ["29901245", "-1", "expires_at_ms=-2"] {
+            let invalid = REDIS.replacen("expires_at_ms=-1", expiry, 1);
+            let error = parse_redis(&invalid).err();
+            assert!(
+                error.is_some_and(|error| error.to_string().contains("Redis expiry")),
+                "invalid expiry was not rejected: {expiry}"
+            );
         }
         // dbsize 与实际列出的键数不符时不能只信 dbsize。
         assert!(
             parse_redis(
                 "0|dbsize|2|-|-1\n\
-                 0|string|65e00fff84d2d7e34c703efc2d2f20c106039bf7|809690d94bbb98cbfdc63b0a10e9ea3d3857868e|-1\n"
+                 0|string|65e00fff84d2d7e34c703efc2d2f20c106039bf7|809690d94bbb98cbfdc63b0a10e9ea3d3857868e|expires_at_ms=-1\n"
             )
             .is_err()
         );

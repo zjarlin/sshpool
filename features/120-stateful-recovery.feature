@@ -21,10 +21,9 @@ Feature: sub2api PostgreSQL Redis 一致性恢复
     And 生产 PostgreSQL 与 Redis 实例不被恢复流程替换
     And 明确记录备份时间之后的非零 RPO
 
-  # 数据层已验收：两侧内容级指纹逐项相等、切回后可重新写入、操作记录可复核。
-  # 仍未覆盖真实 sub2api 容器与入口层流量切换，因此是 partial 而不是 verified。
+  # 数据层与应用层演练均已验收，范围是同一 Worker 的隔离环境。
   # evidence: tests/migration_live.rs::demonstration_data_migrates_and_switches_back
-  @partial @automated @p0
+  @verified @automated @p0
   Scenario: 在演示数据上验收迁移和切回
     Given 独立创建的演示数据库和已验证备份
     When 停写并执行一致性恢复和切回
@@ -39,14 +38,15 @@ Feature: sub2api PostgreSQL Redis 一致性恢复
     And 已确认事务满足约定的数据丢失上限
     And 未通过该测试不能宣称数据库高可用
 
-  # evidence: docs/validation.md#stateful-backup-recovery
-  @planned @manual @p0
+  # evidence: tests/sub2api_migration_live.rs::application_state_moves_through_one_endpoint_and_returns_with_new_writes
+  @verified @automated @p0
   Scenario: 演示环境整体迁移应用与数据库并切回
     Given 已验证的应用配置卷 PostgreSQL 与 Redis 备份
     When 在独立演示环境恢复全部 sub2api 容器并切换流量
-    Then 核对登录计费队列和持久会话
-    And 停写后切回原环境并验证没有双写
-    And 在完成前不把离线恢复成功当作生产 HA
+    Then 核对登录兑换充值认证缓存失效队列和持久会话
+    And 停写后切回原侧全新卷并保留目标侧新增充值
+    And 重复兑换不重复入账且旧实例持续冻结
+    And 同机演示迁移成功不代表跨主机生产 HA
 
   @research @p0
   Scenario: 网络分区只有一个有效写入方

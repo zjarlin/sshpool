@@ -1,0 +1,182 @@
+{
+  "schema": 1,
+  "checked_at": "2026-11-08T10:23:47+08:00",
+  "scope": "固定版本真实 sub2api 在同一 Worker 的独立 A/B/return 环境中停写迁移、入口切换与反向恢复；使用合成数据，不接触生产实例",
+  "entry": {
+    "test": "tests/sub2api_migration_live.rs::application_state_moves_through_one_endpoint_and_returns_with_new_writes",
+    "command": "SSHPOOL_LIVE_NODE=okm182-lan cargo test --locked --test sub2api_migration_live -- --ignored --nocapture",
+    "orchestrator": "scripts/sub2api-migration/rehearse.py"
+  },
+  "worker": {
+    "alias": "okm182-lan",
+    "arch": "x86_64",
+    "kernel": "6.8.0-147-generic",
+    "docker": "29.1.3"
+  },
+  "images": {
+    "app": "zjarlin/sub2api@sha256:4915bd250efa7c7c78b4a733c828330234a84438d937d0e098ce41747a8474f4",
+    "app_source_commit": "8c06464b44505fb386975624933a6b4e36fd03da",
+    "postgres": "postgres:15-alpine",
+    "redis": "redis:8-alpine",
+    "edge": "caddy:2",
+    "files": "alpine:3.22"
+  },
+  "isolation": {
+    "data_networks": "A/B/return 各自独立 internal 网络、PostgreSQL/Redis/app 卷",
+    "entry": "同一 Caddy 回环随机端口，维护期间返回 503，响应头核对目标侧",
+    "fence": "停止并确认应用进程正常退出后，设置 PostgreSQL default_transaction_read_only 与 Redis min-replicas-to-write，再真实试写验证拒绝；不作为分区仲裁机制",
+    "return": "B 再停写并备份，恢复到原侧全新卷；旧 A/B 保留冻结直到清理"
+  },
+  "results": {
+    "assertions_total": 38,
+    "failed_assertions": [],
+    "billing_ids": [
+      1,
+      2,
+      3
+    ],
+    "final_balance_delta": 20,
+    "duplicate_credit_http_status": 409,
+    "duplicate_credit_reason": "REDEEM_CODE_USED",
+    "observations": [
+      {
+        "kind": "transfers",
+        "from": "a",
+        "to": "b",
+        "compared_at_ms": 1794104534607,
+        "postgres_tables": 114,
+        "postgres_sequences": 78,
+        "redis_databases": [
+          0
+        ],
+        "redis_live_keys": 530,
+        "differences": 0,
+        "independently_verified_by_rust": true
+      },
+      {
+        "kind": "transfers",
+        "from": "b",
+        "to": "return",
+        "compared_at_ms": 1794104594379,
+        "postgres_tables": 114,
+        "postgres_sequences": 78,
+        "redis_databases": [
+          0
+        ],
+        "redis_live_keys": 534,
+        "differences": 0,
+        "independently_verified_by_rust": true
+      },
+      {
+        "kind": "frozen_observations",
+        "from": "a",
+        "to": "a",
+        "compared_at_ms": 1794104567673,
+        "postgres_tables": 114,
+        "postgres_sequences": 78,
+        "redis_databases": [
+          0
+        ],
+        "redis_live_keys": 529,
+        "differences": 0,
+        "independently_verified_by_rust": true
+      },
+      {
+        "kind": "frozen_observations",
+        "from": "b",
+        "to": "b",
+        "compared_at_ms": 1794104627023,
+        "postgres_tables": 114,
+        "postgres_sequences": 78,
+        "redis_databases": [
+          0
+        ],
+        "redis_live_keys": 532,
+        "differences": 0,
+        "independently_verified_by_rust": true
+      }
+    ],
+    "maintenance_seconds": [
+      32,
+      29
+    ],
+    "elapsed_test_seconds": 158.83,
+    "journal_entries": 13,
+    "journal_chain_verified": true,
+    "journal_note": "执行中逐步 fsync steps.jsonl；成功后生成并加载复核摘要链，不承诺崩溃时已有链",
+    "cleanup_errors": [],
+    "labeled_container_volume_network_leftovers": 0
+  },
+  "assertions": {
+    "redis_unordered_values_and_stream_stable": true,
+    "redis_binary_boundaries_distinguished": true,
+    "a_database_identity": true,
+    "initial_credit_applied": true,
+    "a_app_stopped_cleanly": true,
+    "a_queue_pending": true,
+    "a_sql_write_rejected": true,
+    "a_redis_write_rejected": true,
+    "b_database_identity": true,
+    "b_configuration_files_restored": true,
+    "b_backup_unchanged": true,
+    "forward_fingerprints_equal": true,
+    "b_old_access_token_valid": true,
+    "b_refresh_session_survived": true,
+    "b_fresh_login": true,
+    "forward_credit_not_duplicated": true,
+    "b_new_credit_and_sequence": true,
+    "b_queue_consumed": true,
+    "b_stale_cache_invalidated": true,
+    "a_stayed_frozen": true,
+    "b_app_stopped_cleanly": true,
+    "b_queue_pending": true,
+    "b_sql_write_rejected": true,
+    "b_redis_write_rejected": true,
+    "return_database_identity": true,
+    "return_configuration_files_restored": true,
+    "return_backup_unchanged": true,
+    "reverse_fingerprints_equal": true,
+    "return_old_access_token_valid": true,
+    "return_refresh_session_survived": true,
+    "return_fresh_login": true,
+    "b_credit_survived_switchback": true,
+    "return_credit_and_sequence": true,
+    "return_queue_consumed": true,
+    "return_stale_cache_invalidated": true,
+    "b_stayed_frozen": true,
+    "both_backups_retained": true,
+    "resources_removed": true
+  },
+  "fingerprint_protocol": {
+    "postgres": "按表行数与排序后行内容摘要、序列 last_value；空表使用 md5 空串",
+    "redis": "集合/哈希规范排序，MessagePack 保留嵌套和二进制边界，expires_at_ms 精确绝对毫秒",
+    "expiration": "在共同记录的比较时刻排除已到期键，永久键和未到期键不得丢失",
+    "regression": "真实 Redis 验证 hash/set 反序重建、嵌套 stream 稳定及 NUL 字段边界不碰撞"
+  },
+  "privacy": {
+    "raw_report_sha256": "f5d87639daf1f9c1a49fce5a9cabbe13f086b93f8d055bea250ab066247d9e8a",
+    "private_artifacts": "原始报告、两份备份、配置、合成凭据只留在 Git 忽略的 target/live-evidence 下，目录权限 0700",
+    "published_business_data": "仅合成充值 ID 和余额增量，不含真实业务数据、令牌或密码"
+  },
+  "boundaries": [
+    "兑换码由 SQL 创建作为种子，余额更新、消费记录和去重通过真实用户兑换 API；未验证供应商推理扣费",
+    "队列验证应用自带认证缓存失效 outbox 与 Redis 陈旧值删除；未验证图片任务队列",
+    "同一 Worker 上的隔离环境；未验证跨主机传输、网络分区、自动接管或生产 HA",
+    "维护窗口时长仅为本次小规模演练观测；不承诺生产 RPO/RTO",
+    "全量 pg_dump 与 RDB；未验证 WAL/AOF 连续重放、长连接或 DNS 切换"
+  ],
+  "validation": {
+    "rust_tests_passed": 295,
+    "offline_admission_tests_passed": 6,
+    "format_check": "passed",
+    "clippy_all_targets_deny_warnings": "passed",
+    "feature_index_check": "passed",
+    "data_layer_regression": {
+      "entry": "tests/migration_live.rs",
+      "tests_passed": 2,
+      "elapsed_seconds": 43.22,
+      "restored_differences": 0,
+      "missing_table_and_sequence_detected": true
+    }
+  }
+}

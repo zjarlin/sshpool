@@ -58,7 +58,7 @@
 
 指标走独立的 `metrics_listen`（默认关闭，启动行打印 `metrics=off` 或实际地址），不挂在 `/v1/...` 上：Prometheus 默认 15 秒抓一次，走控制面路由会经 `audit_access` 在几分钟内冲掉 12 MiB 的有界审计。抓取只读 `health_snapshot` 缓存，不触发远端探测。抓取要求**根 token**（`Bearer`，恒时比较，与 API 共用 `src/token.rs`）或一条带 `scrape` 的短期凭据（走 `credentials::verify`，因此撤销与到期在下一次抓取生效）；两者都不匹配一律 401 且不输出样本，配置 TLS 时该端口共用同一份证书。权限是**两个方向都隔离**的：带 `read` / `submit` / `cancel` / `admin` 的 API 凭据抓不到指标，`scrape` 凭据也没有任何 `/v1/...` 路由 —— 前者防止借出的工作台顺带看到集群拓扑，后者让 Prometheus 不必持运维全权 token。抓取不写访问审计，所以「谁抓过」不在 `access.jsonl` 里。默认只允许绑回环地址，跨主机抓取要显式 `metrics_allow_remote = true` 且必须配 TLS。暴露的仍只有节点名与数值。
 
-`src/migration.rs` 把「迁移成功」变成可比较的判断：PostgreSQL 每张表的行数与行内容摘要、每个序列的 `last_value`，Redis 每个键的类型、值摘要与过期时间分钟桶，两侧统一按名字排序后逐项比对；解析任何一行不合约定就失败关闭。它同时提供链式操作日志（`hash` 覆盖序号、时刻、步骤、详情与前一条摘要），可以在迁移进程退出后离线复核顺序与内容。模块只做判定与记录，容器编排在 `tests/migration_live.rs` 里，两者共用同一份 SQL 与 Lua。见 [验证记录](validation.md#stateful-migration)。
+`src/migration.rs` 把「迁移成功」变成可比较的判断：PostgreSQL 每张表的行数与行内容摘要、每个序列的 `last_value`，Redis 每个键的类型、规范化值摘要与精确绝对过期毫秒，两侧统一按名字排序后逐项比对；解析任何一行不合约定就失败关闭。它同时提供链式操作日志（`hash` 覆盖序号、时刻、步骤、详情与前一条摘要），可以在迁移进程退出后离线复核顺序与内容。模块只做判定与记录，数据层编排在 `tests/migration_live.rs`，真实应用编排由 `tests/sub2api_migration_live.rs` 调用 `scripts/sub2api-migration/rehearse.py`，共用同一份 SQL 与 Lua。应用演练记录共同比较时刻，仅排除已确定到期的 Redis 键，并独立复核旧写入方持续冻结。见 [验证记录](validation.md#stateful-migration)。
 
 `src/state_audit.rs` 把「这个应用依赖哪些状态」变成可核对的输入：人写清单，`PROBE_SCRIPT` 只读地取容器、表、唯一索引、AOF/`appendfsync`、挂载设备号与用量，`assess` 是纯函数判定。三处刻意的取舍：备份只有三态枚举，人工备份的 RPO 就是 `None`（无上界），不会退化成 0 或某个大数；声明 Redis 只是缓存但探到无 TTL 键，则拒绝该声明并按权威状态计 RPO；声明与事实冲突时降级声明，而不是调整数字凑通过。宿主绝对路径只以摘要进报告。它不迁移、不备份、不改配置，`0` 只表示清单被核对过。见 [验证记录](validation.md#state-audit)。
 

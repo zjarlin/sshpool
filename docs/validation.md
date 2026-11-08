@@ -787,13 +787,13 @@ Redis 8.10.2 使用独立容器和独立命名卷恢复，网络为 `none`。RDB
 
 - 成功的是历史时点逻辑备份、RDB 加载和隔离恢复；备份时间之后的写入存在非零 RPO。
 - 没有实现 PostgreSQL 持续 WAL 归档或流复制、Redis 持续复制、写入 fencing、自动故障转移或入口 DNS 切换。
-- 应用配置与数据库虽在同一次停写窗口导出，尚未在独立演示环境完成整套 `sub2api + PostgreSQL + Redis` 恢复并接管流量，因此不能宣称生产数据库高可用。
+- 这次历史备份恢复未启动整套应用；后续合成数据的整套应用演练见 [应用迁移与切回](#sub2api-migration)，不能据此宣称生产数据库高可用。
 - `sub2api-chatgptweb` 在备份前已存在 `Restarting (137)`，本轮未把它归因于备份流程或宣称该子服务健康。
 
 
 ### 演示数据迁移与切回 {#stateful-migration}
 
-2026-11-08 在一次性隔离环境里跑了完整的 A→B→切回，而不是只跑一次 `pg_restore` 看退出码。`tests/migration_live.rs` 在两个真实 Worker 容器组之间做迁移，判据是**两侧内容级指纹逐项相等**：PostgreSQL 每张表的行数与行内容摘要、每个序列的 `last_value`，Redis 每个键的类型、值摘要与过期时间分钟桶。
+2026-11-08 在一次性隔离环境里跑了完整的 A→B→切回，而不是只跑一次 `pg_restore` 看退出码。`tests/migration_live.rs` 在两个真实 Worker 容器组之间做迁移，判据是**两侧内容级指纹逐项相等**：PostgreSQL 每张表的行数与行内容摘要、每个序列的 `last_value`，Redis 每个键的类型、值摘要与过期时刻（该轮为分钟桶，现行协议已改为精确毫秒，见下文）。
 
 ```sh
 SSHPOOL_LIVE_NODE=sshpool-anchor \
@@ -811,7 +811,7 @@ SSHPOOL_LIVE_NODE=sshpool-anchor \
 | 双写 | 切回后比较 A 与 B | B 没有出现 A 不存在的行；B 保持冻结 |
 | 收尾 | 删容器/卷/网络/临时目录，且失败也走清理 | 本轮前缀残留 0 |
 
-指纹里 Redis 的过期时间记的是**绝对到期时刻的分钟桶**，所以同一份数据在不同时刻采集必然得到不同 digest；判据只能是「同一次演练内 A 与 B 相等」，不能把某个 digest 当成跨轮固定值。这也是为什么证据只记录「相等/不等」这个结论。
+协议更正：`PEXPIRETIME` 是绝对到期时刻，同一键在不同时刻观测并不会改变它。原有分钟桶会掩盖分钟内的 TTL 偏差，现已改成明确标记的 `expires_at_ms=<Unix 毫秒>`，解析器拒绝旧分钟桶。两侧在记录下来的同一时刻比较，仅排除已经到期的键；永久键和未到期键丢失仍然失败。旧证据 JSON 保留历史原样，其中关于「观测时刻必然改变 digest」的解释以本更正为准。重新生成带相对 TTL 的种子会产生新的绝对到期时刻，因此不同演练的摘要仍不应作为固定常量比较。
 
 另外三条不靠「看起来对」的断言：
 
@@ -821,12 +821,41 @@ SSHPOOL_LIVE_NODE=sshpool-anchor \
 
 证据文件：[evidence/stateful-migration-20261108.json](evidence/stateful-migration-20261108.json)（12 条断言全为 true，`failed_assertions` 为空）。
 
-边界（因此这个场景记为 `@partial` 而不是 `@verified`）：
+该轮数据层证据的边界（后续应用层覆盖见 [应用迁移与切回](#sub2api-migration)）：
 
 - 参与的是演示 schema，不是真实 `sub2api` 应用容器；应用侧连接串切换、重连去重、计费/队列在切回后的行为都未覆盖。
 - 没有入口层流量切换：反向代理、长连接、DNS 都未参与，「切回」只到数据层可写为止。
 - 不承诺 RPO/RTO：停写窗口之外的增量不在范围内。
 - Redis 走 RDB 全量快照，未覆盖 AOF 重放与主从复制；PostgreSQL 未覆盖 WAL 归档与流复制。
+
+### 真实 sub2api 应用迁移与切回 {#sub2api-migration}
+
+2026-11-08 在 `okm182-lan`（x86_64、Docker 29.1.3）使用固定镜像 `zjarlin/sub2api@sha256:4915bd250efa7c7c78b4a733c828330234a84438d937d0e098ce41747a8474f4` 完成 A→B→回迁演练。对应应用源代码为 `8c06464b44505fb386975624933a6b4e36fd03da`。全部数据库、配置卷、容器和网络均为新 UUID 的一次性资源；原生产实例不参与。
+
+```sh
+SSHPOOL_LIVE_NODE=okm182-lan \
+  cargo test --locked --test sub2api_migration_live -- --ignored --nocapture
+```
+
+入口顺序是 `tests/sub2api_migration_live.rs` → `scripts/sub2api-migration/rehearse.py` → `src/migration.rs` 中共享的指纹 SQL/Lua。三侧使用独立 internal 网络与 PostgreSQL 15 / Redis 8 / 应用配置卷。Caddy 发布同一个宿主回环端口，响应头确认每次请求所在的一侧；维护期间真实返回 503。应用先正常退出，再注入本轮队列种子、冻结数据库并试写验证拒绝。这个受控停写流程不提供网络分区仲裁。
+
+| 验收项 | 实测结果 |
+| --- | --- |
+| 正向恢复与反向恢复 | 两次均为 114 张表、78 个序列；分别 530 / 534 个存活 Redis 键，内容差异为 0 |
+| 配置与备份 | PostgreSQL dump、Redis RDB、应用配置 tar 均有 SHA-256；恢复配置内容与权限一致；启动应用前完成核对 |
+| 会话 | 两次切换后旧 access token、refresh session 与新登录均成功 |
+| 充值与去重 | SQL 只产生合成兑换码，真实用户兑换 API 入账 10→再入账 7→回迁后再入账 3；ID 为 1/2/3，总增量 20；两次重复兑换均返回 409 `REDEEM_CODE_USED` 且不重复入账 |
+| 后台队列 | 两次停机窗口留下认证缓存失效 outbox 事件；恢复后真实 worker 消费，Redis 对应陈旧缓存被删除 |
+| 单写入方 | 启动新应用前旧进程必须已停；旧 A/B 的 PostgreSQL 与 Redis 在后续操作期间仍保持冻结；Rust 独立复核两次原始观测 |
+| 时长与清理 | 测试耗时 158.83 秒；两次维护窗口约 32 / 29 秒；38 项检查全部通过，容器、卷、网络残留均为 0 |
+
+回迁使用 B 停写后的新备份恢复到原侧全新卷，保留 B 上的新充值；旧 A 卷没有重新接写。两份备份和原始报告留在 Git 忽略且权限 0700 的 `target/live-evidence/sub2api-migration/<uuid>/`，其中包含演练合成凭据，不提交。运行中的 13 条步骤逐条 fsync；成功后 Rust 生成并加载校验摘要链，不声称运行中已持久化该链。
+
+此次真实数据暴露并修复了三个指纹问题：空表摘要原先不能被解析器接受；集合/哈希的枚举顺序可能改变摘要；NUL 拼接或嵌套 `tostring` 不能保留二进制字段边界。现使用空串 MD5、集合/哈希规范排序和 MessagePack 编码。Redis 到期时刻保留精确毫秒，两次恢复与两次冻结观测都记录同一比较时刻，只排除已到期键。真实 Redis 还验证了 hash/set 反序重建、stream 嵌套数据以及含 NUL 的两种不同列表。
+
+离线恢复准入覆盖损坏备份、缺失或 symlink 文件、旧 writer 活跃、入口未进入维护、未到期键丢失、配置内容或权限改变，共 6 项 Python 测试，已加入双平台 CI。Rust 全套测试 295 项通过；原有数据层 `migration_live` 两项真实回归也通过，包括故意漏表及序列的差异识别。
+
+脱敏证据：[evidence/sub2api-migration-20261108.json](evidence/sub2api-migration-20261108.json)。本轮仅覆盖同 Worker 的受控停写、兑换充值、认证缓存失效队列与 HTTP 会话。供应商推理扣费、图片任务队列、跨主机传输、长连接、DNS 切换、连续 WAL/AOF 重放和自动故障接管仍未验收；观测到的维护时长不构成生产 RPO/RTO 承诺。
 
 ### 应用状态与持久化约定 {#state-audit}
 
