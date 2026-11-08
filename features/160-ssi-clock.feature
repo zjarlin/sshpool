@@ -1,6 +1,18 @@
 Feature: SSI 客体计时信息保持跨节点一致
   TSC、KVM 纳秒时钟和客体共享的 pvclock 页面必须分别验证。
 
+  # evidence: docs/evidence/ssi-guest-irq-20261108.json
+  @verified @p0
+  Scenario: 客体中断函数观测拒绝启停漏记并保留时间读取分段
+    Given 固定 PF29 与客体 ELF 的单节点和双节点独占实验
+    When 在记录窗口内同步停用探针并核对完整函数与序列读取阶段
+    Then 所有入口和分段命中等于事件数且没有探针漏采或缓冲区丢失
+    And 窗口内部孤立返回未完成入口和不符合序列值的重试被拒绝
+    And 最长函数只关联实际包含它的中断而不替代最大应用等待
+    And 普通 CI 重放完整归档并保留原二百五十毫秒门槛的失败退出
+    And 启停计数不符与 SSH 握手超时分别保留为失败
+    And 时间读取前段停顿不被宣称为已确定根因或已修复 SSI
+
   # evidence: docs/evidence/ssi-steal-time-20261108.json
   @verified @p0
   Scenario: 受控页面交接后远端能够读到新的 steal time 记录

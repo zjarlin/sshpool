@@ -51,20 +51,21 @@ def field(row, key):
     return values[0]
 
 
-def parse(files):
+def parse(files, extra_events=()):
+    events = EVENTS | set(extra_events)
     demand(files['cleanup'].strip() == 'complete', '采集没有完成清理')
     demand('[global]' in files['trace_clock'].split(), '需要 global 跟踪时钟')
     demand(files['clocksource'].strip() == 'kvm-clock' and files['tainted'].strip() == '0',
            '时钟源或内核污染状态不符')
     demand(files['version'].startswith('Linux version 6.8.0-147-generic '), '客体内核不符')
     demand('nokaslr' in files['cmdline'].split(), '缺少实验客体启动参数')
-    for name in EVENTS:
+    for name in events:
         demand(files['format-' + name].startswith('name: ' + name + '\n'), '事件格式身份不符')
     for name in ('sched_waking', 'sched_wakeup'):
         demand(files['filter-' + name].strip() == 'comm == "ssi-clock"', '唤醒过滤器不符')
     demand(files['filter-sched_switch'].strip() == 'prev_comm == "ssi-clock" || next_comm == "ssi-clock"',
            '切换过滤器不符')
-    for name in EVENTS - {'sched_switch', 'sched_waking', 'sched_wakeup'}:
+    for name in events - {'sched_switch', 'sched_waking', 'sched_wakeup'}:
         demand(files['filter-' + name].strip() == 'none', '不允许隐藏定时器或中断事件')
     rows = []
     for line in files['trace'].splitlines():
@@ -74,7 +75,7 @@ def parse(files):
         demand(match is not None, '跟踪行损坏')
         comm, pid, cpu, stamp, name, detail = match.groups()
         seconds, fraction = stamp.split('.')
-        demand(name in EVENTS | {'tracing_mark_write'}, '存在未声明的事件')
+        demand(name in events | {'tracing_mark_write'}, '存在未声明的事件')
         rows.append({'comm': comm.strip(), 'pid': int(pid), 'cpu': int(cpu), 'name': name,
                      'ns': int(seconds) * 1_000_000_000 + int(fraction.ljust(9, '0')),
                      'detail': detail, 'index': len(rows)})
@@ -194,8 +195,8 @@ def timer_generations(rows):
     return selected
 
 
-def inspect(files, log):
-    rows, marks = parse(files)
+def inspect(files, log, extra_events=()):
+    rows, marks = parse(files, extra_events)
     apps = application_intervals(log)
     generations = timer_generations(rows)
     demand(len(generations) == len(apps), '应用区间与目标定时器数量不符')

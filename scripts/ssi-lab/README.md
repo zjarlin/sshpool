@@ -1,5 +1,7 @@
 # GiantVM 双节点实验工具
 
+`trace-guest-timers.sh start irq|ktime` / `check-guest-irq.py` 进一步核对函数探针启停边界与时间读取阶段。真实双节点记录把一次 467.787 ms 函数调用的主要等待缩小到首次偶数序列之前，同时保留 553.933 ms 应用超时与 SSH 握手失败；尚未确定运行时根因。见 [客体函数观测](../../docs/ssi-guest-irq.md)。
+
 `trace-guest-timers.sh` / `check-guest-timers.py` 关联应用定时器与客体到期、唤醒和中断区间，完整重放已提交的单/双节点跟踪。一次慢定时器的大部分唤醒等待仍在中断内；额外 kprobe 实验漏采并出现 390.605 ms 超限，尚未确定根因或修复。见 [客体定时器观测](../../docs/ssi-guest-timers.md)。
 
 `trace-clock-stalls.py` / `check-clock-stalls.py` 测量 PF28 活动客体的时钟更新和页面获取，严格检查入口计数与丢失，并单独报告停用后的返回命中和窗口边界调用。真实记录未建立停顿根因，使用方式与证据范围见 [时钟与取页观测](../../docs/ssi-clock-stalls.md)。
