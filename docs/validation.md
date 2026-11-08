@@ -918,3 +918,11 @@ SSHPOOL_LIVE_NODE=okm182 cargo test --test state_audit_live -- --ignored --nocap
 边界：这只证明「没有进程还能继续提交结果」，不证明中断前的输出有效，也不迁移内存或进程。跨机器 CPU/内存聚合、数据库事务容灾、自动控制面接管仍未实现。
 
 排障记录：本轮改动后先在 `okm182` 上重跑这两条 live 测试，SSH 卡在 banner 交换、`docker create` 耗时 18.7 秒、`docker rm -f` 数分钟未返回 —— 是该主机磁盘/负载饱和，不是测试回归；改在另一台真实 Docker 上重跑通过，自动化规则不依赖任何远端。`okm182` 上本轮遗留的 `sshpool-live-*` / `sshpool-manual-*` 容器待主机恢复后再删除，不计入清理完成。
+
+## ssi-launch-admission-proof
+
+2026-11-08，提交 `0070a13` 的 `ssi-launch` 在两台独占 PF24 VM 上完成 3/5、5/3、4/5、5/4 混版本拒绝。每端三份实际输入均封存；双方不发送执行许可、没有 QEMU exec 或 KVM ioctl。完整原生进程跟踪、控制 JSONL、远端结果和无残留记录见 [新证据](evidence/ssi-launch-admission-20261108.json)，由 `check-launch-admission.py` 和变异测试重算。直接调用旧 QEMU 的历史失败不变；验证范围是启动器入口。
+
+同版本 proof guest 的四 CPU 与 32 MiB 校验通过；SSH、共享内存压力测试、三轮时钟（最大 182.826 ms，原门槛 250 ms）及 1 MiB SFTP 完成。活跃客体的租约失效、控制器 SIGKILL、helper SIGKILL、第二启动器锁冲突和 Ctrl-C 均停止相关进程并释放锁。真实 helper 协议额外验证源路径替换不改变封存执行对象、半许可保留一侧已执行的失败并回收。
+
+**完整 SSI 仍未通过：本轮工作区串口存在 RTC 中断丢失，proof 与工作区宿主在关闭时仍有 DSM `-104`。** 原始失败全部保留。两台 VM 已恢复原版 `6.8.0-147-generic`，核对原引导文件、防火墙、空 GRUB 待执行项、`/lib` 链接与无残留。实验边界、准确退出码、采集缺失与复核步骤见 [启动准入实测](ssi-launch.md)。

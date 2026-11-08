@@ -30,7 +30,7 @@
 | [150-ssi-device-memory.feature](150-ssi-device-memory.feature) | 13 | 3 | 1 | 3 |
 | [160-ssi-clock.feature](160-ssi-clock.feature) | 6 | 4 | 0 | 1 |
 | [170-ssi-transport.feature](170-ssi-transport.feature) | 20 | 6 | 0 | 4 |
-| [180-ssi-device-order.feature](180-ssi-device-order.feature) | 1 | 1 | 0 | 4 |
+| [180-ssi-device-order.feature](180-ssi-device-order.feature) | 2 | 0 | 0 | 4 |
 | [190-ssi-physical-storage.feature](190-ssi-physical-storage.feature) | 5 | 2 | 0 | 1 |
 | [200-control-state-recovery.feature](200-control-state-recovery.feature) | 14 | 0 | 0 | 1 |
-| 合计 | 119 | 23 | 6 | 30 |
+| 合计 | 120 | 22 | 6 | 30 |

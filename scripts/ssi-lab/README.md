@@ -200,3 +200,7 @@ timeout --kill-after=5 45 python3 scripts/ssi-lab/probe-dsm-device.py \
 ## 复位后路由存活
 
 同一采集器使用 `--pin-query none` 可测试不含诊断 HMP 的普通运行时；空采样不代表引用为零。快照增加进程线程清单，退出记录增加单调时间；`crash` 标准输入操作仅允许节点零杀死自己新建的 QEMU 子进程并记录 SIGKILL。`check-reset-router.py <记录.json>` 复用真实写入检查，并要求两边出现每一次原生 RESET、保留错误、按预期退出。基线超时作为缺陷复现保存，不能算通过。用法和边界见 [复位路由实验](../../docs/ssi-reset-router.md)。
+
+## 双端启动准入证据
+
+`check-launch-admission.py docs/evidence/ssi-launch-admission-20261108.json` 复核 `sshpool ssi-launch --trace-syscalls` 采集的四种混版本矩阵。它核对完整原生进程退出、实际 worker 源码摘要、三份 memfd 封条和独立远端/控制日志，缺失跟踪不会被计为零次 KVM 执行。证据绑定采集时且仍为当前的 helper 字节；修改 helper 后需要重新取证，不能改旧记录迎合新代码。`test_launch_admission.py` 同时复核同版本工作区、故障回收和保留的 RTC/DSM 失败，详见 [启动准入](../../docs/ssi-launch.md)。

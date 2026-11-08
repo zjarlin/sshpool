@@ -12,9 +12,9 @@ Feature: SSI 远端设备操作具有可验证的完成边界
     And 完成确认候选通过相同客体的全部二百五十六次检查
     And 检查器从每次失败明细重算结果并拒绝缺失轮次
 
-  # evidence: docs/evidence/ssi-router-startup-20261108.json
-  # implementation: docs/ssi-launch.md (双端 CLI 实测待完成)
-  @partial @p0
+  # evidence: docs/evidence/ssi-launch-admission-20261108.json
+  # implementation: docs/ssi-launch.md (通过 ssi-launch；直接调用旧 QEMU 的失败记录保留)
+  @verified @p0
   Scenario: 不兼容的设备完成协议在客体启动前失败
     Given 两端的路由协议版本不一致
     When 启动握手校验版本

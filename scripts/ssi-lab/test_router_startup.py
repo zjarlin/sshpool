@@ -41,7 +41,7 @@ class RouterStartupTest(unittest.TestCase):
                 self.assertEqual(result['kvm_run_calls'], [0, 0])
                 self.assertFalse(result['full_ssi_accepted'])
 
-    def test_old_master_execution_keeps_original_feature_partial(self):
+    def test_direct_old_master_execution_remains_a_recorded_failure(self):
         result = checker.check_mixed(row((3, 5)))
         self.assertGreater(result['kvm_run_calls'][0], 0)
         self.assertFalse(result['both_refused_before_guest'])
