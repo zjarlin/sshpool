@@ -224,3 +224,7 @@ timeout --kill-after=5 45 python3 scripts/ssi-lab/probe-dsm-device.py \
 ## Steal-time 页面交接
 
 `probe-pvclock.py --kind steal` 复用同一 KVM 探针和跨节点交接驱动，C worker 增加 `--steal-time` 模式；默认 pvclock 行为保持兼容。`check-steal-time.py <原始.jsonl> --nodes 1|2` 重算页面更新与关闭顺序，失败退出一。`test_steal_time.py` 在普通 CI 重放 PF28 的八次真实失败、PF29 的八次通过和单节点对照，并核对源码补丁；真实内核探针仍只在独占实验 VM 执行。使用参数、完整客体回归及未验证的抢占提示见 [steal-time 实验](../../docs/ssi-steal-time.md)。
+
+## 单指令写授权实验
+
+`probe-write-grant.c` 每次 KVM_RUN 只执行共享页写入与 HLT，以宿主 trace_marker 标记唯一调用；远端真实 DSM_MEMCPY 读者制造竞争。`check-write-grant.py <记录.json.gz>` 核对完整调用边界、缺页、读回数据、远端读者与原生关闭。`test_write_grant.py` 重放完整记录、实际编译源与 Linux 客体开关对照，原 250 ms 门槛不变。实验开关、恢复和限制见 [写授权记录](../../docs/ssi-write-grant.md)，PF30 不进入默认安装或 CLI 准入。

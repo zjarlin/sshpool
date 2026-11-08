@@ -1,6 +1,18 @@
 Feature: SSI 客体计时信息保持跨节点一致
   TSC、KVM 纳秒时钟和客体共享的 pvclock 页面必须分别验证。
 
+  # evidence: docs/evidence/ssi-write-grant-20261108.json
+  @verified @p0
+  Scenario: 同一次单指令写入的重复缺页可以重放并比较有期限的授权
+    Given 两个独占实验 VM 每次 KVM_RUN 只执行一条固定写指令和 HLT
+    When 用唯一编号的宿主标记包围调用并启动另一节点真实 DSM 读者
+    Then 检查器核对写入结果调用边界事件身份零丢失与读者进展
+    And PF29 与关闭开关的 PF30 保留同一次调用数百次缺页的真实记录
+    And PF30 开启一毫秒保留时两端各三百二十次写入样本无重复写缺页
+    And 完整 Linux 客体回归保留原二百五十毫秒门槛和无法完整归因的跟踪
+    And 普通 CI 重放完整原始数据并核对候选补丁与编译源一致
+    And 原生关闭和原版内核恢复不替代取消竞态公平性与完整 SSI 验收
+
   # evidence: docs/evidence/ssi-timekeeper-writer-20261108.json
   @verified @p0
   Scenario: 时间写入者观测核对奇偶序列并保留连续缺页的解释边界

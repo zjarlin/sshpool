@@ -181,3 +181,9 @@ PF23 后应用 `kernel-dsm-pin-release.patch`，单独构建 `-sshpool-gvm-pf24`
 在完整 PF28 内核补丁序列之后应用 `kernel-dsm-steal-time.patch`，配置只将 LOCALVERSION 改为 `-sshpool-gvm-pf29`。它让 KVM 的缓存 steal-time 计账写入持有 DSM 页权限，并在不可睡眠的调度上下文省略 DSM 的可选 preempted 提示。源码快照、实际编译摘要和真实交接结果见 [实验记录](../../../docs/ssi-steal-time.md)。
 
 `qemu-pf29-lab-profile.patch` 应用在 `qemu-global-close.patch` 之后，仅创建精确 PF29 的独立实验构建；原来的双节点、四 CPU、KVM 与环境开关限制全部保留。不要用新版本替换历史 PF28 证据中的运行时身份，也不要加入默认构建或 CLI 准入。旧版本校验拒绝和客体告警仍在新证据中保留。
+
+## PF30：有期限的写授权
+
+PF29 后应用 `kernel-dsm-write-grace.patch`，配置只改变 LOCALVERSION；`kvm.dsm_write_grace_us` 默认 0、最高 1000。新独占写授权设置一次截止时间，快速路径不续期；远端 READ/WRITE 可在释放页锁与 SRCU 后短暂等待，INVALIDATE 不延迟。Linux 补丁为 GPL-2.0-only。
+
+`qemu-pf30-lab-profile.patch` 在 PF29 实验构建之后应用，只更新精确内核身份，沿用 QEMU GPL-2.0-or-later。两者均不进入默认构建或 CLI 准入。单指令调用标记、开关对照、完整 Linux 回归与未验证的取消和公平性边界见 [写授权实验](../../../docs/ssi-write-grant.md)。期限不保证任意调度下的指令进展，也不是实际等待时间上限。

@@ -1,0 +1,129 @@
+--- a/arch/x86/include/asm/kvm_host.h
++++ b/arch/x86/include/asm/kvm_host.h
+@@ -1190,6 +1190,8 @@
+ 	/* 未完成的固定操作持有保护引用，但调用者还不能解除这些引用。 */
+ 	u32 pending_read;
+ 	u32 pending_write;
++	/* 页锁保护的固定截止时间，快速路径不得续期。 */
++	u64 write_grant_until_ns;
+ 	struct mutex lock; /* protects DSM state changes */
+ 	version_t version;
+ };
+--- a/arch/x86/kvm/ivy.c
++++ b/arch/x86/kvm/ivy.c
+@@ -31,6 +31,8 @@
+ #include <linux/kthread.h>
+ #include <linux/sched/signal.h>
+ #include <linux/mmu_context.h>
++#include <linux/moduleparam.h>
++#include <linux/hrtimer.h>
+ 
+ static u64 dsm_page_fault_counter;
+ static u64 total_time;
+@@ -38,6 +40,42 @@
+ static u64 read_req_counter;
+ 
+ static char *req_desc[3] = { "INV", "READ", "WRITE" };
++
++/* 独占实验开关；关闭时保持原协议，显式拒绝超过一毫秒的配置。 */
++static unsigned int dsm_write_grace_us;
++
++static int dsm_set_write_grace(const char *value, const struct kernel_param *param)
++{
++	unsigned int duration;
++	int ret = kstrtouint(value, 0, &duration);
++
++	if (ret)
++		return ret;
++	if (duration > 1000)
++		return -EINVAL;
++	WRITE_ONCE(*(unsigned int *)param->arg, duration);
++	return 0;
++}
++
++static const struct kernel_param_ops dsm_write_grace_ops = {
++	.set = dsm_set_write_grace,
++	.get = param_get_uint,
++};
++module_param_cb(dsm_write_grace_us, &dsm_write_grace_ops, &dsm_write_grace_us, 0644);
++MODULE_PARM_DESC(dsm_write_grace_us, "实验写授权保留微秒数：0 关闭，最大 1000");
++
++static u64 dsm_write_grant_remaining(struct kvm *kvm,
++				   struct kvm_dsm_memory_slot *slot, hfn_t vfn)
++{
++	u64 now, until;
++
++	if (!READ_ONCE(dsm_write_grace_us) || READ_ONCE(kvm->arch.dsm_stopped) ||
++	    !dsm_is_owner(slot, vfn) || !dsm_is_modified(slot, vfn))
++		return 0;
++	until = slot->vfn_dsm_state[vfn - slot->base_vfn].write_grant_until_ns;
++	now = ktime_get_ns();
++	return until > now ? until - now : 0;
++}
+ 
+ static inline copyset_t *dsm_get_copyset(struct kvm_dsm_memory_slot *slot,
+ 					 hfn_t vfn)
+@@ -644,6 +682,7 @@
+ 	struct kvm_dsm_memory_slot *slot;
+ 	struct dsm_request req;
+ 	bool retry = false, active_request = false;
++	u64 grant_delay_ns = 0;
+ 	hfn_t vfn;
+ 	char comm[TASK_COMM_LEN];
+ 
+@@ -751,6 +790,15 @@
+ 			}
+ 		}
+ 
++		/* 固定期限内先保留写授权；不交所有权，不触碰副本集合。 */
++		if (req.req_type == DSM_REQ_READ || req.req_type == DSM_REQ_WRITE) {
++			grant_delay_ns = dsm_write_grant_remaining(kvm, slot, vfn);
++			if (grant_delay_ns) {
++				retry = true;
++				goto retry_unlock;
++			}
++		}
++
+ 		switch (req.req_type) {
+ 		case DSM_REQ_INVALIDATE:
+ 			ret = dsm_handle_invalidate_req(kvm, conn_sock, memslot,
+@@ -783,6 +831,7 @@
+ 			goto out_unlock;
+ 		}
+ 
++retry_unlock:
+ 		/* 固定页面触发重试时尚未交出所有权，必须保留现有副本集合。 */
+ 		if (!retry && req.req_type != DSM_REQ_INVALIDATE)
+ 			dsm_clear_copyset(slot, vfn);
+@@ -794,7 +843,16 @@
+ 
+ 		if (retry) {
+ 			retry = false;
+-			schedule();
++			/* 页锁和 SRCU 已释放；每段最多等一百微秒，信号可立即打断。 */
++			if (grant_delay_ns) {
++				ktime_t delay = ns_to_ktime(min_t(u64, grant_delay_ns, 100000));
++
++				set_current_state(TASK_INTERRUPTIBLE);
++				schedule_hrtimeout(&delay, HRTIMER_MODE_REL);
++				grant_delay_ns = 0;
++			} else {
++				schedule();
++			}
+ 			goto retry_handle_req;
+ 		}
+ 		dsm_request_done(conn);
+@@ -1086,6 +1144,13 @@
+ 	}
+ 
+ out:
++	/* 仅新授予独占写权限时设置一次；已有可写映射的快速路径不续期。 */
++	if (write && (ret & ACC_WRITE_MASK)) {
++		unsigned int duration = READ_ONCE(dsm_write_grace_us);
++
++		slot->vfn_dsm_state[vfn - slot->base_vfn].write_grant_until_ns =
++			duration ? ktime_get_ns() + (u64)duration * 1000 : 0;
++	}
+ 	handle_end = ktime_get();
+ 	handle_time = ktime_to_ns(ktime_sub(handle_end, handle_start));
+ 

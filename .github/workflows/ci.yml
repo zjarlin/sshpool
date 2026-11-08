@@ -112,6 +112,10 @@ jobs:
           cc -O2 -Wall -Wextra -Werror -static scripts/ssi-lab/probe-dsm-startup.c -o "$RUNNER_TEMP/probe-dsm-startup"
           cc -O2 -Wall -Wextra -Werror -static scripts/ssi-lab/probe-dsm-request.c -o "$RUNNER_TEMP/probe-dsm-request"
           cc -O2 -Wall -Wextra -Werror -static -pthread scripts/ssi-lab/probe-dsm-latency.c -o "$RUNNER_TEMP/probe-dsm-latency"
+          cc -O2 -Wall -Wextra -Werror -static -pthread scripts/ssi-lab/probe-write-grant.c -o "$RUNNER_TEMP/probe-write-grant"
+          grant_status=0
+          "$RUNNER_TEMP/probe-write-grant" 0 127.0.0.1 - kernel-must-not-match || grant_status=$?
+          test "$grant_status" -eq 2
           latency_status=0
           "$RUNNER_TEMP/probe-dsm-latency" 0 127.0.0.1 - kernel-must-not-match || latency_status=$?
           test "$latency_status" -eq 2
