@@ -71,7 +71,39 @@ sshpool node update linux-builder --clear-slo max-swap-used-mib
 
 这一轮实测抓到一个真实缺陷：**`POST /v1/nodes/{name}` 用 `axum::Json` 提取器时，没有 `admin` 的调用方收到的是 415 而不是 403** —— 提取器在进入处理函数之前执行，权限检查根本轮不到。结果是把「越权」显示成「你的请求体格式不对」，等于向无权限者透露该路由接受什么，访问审计里也会归到格式错误而不是 `denied`。改成在处理函数内 `to_bytes` 读体、先 `require(Admin)` 再解析，并用只读凭据的写路由矩阵测试固定。
 
-边界：`ssh` 与 `images` **不能**在线改——换 SSH 目标等于换了一台机器（需重启核对 HostKey 与探测结论），授权镜像必须经 `node prepare` 真实拉取。控制面运行期间的外部 `config.toml` 修改不会热加载，只会在下一次在线更新时被检测到并拒绝。全局配置（`max_active_jobs`、上传/产物上限、副本 quorum、TLS 路径）仍是重启生效。运行时节点视图是单实例内存态，多控制面之间没有设置同步，也没有独立的配置变更日志（变更只体现在访问审计的 `route`/`status` 与 CLI 输出里）。
+边界：`ssh` 与 `images` **不能**在线补丁——换 SSH 目标等于换了一台机器（需重启核对 HostKey 与探测结论），授权镜像必须经 `node prepare` 真实拉取。控制面运行期间的外部 `config.toml` 修改不会热加载，只会在下一次在线更新时被检测到并拒绝。全局配置（`max_active_jobs`、上传/产物上限、副本 quorum、TLS 路径）仍是重启生效。运行时节点视图是单实例内存态，多控制面之间没有设置同步，也没有独立的配置变更日志（变更只体现在访问审计的 `route`/`status` 与 CLI 输出里）。
+
+### 在线准备镜像 {#node-prepare}
+
+原来的 `node prepare` 是纯 CLI 动作：直接读、改、写 `config.toml`。这与上面新增的「落盘前重读配置并与内存比对」冲突 —— 控制面运行期间执行一次 `node prepare` 之后，任何 `node update` 都会报 `was edited outside the controller`，用户被迫重启控制面，正好抵消了免重启的能力。
+
+现在准备镜像也是控制面动作：`POST /v1/nodes/{name}/prepare`，请求体 `{"image": "..."}`，要求 `admin`。与 `node update` 一样在处理函数内 `to_bytes` 读体、先 `require(Admin)` 再解析，所以只读凭据拿到的是 403 而不是 415。
+
+| 不变量 | 实现 | 自动化 |
+| --- | --- | --- |
+| 先拉取、后授权 | 顺序是 `pull` → 校验 → 落盘 → 换内存 → `wake_queue()`；拉取失败直接返回，配置不动 | `node_prepare_pulls_before_approving_and_reaches_the_next_decision`、`a_failed_pull_leaves_the_configuration_unchanged` |
+| 拉取时不持调度锁 | `docker pull` 在锁外（最多 300s），锁内只做重读比对与落盘 | `the_pull_does_not_hold_the_scheduling_lock`（拉取进行中另一路仍能拿到锁） |
+| 幂等 | 已在清单里 → `pulled=false`，不重复拉、不写盘 | `node_prepare_is_idempotent_for_an_already_approved_image` |
+| 不覆盖手改 | 拉取**之前**就比对 `config.toml` 与内存；不一致直接拒绝 | `node_prepare_refuses_to_overwrite_an_external_config_edit` |
+| 不污染其他节点 | 只改被点名的节点，其余节点逐字段不变 | `node_prepare_pulls_before_approving_and_reaches_the_next_decision` |
+| 立刻进入调度 | 同一份健康读数，授权前报 `image not approved`，授权后放行 | 同上 |
+| 镜像名规则唯一 | `config::validate_image` 由构建请求与 prepare 共用 | `the_image_name_rule_is_shared_by_builds_and_preparation` |
+| 非法输入不触远端 | 空名、`-` 开头、含空白、未知节点都在 `pull` 之前拒绝 | `node_prepare_rejects_bad_input_before_touching_the_worker` |
+| 越权先于解析 | 只读凭据 → 403（不是 415/422），并记入访问审计 | `a_read_only_credential_is_refused_on_every_write_route` |
+
+真实链路 `tests/scheduling_live.rs::an_online_image_prepare_takes_effect_without_a_restart`（`#[ignore]`，`okm182`，92.07s）用 `busybox:1.36` 做五段对照，全程不重启控制面：
+
+| 段 | 操作 | 结果 |
+| --- | --- | --- |
+| 1 | 提交一张未授权的镜像 | `Failed`、`attempts` 为空，消息含 `image not approved for this worker; use node prepare`，**0 容器** |
+| 2 | `node prepare live busybox:1.36` | `pulled=true`；`docker pull` 真的下载了 1.36 的层；`config.toml` 与内存同时出现该镜像 |
+| 3 | 不重启就提交同一张镜像 | `Succeeded`、`exit_code=0`、`cleanup_confirmed=true`，执行在 `live` 上 |
+| 4 | 重复 `node prepare` | `pulled=false`，不重复拉取 |
+| 5 | 准备 `alpine:0.0.0-sshpool-does-not-exist` | 报错（`failed to resolve reference ... 403 Forbidden`），`config.toml` 一字未变、内存也没有该镜像 |
+
+测试开始前会断言该镜像**尚未**存在于 Worker 上（否则「拉取」与「本来就有」无法区分），结束时只删这次拉下来的那一张。证据见 [evidence/node-prepare-20261108.json](evidence/node-prepare-20261108.json)。
+
+离线侧的可注入点：`State::load_with_puller` 接受一个 `ImagePuller`，生产实现 `SshImagePuller` 只经 `transport::checked` 执行 `docker pull`。这样「先拉取后授权」不是靠读代码相信，而是靠替身记录调用时刻的 `config.toml` 内容来断言。
 
 ### 探测在调度锁外，快照有 TTL
 

@@ -231,6 +231,7 @@ pub fn routes(state: Arc<State>) -> Router {
     Router::new()
         .route("/v1/status", get(status))
         .route("/v1/nodes/{name}", post(update_node))
+        .route("/v1/nodes/{name}/prepare", post(prepare_node))
         .route("/v1/nodes/{name}/enable", post(enable_node))
         .route("/v1/nodes/{name}/disable", post(disable_node))
         .route("/v1/nodes/{name}/reconcile", post(reconcile_node))
@@ -448,6 +449,39 @@ async fn update_node(
         "changes": changes
     })))
 }
+/// 在线准备镜像：在 Worker 上真实拉取，成功后才写进该节点的允许清单。
+///
+/// 与 `update_node` 一样在处理函数内读请求体、先 `require(Admin)` 再解析：
+/// 用 `Json` 提取器时，没有 `admin` 的调用方会先拿到 415/422 而不是 403。
+async fn prepare_node(
+    AppState(state): AppState<Arc<State>>,
+    principal: Principal,
+    Path(name): Path<String>,
+    request: Request,
+) -> ApiResult<impl IntoResponse> {
+    principal.require(crate::credentials::Scope::Admin)?;
+    let bytes = axum::body::to_bytes(request.into_body(), 65536)
+        .await
+        .map_err(anyhow::Error::from)?;
+    let body: PrepareImage = serde_json::from_slice(&bytes).map_err(anyhow::Error::from)?;
+    let (node, pulled) = state.prepare_node(&name, &body.image).await?;
+    Ok(axum::Json(serde_json::json!({
+        "node": node,
+        "image": body.image,
+        "pulled": pulled
+    })))
+}
+
+/// `POST /v1/nodes/{name}/prepare` 的请求体。
+///
+/// 只有一个字段：镜像名。`deny_unknown_fields` 让「顺手带个 enabled」之类的
+/// 请求直接失败，而不是被静默忽略后让人以为那部分也生效了。
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PrepareImage {
+    image: String,
+}
+
 async fn enable_node(
     AppState(state): AppState<Arc<State>>,
     principal: Principal,

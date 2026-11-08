@@ -387,6 +387,18 @@ impl Default for Build {
         }
     }
 }
+/// 容器镜像引用的唯一规则：构建请求与 `node prepare` 必须用同一条。
+///
+/// 只拒绝会让 `docker pull` 变成另一条命令或另一种参数的东西（空、以 `-` 开头、
+/// 含空白）。其余字符交给 `transport::quote` 的 shell 引用，不在这里猜镜像语法。
+pub fn validate_image(image: &str) -> Result<()> {
+    ensure!(
+        !image.starts_with('-') && !image.is_empty() && !image.chars().any(char::is_whitespace),
+        "invalid container image"
+    );
+    Ok(())
+}
+
 impl Build {
     pub fn validate(&self) -> Result<()> {
         ensure!(
@@ -397,12 +409,7 @@ impl Build {
             self.command.iter().all(|v| !v.contains('\0')),
             "NUL in command"
         );
-        ensure!(
-            !self.image.starts_with('-')
-                && !self.image.is_empty()
-                && !self.image.chars().any(char::is_whitespace),
-            "invalid container image"
-        );
+        validate_image(&self.image)?;
         ensure!(
             ["linux/amd64", "linux/arm64"].contains(&self.platform.as_str()),
             "platform must be linux/amd64 or linux/arm64"

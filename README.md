@@ -99,16 +99,19 @@ sshpool node prepare linux-builder alpine:3.22
 sshpool serve
 ```
 
-配置位于 `~/.sshpool/config.toml`。节点地址、token、SSH 凭据与任务数据都不应提交到 Git。**新增**节点或镜像后仍需重启控制面；**已有节点**的接单状态与调度设置都可以在线改，不需要重启：
+配置位于 `~/.sshpool/config.toml`。节点地址、token、SSH 凭据与任务数据都不应提交到 Git。**已有节点**的接单状态、调度设置与镜像授权都可以在线改，不需要重启控制面；只有**新增节点**仍要重启（新目标要先核对 HostKey 与探测结论）：
 
 ```sh
 sshpool node disable linux-builder
 sshpool node update linux-builder --max-swap-used-mib 2048 --max-memory-pressure-percent 5
 sshpool node update linux-builder --max-jobs 2 --reserve-memory-mib 8192
 sshpool node update linux-builder --clear-slo max-swap-used-mib   # 取消这一项预算
+sshpool node prepare linux-builder rust:1.93                     # 拉取并授权，立即参与调度
 ```
 
-`node update` 只改显式给出的字段，省略等于保持原值；先校验、再原子落盘、最后替换内存中的节点视图，三步都在调度锁内，所以不会出现按半套设置派发任务的中间态。仍有活动任务的节点不能被禁用。控制面运行期间手改了 `config.toml` 的话，在线更新会拒绝并提示重启加载，而不是把那处手改覆盖掉。`prepare` 是显式拉取镜像操作；普通构建不会自动拉镜像。`prepare` 同时把镜像加入该节点的允许清单；已安装的业务镜像也不会自动开放给任务。
+`node update` 只改显式给出的字段，省略等于保持原值；先校验、再原子落盘、最后替换内存中的节点视图，三步都在调度锁内，所以不会出现按半套设置派发任务的中间态。仍有活动任务的节点不能被禁用。控制面运行期间手改了 `config.toml` 的话，在线更新会拒绝并提示重启加载，而不是把那处手改覆盖掉。
+
+`node prepare` 是**唯一**会拉取镜像的操作，普通构建不会自动拉；它同时把镜像加入该节点的允许清单，所以「已安装的业务镜像」仍然不会因为装在机器上就自动开放给任务。顺序是「先在 Worker 上真实 `docker pull` 成功 → 才写进配置」：拉不到就不改配置，不会留下「已授权但机器上没有」的镜像。镜像已在清单里时直接返回、不重复拉取。CLI 连接的是运行中的控制面，因此授权对下一次派发立即生效；控制面没在跑时 `node prepare` 会连不上，而不是悄悄改文件（那样会绕开在线一致性检查）。
 
 稳定 Linux 工作台可以是已有 Linux 主机，或 Mac 上无宿主目录挂载的 Lima VM。把 `ssh_backend` 指向它的 SSH 端口，客户端只连接 `ssh_listen`。默认两者为 `127.0.0.1:2223` 和 `127.0.0.1:2222`。
 

@@ -274,7 +274,7 @@ enum NodeAction {
         /// 只核对这一台 Worker；省略则核对所有节点。
         name: Option<String>,
     },
-    /// 显式准备容器镜像；此命令会增加节点镜像存储。
+    /// 显式准备容器镜像：在 Worker 上真实拉取，成功后写入允许清单；不重启控制面。
     Prepare {
         name: String,
         image: String,
@@ -816,6 +816,33 @@ async fn node_command(cli: &Cli, home: &std::path::Path, command: &NodeAction) -
             println!("{}", serde_json::to_string_pretty(&report)?);
             return Ok(());
         }
+        NodeAction::Prepare { name, image } => {
+            // 镜像名校验两边都要做：本地拒绝能省一次网络往返，服务端拒绝才是权威。
+            sshpool::config::validate_image(image)?;
+            // 控制面在跑就走 API，让授权对下一次派发立即生效、并复用它的在线一致性检查
+            // （重读 config.toml 比对内存）。控制面没在跑时才走离线路径：先用
+            // `controller.lock` 证明「确实没有控制面」，否则两处会各自持有一份节点视图。
+            if let Some(lock) = offline_controller_home(home)? {
+                let config = config::read(home)?;
+                let state = State::load(home.to_path_buf(), config)?;
+                let (_, pulled) = state.prepare_node(name, image).await?;
+                drop(lock);
+                if pulled {
+                    println!("Image {image} pulled on {name} and approved for this worker.");
+                } else {
+                    println!("Image {image} was already approved for {name}; nothing pulled.");
+                }
+                return Ok(());
+            }
+            let applied = client(cli, home)?.prepare_node(name, image).await?;
+            let pulled = applied["pulled"].as_bool().unwrap_or(false);
+            if pulled {
+                println!("Image {image} pulled on {name} and approved for this worker.");
+            } else {
+                println!("Image {image} was already approved for {name}; nothing pulled.");
+            }
+            return Ok(());
+        }
         NodeAction::Update {
             name,
             max_jobs,
@@ -897,44 +924,35 @@ async fn node_command(cli: &Cli, home: &std::path::Path, command: &NodeAction) -
             println!("Node added. Restart the controller to load configuration changes.");
         }
         NodeAction::List => println!("{}", toml::to_string_pretty(&config)?),
-        NodeAction::Prepare { name, image } => {
-            let build = Build {
-                image: image.clone(),
-                ..Build::default()
-            };
-            build.validate()?;
-            let node = config
-                .nodes
-                .iter()
-                .find(|node| node.name == *name)
-                .context("unknown node")?;
-            let output = sshpool::transport::checked(
-                node,
-                &format!("docker pull {}", sshpool::transport::quote(image)),
-                300,
-            )
-            .await?;
-            print!("{}", String::from_utf8_lossy(&output));
-            let node = config
-                .nodes
-                .iter_mut()
-                .find(|node| node.name == *name)
-                .context("unknown node")?;
-            if !node.images.contains(image) {
-                node.images.push(image.clone());
-            }
-            config::save(home, &config)?;
-            println!("Image approved for this worker. Restart the controller to apply.");
-        }
         NodeAction::Enable { .. }
         | NodeAction::Disable { .. }
         | NodeAction::Reconcile { .. }
-        | NodeAction::Update { .. } => {
+        | NodeAction::Update { .. }
+        | NodeAction::Prepare { .. } => {
             anyhow::bail!("node online command was not dispatched")
         }
     }
     Ok(())
 }
+/// 控制面没在跑时返回这把独占锁（调用方持有到动作结束），在跑时返回 `None`。
+///
+/// `serve` 用同一把锁声明「这个 home 归我」；因此能锁上就等于「此刻没有控制面」，
+/// 离线改配置不会与内存视图分叉。锁拿不到也可能是权限或文件系统问题，那种情况
+/// 一律按「有控制面」处理（走 API），不让一次失败的探测变成写配置的许可。
+fn offline_controller_home(home: &std::path::Path) -> Result<Option<fs::File>> {
+    use fs2::FileExt;
+    let file = fs::OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .read(true)
+        .write(true)
+        .open(home.join("controller.lock"))?;
+    match file.try_lock_exclusive() {
+        Ok(()) => Ok(Some(file)),
+        Err(_) => Ok(None),
+    }
+}
+
 async fn serve(home: PathBuf) -> Result<()> {
     use fs2::FileExt;
     let lock = fs::OpenOptions::new()

@@ -25,6 +25,37 @@ Feature: 显式登记异构 SSH 节点
     When 构建请求未被允许清单批准的镜像
     Then 调度拒绝该任务
 
+  # evidence: tests/api.rs::node_prepare_pulls_before_approving_and_reaches_the_next_decision
+  # evidence: tests/api.rs::a_failed_pull_leaves_the_configuration_unchanged
+  # evidence: tests/api.rs::the_pull_does_not_hold_the_scheduling_lock
+  # evidence: tests/scheduling_live.rs::an_online_image_prepare_takes_effect_without_a_restart
+  # evidence: docs/evidence/node-prepare-20261108.json
+  @verified @automated @p1
+  Scenario: 在线准备并授权镜像
+    Given 控制面正在运行，某台 Worker 上还没有某张镜像
+    When 执行 node prepare 指定该节点与镜像
+    Then 控制面先在 Worker 上真实拉取，成功后才写入允许清单
+    And 不重启控制面，下一次提交就能用这张镜像运行并确认清理
+    But 拉取失败时配置与内存都不变
+    And 已经授权过的镜像不重复拉取
+
+  # evidence: tests/api.rs::node_prepare_refuses_to_overwrite_an_external_config_edit
+  @verified @automated @p2
+  Scenario: 准备镜像不覆盖运行期间的手改
+    Given 控制面运行期间有人直接编辑了 config.toml
+    When 执行 node prepare
+    Then 在发起远端拉取之前就拒绝
+    And 配置文件保持手改后的内容
+
+  # evidence: tests/boundaries.rs::the_image_name_rule_is_shared_by_builds_and_preparation
+  # evidence: tests/api.rs::node_prepare_rejects_bad_input_before_touching_the_worker
+  @verified @automated @p2
+  Scenario: 非法镜像名不触达远端
+    Given 镜像名为空、以连字符开头或含空白
+    When 提交构建或执行 node prepare
+    Then 两处用同一条规则拒绝
+    And Worker 上没有发生任何拉取
+
   @partial @p1
   Scenario: WSL2 计算节点
     Given Windows 的 SSH 直接进入 WSL2 Linux

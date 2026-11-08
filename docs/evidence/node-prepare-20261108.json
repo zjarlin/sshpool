@@ -1,0 +1,143 @@
+{
+  "checked_at": "2026-11-08T21:05:00+08:00",
+  "scope": "010 在线准备镜像：让 node prepare 在不重启控制面的前提下真实拉取镜像并授权给该 Worker，同时不破坏「落盘前重读 config.toml 比对内存」的在线一致性判定。",
+  "entry": {
+    "api": {
+      "tests": "tests/api.rs",
+      "command": "cargo test --locked --test api",
+      "selected": [
+        "node_prepare_pulls_before_approving_and_reaches_the_next_decision",
+        "node_prepare_is_idempotent_for_an_already_approved_image",
+        "a_failed_pull_leaves_the_configuration_unchanged",
+        "node_prepare_refuses_to_overwrite_an_external_config_edit",
+        "node_prepare_rejects_bad_input_before_touching_the_worker",
+        "the_pull_does_not_hold_the_scheduling_lock",
+        "a_read_only_credential_is_refused_on_every_write_route"
+      ],
+      "why": "判据是「拉取时刻 config.toml 里还没有这张镜像」（顺序）、「返回后内存与磁盘同时有」（生效）、「同一份健康读数不再报 image not approved」（进入调度）；三条都不看命令返回值"
+    },
+    "offline": {
+      "tests": "tests/boundaries.rs",
+      "command": "cargo test --locked --test boundaries",
+      "selected": [
+        "the_image_name_rule_is_shared_by_builds_and_preparation"
+      ],
+      "why": "镜像名规则必须由构建请求与 prepare 共用，不能有两套；纯函数，不需要 State 或网络"
+    },
+    "live": {
+      "test": "tests/scheduling_live.rs::an_online_image_prepare_takes_effect_without_a_restart",
+      "command": "SSHPOOL_LIVE_NODE=okm182 cargo test --locked --test scheduling_live -- --ignored --nocapture --test-threads=1 an_online_image_prepare",
+      "result": "1 passed in 92.07s",
+      "why": "五段对照，全程不重启控制面：未授权被拒且 0 容器 → 在线 pull+授权 → 不重启就提交并 Succeeded+cleanup_confirmed → 重复 prepare 不再拉取 → 不存在的镜像报错且 config.toml 一字未变"
+    },
+    "cli_offline": {
+      "command": "sshpool --home <tmp> node add live --ssh okm182 && sshpool --home <tmp> node prepare live busybox:1.37",
+      "result": {
+        "first": "Image busybox:1.37 pulled on live and approved for this worker.；config.toml images = [\"busybox:1.37\"]",
+        "second": "Image busybox:1.37 was already approved for live; nothing pulled.；config.toml 不变",
+        "lock_held": "controller.lock 被占时改走 API；endpoint 不可达则 exit 1，config.toml 保持 images = [\"busybox:1.37\"]"
+      },
+      "why": "首次部署必须在 serve 之前准备镜像；用 controller.lock 证明「确实没有控制面」才允许离线改配置，锁拿不到就绝不写文件"
+    }
+  },
+  "worker": {
+    "alias": "okm182",
+    "os": "linux",
+    "arch": "x86_64",
+    "kernel": "6.8.0-147-generic",
+    "docker": "29.1.3",
+    "images_pulled_for_the_test": [
+      "busybox:1.36"
+    ],
+    "image_cleanup": "测试结束时 docker rmi busybox:1.36；结束后 docker images 里不再有该 tag，docker ps -a 中 sshpool 容器数为 0"
+  },
+  "design": {
+    "route": "POST /v1/nodes/{name}/prepare，body {\"image\": \"...\"}，要求 admin scope",
+    "runtime_view": "State.nodes 是运行时唯一权威节点列表，prepare 成功后整份替换该节点，调度下一次读到的就是新 images",
+    "write_order": [
+      "校验镜像名 (config::validate_image)",
+      "重读 config.toml 与内存逐字段比对（不一致即拒绝，且发生在拉取之前）",
+      "镜像已在清单里 → pulled=false，直接返回",
+      "transport::checked 执行 docker pull（锁外，300s 上限）",
+      "取 scheduling 锁：重读内存节点与 config.toml 再比对",
+      "追加镜像 → validate_node → 整份 validate",
+      "原子落盘 (config::save)",
+      "替换内存节点视图",
+      "wake_queue()"
+    ],
+    "lock": "docker pull 在调度锁外：大镜像可能拉几分钟，持锁会让所有派发停住；锁内只做重读比对、校验与落盘",
+    "injection": "State::load_with_puller 接受 ImagePuller；生产实现 SshImagePuller 只经 transport::checked 执行 docker pull",
+    "auth": "处理函数内 to_bytes 读体、先 require(Admin) 再解析，无权限调用方得到 403 而不是 415/422",
+    "idempotency": "已在清单里 → 不重复拉取、不写盘、不产生审计里的伪变更",
+    "cli_path": "CLI 优先走 API；仅当 controller.lock 可独占（证明无控制面）时回退离线，锁拿不到一律走 API 而不是写文件",
+    "not_reopened": "NodePatch 仍然拒绝 images 字段：prepare 是「拉取 + 授权」的独立语义，不是「改一个列表字段」"
+  },
+  "live_steps": {
+    "unapproved": {
+      "image": "busybox:1.36",
+      "phase": "Failed",
+      "attempts": 0,
+      "message": "no eligible worker: live: image not approved for this worker; use node prepare",
+      "containers_created": 0
+    },
+    "prepare": {
+      "pulled": true,
+      "node_images_after": [
+        "alpine:3.22",
+        "busybox:1.36"
+      ],
+      "note": "docker pull 输出显示真实下载了 1.36 的层，并给出 digest"
+    },
+    "run_without_restart": {
+      "phase": "Succeeded",
+      "exit_code": 0,
+      "cleanup_confirmed": true,
+      "attempt_node": "live"
+    },
+    "prepare_again": {
+      "pulled": false
+    },
+    "nonexistent_image": {
+      "image": "alpine:0.0.0-sshpool-does-not-exist",
+      "error": "command exited 1: Error response from daemon: unknown: failed to resolve reference \"docker.io/library/alpine:0.0.0-sshpool-does-not-exist\": unexpected status from HEAD request ... 403 Forbidden",
+      "config_unchanged": true,
+      "memory_unchanged": true
+    },
+    "container_leak_check": "docker ps -a --format '{{.Names}}' | grep -c sshpool == 0"
+  },
+  "defect_found_and_fixed": {
+    "problem": "node prepare 原先直接读/改/写 config.toml，控制面运行期间执行一次后，任何 node update 都会报 edited outside the controller，用户被迫重启控制面，抵消了上一轮「免重启」的能力",
+    "fix": "把准备镜像变成控制面动作（prepare 路由 + State::prepare_node），CLI 改走 API，并在无控制面时才离线执行"
+  },
+  "assertions": {
+    "the_pull_happens_before_the_image_is_approved": true,
+    "a_failed_pull_leaves_config_toml_byte_identical": true,
+    "a_failed_pull_does_not_grant_the_image_in_memory": true,
+    "approval_reaches_the_next_scheduling_decision_without_a_restart": true,
+    "approval_is_persisted_to_config_toml": true,
+    "the_approval_applies_only_to_the_named_node": true,
+    "preparing_an_approved_image_pulls_nothing_and_writes_nothing": true,
+    "an_external_config_edit_is_detected_before_the_remote_pull": true,
+    "invalid_image_names_are_refused_before_any_remote_call": true,
+    "an_unknown_node_is_refused_before_any_remote_call": true,
+    "a_read_only_credential_gets_403_not_415": true,
+    "the_remote_pull_does_not_hold_the_scheduling_lock": true,
+    "the_image_name_rule_is_shared_by_builds_and_preparation": true,
+    "live_unapproved_image_fails_with_zero_containers": true,
+    "live_prepare_pulls_and_authorizes": true,
+    "live_job_runs_with_the_freshly_prepared_image_without_a_restart": true,
+    "live_second_prepare_pulls_nothing": true,
+    "live_nonexistent_image_leaves_the_configuration_untouched": true,
+    "live_worker_has_no_leftover_sshpool_container": true,
+    "cli_offline_path_requires_an_unheld_controller_lock": true
+  },
+  "assertions_total": 20,
+  "failed_assertions": [],
+  "not_implemented": [
+    "删除镜像授权的在线接口（目前只能改配置后重启，或直接编辑 config.toml）",
+    "镜像摘要锁定与自动更新：prepare 只按名字拉取，不会拒绝可变的 tag，也不记录拉到的 digest",
+    "拉取进度与耗时上报：pulled 只说明是否发生，duration 与字节数不进审计或指标",
+    "镜像预准备/预热（多节点批量 prepare 仍要逐节点调用）",
+    "控制面已持有镜像清单时的自动清理（旧的、不再使用的镜像不会被 prepare 删除）"
+  ]
+}

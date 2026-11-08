@@ -79,6 +79,14 @@ sshpool node prepare worker alpine:3.22
 
 镜像来源由部署者选择并核实。网络受限时可以在节点上显式使用可信镜像仓库，项目配置填写相应完整镜像名。生产建议锁定 digest；普通构建不会拉取镜像。
 
+首次登记节点要在执行 `sshpool serve` 之前做完 `node prepare`（此时走离线路径，用 `controller.lock` 确认没有控制面在跑）。控制面已经在跑时再准备镜像不需要重启，也不需要停服：
+
+```sh
+sshpool node prepare worker rust:1.93    # 经 API：先 docker pull 成功，再写入该节点的允许清单
+```
+
+`prepare` 连不上控制面时报错退出，不会退回去直接改 `config.toml` —— 那样会绕开「重读配置比对内存」的一致性检查，让运行中的控制面持有一份与磁盘不同的节点视图。
+
 Worker 运维账号需要管理自己使用的容器引擎。这是有权限的控制通道，不应交给构建进程。优先专用计算 VM 和 rootless Docker；在现有公司主机上不能给容器挂载宿主目录或 socket。
 
 每个节点至少预留足够的业务内存、磁盘和负载余量。`memory_mib` 包含 `/work`、`/tmp`、进程与缓存开销，`scratch_mib` 必须小于它。系统无法替业务预测突发需求。

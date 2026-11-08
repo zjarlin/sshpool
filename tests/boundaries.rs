@@ -1219,3 +1219,27 @@ fn a_patch_cannot_change_the_node_identity_or_its_images() {
         serde_json::from_str::<sshpool::config::NodePatch>(r#"{"images":["evil:1"]}"#).is_err()
     );
 }
+
+/// 镜像名规则只有一条，构建请求与 `node prepare` 共用：拒绝会让 `docker pull`
+/// 变成另一条命令的输入（空、以 `-` 开头、含空白）。
+#[test]
+fn the_image_name_rule_is_shared_by_builds_and_preparation() {
+    for accepted in ["alpine:3.22", "registry.example:5000/team/app@sha256:abc"] {
+        assert!(
+            sshpool::config::validate_image(accepted).is_ok(),
+            "{accepted}"
+        );
+    }
+    for refused in ["", "-rm", "alpine 3.22", "alpine:3.22\n--privileged"] {
+        assert!(
+            sshpool::config::validate_image(refused).is_err(),
+            "{refused:?} must be refused"
+        );
+        // 构建侧必须给出同一个结论，不能两套规则各说一套。
+        let build = Build {
+            image: refused.into(),
+            ..Build::default()
+        };
+        assert!(build.validate().is_err(), "{refused:?}");
+    }
+}

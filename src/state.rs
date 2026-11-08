@@ -4,6 +4,7 @@ use crate::{
     model::{Health, Job, Phase, now},
 };
 use anyhow::{Context, Result, ensure};
+use futures_util::future::BoxFuture;
 use std::{
     collections::HashMap,
     fs,
@@ -21,6 +22,33 @@ use uuid::Uuid;
 /// 而探测若在调度锁内进行，这段时间里所有任务派发都会被串行阻塞。快照带 TTL
 /// 是为了不让「刚恢复的节点」长期被旧结论挡住——过期后下一次调度会重新探测。
 pub const HEALTH_TTL: Duration = Duration::from_secs(15);
+
+/// 在 Worker 上真实拉取镜像的唯一入口。
+///
+/// 单独抽出来是为了让「先拉取、再落盘」的顺序可以被离线验证：拉取失败必须不
+/// 改动配置，而这件事只能靠一个可替换的远端动作来断言。生产实现只有
+/// [`SshImagePuller`] 一种，它就是把 `docker pull` 交给既有的 OpenSSH 通道。
+pub trait ImagePuller: Send + Sync {
+    fn pull<'a>(&'a self, node: &'a Node, image: &'a str) -> BoxFuture<'a, Result<()>>;
+}
+
+/// 经 `transport::checked` 执行 `docker pull`；输出只进日志，不参与判定。
+pub struct SshImagePuller;
+
+impl ImagePuller for SshImagePuller {
+    fn pull<'a>(&'a self, node: &'a Node, image: &'a str) -> BoxFuture<'a, Result<()>> {
+        Box::pin(async move {
+            let script = format!("docker pull {}", crate::transport::quote(image));
+            let output = crate::transport::checked(node, &script, 300).await?;
+            eprintln!(
+                "sshpool: pulled {image} on {}: {}",
+                node.name,
+                String::from_utf8_lossy(&output).trim()
+            );
+            Ok(())
+        })
+    }
+}
 
 /// 控制面共享状态：同一把锁同时保护节点配额与任务状态转换。
 pub struct State {
@@ -44,10 +72,21 @@ pub struct State {
     pub audit: Mutex<()>,
     /// 串行化访问审计的追加与滚动，避免两行交错或滚动时丢记录。
     pub access: Mutex<()>,
+    /// 拉取镜像的远端入口；默认经 SSH，测试可以替换成受控实现。
+    images: Arc<dyn ImagePuller>,
 }
 
 impl State {
     pub fn load(home: PathBuf, config: Config) -> Result<Arc<Self>> {
+        Self::load_with_puller(home, config, Arc::new(SshImagePuller))
+    }
+
+    /// 用指定的镜像拉取器构造状态；生产只经 [`State::load`] 使用 SSH 实现。
+    pub fn load_with_puller(
+        home: PathBuf,
+        config: Config,
+        images: Arc<dyn ImagePuller>,
+    ) -> Result<Arc<Self>> {
         let token = fs::read_to_string(home.join("token"))?.trim().to_string();
         ensure!(token.len() >= 32, "token is too short");
         fs::create_dir_all(home.join("jobs"))?;
@@ -83,6 +122,7 @@ impl State {
             transitions: Mutex::new(()),
             audit: Mutex::new(()),
             access: Mutex::new(()),
+            images,
         }))
     }
 
@@ -195,17 +235,8 @@ impl State {
         if !patched.enabled {
             self.ensure_no_active_job(name).await?;
         }
+        self.ensure_config_matches_memory(&current).await?;
         let mut file = config::read(&self.home)?;
-        let stored = file
-            .nodes
-            .iter()
-            .find(|node| node.name == name)
-            .cloned()
-            .context("unknown node in config.toml")?;
-        ensure!(
-            stored == current,
-            "nodes/{name} was edited outside the controller; restart the controller to load config.toml before changing it online"
-        );
         let index = file
             .nodes
             .iter()
@@ -224,6 +255,81 @@ impl State {
         // 槽位或预算可能刚刚放宽，等待中的任务应当立刻重试一次而不是等下一个 TTL。
         self.wake_queue();
         Ok((patched, changes))
+    }
+
+    /// 在线准备镜像：先确认控制面内存与 `config.toml` 一致，再在 Worker 上真实拉取，
+    /// 拉取成功之后才把镜像写进该节点的允许清单。
+    ///
+    /// 判据是「配置里有了它之前，它已经在这台机器上」：授权顺序反过来（先写清单
+    /// 再拉取）会让一次失败的拉取留下「已授权但不存在」的镜像，任务随后在派发时
+    /// 才失败，且没人知道是拉取没做完。
+    ///
+    /// `docker pull` 是幂等且不碰配置的远端动作，所以在 `scheduling` 锁外执行：
+    /// 一个大镜像可能拉几分钟，持锁会让所有任务的派发一起停住。锁内只做
+    /// 「重读配置比对 → 校验 → 原子落盘 → 换内存 → 唤醒队列」，与 `update_node`
+    /// 用同一条顺序，因此并发 prepare 与在线改设置不会互相覆盖。
+    ///
+    /// 返回 `(节点, 是否真的执行了拉取)`；镜像已在清单里时直接返回，不重复拉。
+    pub async fn prepare_node(&self, name: &str, image: &str) -> Result<(Node, bool)> {
+        config::validate_image(image)?;
+        let current = self.node(name).await?;
+        // 先做一次「外部手改」判定：明知配置已被别人改过还去拉镜像，
+        // 等于在错误的前提下产生远端副作用。
+        self.ensure_config_matches_memory(&current).await?;
+        if current.images.iter().any(|approved| approved == image) {
+            return Ok((current, false));
+        }
+        // 第二轮检查与落盘之间仍有窗口；这里靠 `docker pull` 的幂等性与锁内重读兜住。
+        self.images.pull(&current, image).await?;
+        let _scheduling = self.scheduling.lock().await;
+        // 拉取期间可能有人在线改了别的字段，也可能并发了同一张镜像的 prepare：
+        // 锁内以内存里的当前值为准重建，而不是拿拉取前那份快照覆盖回去。
+        let latest = self.node(name).await?;
+        self.ensure_config_matches_memory(&latest).await?;
+        if latest.images.iter().any(|approved| approved == image) {
+            return Ok((latest, false));
+        }
+        let mut file = config::read(&self.home)?;
+        let mut patched = latest;
+        patched.images.push(image.to_string());
+        config::validate_node(&patched)?;
+        let index = file
+            .nodes
+            .iter()
+            .position(|node| node.name == name)
+            .expect("the node was just located");
+        file.nodes[index] = patched.clone();
+        config::validate(&file)?;
+        config::save(&self.home, &file)?;
+        {
+            let mut nodes = self.nodes.write().await;
+            if let Some(entry) = nodes.iter_mut().find(|node| node.name == name) {
+                *entry = patched.clone();
+            }
+        }
+        // 新镜像可能正是等待中的任务缺的那一个授权。
+        self.wake_queue();
+        Ok((patched, true))
+    }
+
+    /// 控制面内存里的节点是否仍是 `config.toml` 里的那一份。
+    ///
+    /// 在线改动（`update_node`、`prepare_node`）都以此为前提：手改过的配置要先重启
+    /// 加载，否则「落盘」会把别人的修改整份覆盖掉。
+    async fn ensure_config_matches_memory(&self, current: &Node) -> Result<()> {
+        let file = config::read(&self.home)?;
+        let stored = file
+            .nodes
+            .iter()
+            .find(|node| node.name == current.name)
+            .cloned()
+            .context("unknown node in config.toml")?;
+        ensure!(
+            stored == *current,
+            "nodes/{} was edited outside the controller; restart the controller to load config.toml before changing it online",
+            current.name
+        );
+        Ok(())
     }
 
     /// 订阅队列或节点容量变化；接收端可在一次探测之后等待新的调度机会。

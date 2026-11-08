@@ -526,3 +526,163 @@ async fn an_online_budget_update_takes_effect_without_a_restart() -> Result<()> 
     println!("cleared budget restored service");
     Ok(())
 }
+
+/// 在线准备镜像必须免重启生效，判据是「任务真的用这张镜像跑起来」。
+///
+/// 四段：未授权时同一张镜像被拒且 0 容器 → `node prepare` 拉取并授权 → 不重启
+/// 就提交、`Succeeded` 且清理确认 → 重复准备不再拉取。再来一段反向对照：
+/// 准备一个不存在的镜像必须报错且 `config.toml` 一字未变。
+///
+/// 默认用 `busybox:1.36`（小镜像、自带 `sh`）。测试开始前它必须尚未存在于
+/// Worker 上，否则「拉取」无法与「本来就有」区分；结束时如果这次是它拉下来的，
+/// 就删掉，让同一台机器可以重复跑。
+#[tokio::test]
+#[ignore = "requires a reachable SSH worker with Docker and registry access"]
+async fn an_online_image_prepare_takes_effect_without_a_restart() -> Result<()> {
+    let live = live_node()?;
+    let image =
+        std::env::var("SSHPOOL_LIVE_PREPARE_IMAGE").unwrap_or_else(|_| "busybox:1.36".into());
+    ensure!(
+        !live.images.contains(&image),
+        "{image} is already approved in the harness node; pick another tag"
+    );
+    let present = sshpool::transport::capture(
+        &live,
+        &format!(
+            "docker image inspect {} >/dev/null 2>&1 && echo yes || echo no",
+            sshpool::transport::quote(&image)
+        ),
+        60,
+    )
+    .await?;
+    ensure!(
+        String::from_utf8_lossy(&present.1).trim() == "no",
+        "{image} already exists on the worker; it cannot distinguish pull from cache. \
+         Set SSHPOOL_LIVE_PREPARE_IMAGE to a tag that is not present"
+    );
+
+    let (root, state, client) = harness(vec![live.clone()]).await?;
+    let platform = platform(&live).await?;
+    let build = Build {
+        image: image.clone(),
+        platform,
+        command: vec!["sh".into(), "-c".into(), "printf 'prepared\\n'".into()],
+        memory_mib: 256,
+        scratch_mib: 64,
+        cpus: 0.5,
+        timeout_secs: 120,
+        ..Build::default()
+    };
+
+    // 1. 未授权：必须拒单，且不能留下容器。
+    let seen = job_ids(&client).await?;
+    let refused = named_project(root.path(), "unapproved")?;
+    let code = client.run(&refused, build.clone()).await?;
+    ensure!(code != 0, "an unapproved image must be refused: {code}");
+    let job = new_job(&client, &seen).await?;
+    ensure!(
+        job.phase == Phase::Failed && job.attempts.is_empty(),
+        "an unapproved image must fail before an attempt exists: {:?} {:?}",
+        job.phase,
+        job.message
+    );
+    let message = job.message.as_deref().unwrap_or_default();
+    ensure!(
+        message.contains("image not approved"),
+        "the refusal must name the missing approval: {message}"
+    );
+    let containers = sshpool::transport::checked(
+        &live,
+        &format!(
+            "docker ps -a --filter {} --format {{.Names}} | wc -l",
+            sshpool::transport::quote(&format!("label=io.sshpool.job={}", job.id))
+        ),
+        20,
+    )
+    .await?;
+    ensure!(
+        String::from_utf8_lossy(&containers).trim() == "0",
+        "an unapproved image must create no container"
+    );
+    println!("unapproved image refused: {message}");
+
+    // 2. 在线准备：控制面真的拉取，并把镜像写进允许清单。
+    let applied = client.prepare_node("live", &image).await?;
+    ensure!(
+        applied["pulled"] == serde_json::json!(true),
+        "the first prepare must actually pull: {applied}"
+    );
+    ensure!(
+        state.nodes().await[0]
+            .images
+            .iter()
+            .any(|item| item == &image),
+        "the running controller must see the new approval immediately"
+    );
+    let stored = sshpool::config::read(root.path())?;
+    ensure!(
+        stored.nodes[0].images.iter().any(|item| item == &image),
+        "the approval must also be on disk"
+    );
+    println!("prepared {image}: {applied}");
+
+    // 3. 不重启就提交：任务必须真的用这张镜像跑起来并清理。
+    let seen = job_ids(&client).await?;
+    let prepared = named_project(root.path(), "prepared")?;
+    let code = client.run(&prepared, build.clone()).await?;
+    ensure!(code == 0, "the prepared image must run: {code}");
+    let job = new_job(&client, &seen).await?;
+    ensure!(
+        job.phase == Phase::Succeeded && job.cleanup_confirmed,
+        "the prepared job must succeed and clean up: {:?} {:?}",
+        job.phase,
+        job.message
+    );
+    let attempt = job.attempts.first().context("the job was never assigned")?;
+    ensure!(
+        attempt.node == "live",
+        "the job ran on {} instead of the prepared worker",
+        attempt.node
+    );
+    println!("prepared image ran: {:?}", job.message);
+
+    // 4. 重复准备：已经是授权状态，不重复拉取。
+    let again = client.prepare_node("live", &image).await?;
+    ensure!(
+        again["pulled"] == serde_json::json!(false),
+        "a second prepare must not pull again: {again}"
+    );
+
+    // 5. 反向对照：拉不到的镜像不能改配置。
+    let before = fs::read_to_string(root.path().join("config.toml"))?;
+    let missing = "alpine:0.0.0-sshpool-does-not-exist";
+    let error = client
+        .prepare_node("live", missing)
+        .await
+        .expect_err("a nonexistent image must not be approved");
+    println!("nonexistent image refused: {error:#}");
+    ensure!(
+        fs::read_to_string(root.path().join("config.toml"))? == before,
+        "a failed pull must not touch config.toml"
+    );
+    ensure!(
+        !state.nodes().await[0]
+            .images
+            .iter()
+            .any(|item| item == missing),
+        "a failed pull must not grant the image in memory either"
+    );
+
+    // 还原本机镜像列表：只删这次拉下来的那一张。
+    sshpool::transport::checked(
+        &live,
+        &format!(
+            "docker rmi {} >/dev/null 2>&1 || true",
+            sshpool::transport::quote(&image)
+        ),
+        60,
+    )
+    .await?;
+    println!("removed {image} from the worker");
+    Ok(())
+}

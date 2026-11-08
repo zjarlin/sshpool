@@ -12,7 +12,51 @@ use sshpool::{
 use std::{fs, sync::Arc, time::Duration};
 use tower::ServiceExt;
 
+/// 记录 `docker pull` 的替身：生产实现要真连 SSH，离线测试只关心调用与顺序。
+#[derive(Default)]
+struct Recorder {
+    calls: std::sync::Mutex<Vec<(String, String)>>,
+    /// 设为 `Some` 时每次拉取都失败，用来证明「拉不到就不改配置」。
+    failure: Option<String>,
+    /// 拉取时刻的 `config.toml` 内容；用来证明授权发生在拉取之后，而不是之前。
+    config_at_pull: std::sync::Mutex<Option<String>>,
+    home: std::sync::Mutex<Option<std::path::PathBuf>>,
+}
+
+impl Recorder {
+    fn calls(&self) -> Vec<(String, String)> {
+        self.calls.lock().unwrap().clone()
+    }
+}
+
+impl sshpool::state::ImagePuller for Recorder {
+    fn pull<'a>(
+        &'a self,
+        node: &'a Node,
+        image: &'a str,
+    ) -> futures_util::future::BoxFuture<'a, Result<()>> {
+        Box::pin(async move {
+            self.calls
+                .lock()
+                .unwrap()
+                .push((node.name.clone(), image.to_string()));
+            if let Some(home) = self.home.lock().unwrap().clone() {
+                let config = fs::read_to_string(home.join("config.toml"))?;
+                *self.config_at_pull.lock().unwrap() = Some(config);
+            }
+            match &self.failure {
+                Some(message) => anyhow::bail!("{message}"),
+                None => Ok(()),
+            }
+        })
+    }
+}
+
 fn state() -> Result<(tempfile::TempDir, Arc<State>)> {
+    state_with(Arc::new(Recorder::default()))
+}
+
+fn state_with(puller: Arc<Recorder>) -> Result<(tempfile::TempDir, Arc<State>)> {
     let root = tempfile::tempdir()?;
     fs::write(
         root.path().join("token"),
@@ -34,7 +78,8 @@ fn state() -> Result<(tempfile::TempDir, Arc<State>)> {
         root.path().join("config.toml"),
         toml::to_string_pretty(&config)?,
     )?;
-    let state = State::load(root.path().into(), config)?;
+    *puller.home.lock().unwrap() = Some(root.path().to_path_buf());
+    let state = State::load_with_puller(root.path().into(), config, puller)?;
     Ok((root, state))
 }
 
@@ -1102,6 +1147,14 @@ async fn a_read_only_credential_is_refused_on_every_write_route() -> Result<()> 
         "node update needs its own scope check before body parsing"
     );
 
+    // 准备镜像同样要在解析请求体之前拒绝：否则无权限者会先收到「你的 JSON 不对」。
+    let response = send("POST", "/v1/nodes/test-node/prepare", reader.clone()).await?;
+    assert_eq!(
+        response.status(),
+        StatusCode::FORBIDDEN,
+        "node prepare needs its own scope check before body parsing"
+    );
+
     let response = send("POST", "/v1/nodes/test-node/disable", reader.clone()).await?;
     assert_eq!(response.status(), StatusCode::FORBIDDEN);
     let body = String::from_utf8(
@@ -1648,6 +1701,346 @@ async fn an_online_budget_change_reaches_the_next_scheduling_decision() -> Resul
     assert!(
         reason.contains("swap used 900 MiB exceeds 899 MiB"),
         "the refusal must quote the new budget: {reason}"
+    );
+    Ok(())
+}
+
+/// 在线准备镜像必须真的先拉、再授权，并且立刻进入下一次调度决策。
+///
+/// 判据三条：拉取时 `config.toml` 里还没有这张镜像（顺序）、返回后内存与磁盘
+/// 都有（生效）、同一份健康读数不再报 `image not approved`（进入调度）。
+#[tokio::test]
+async fn node_prepare_pulls_before_approving_and_reaches_the_next_decision() -> Result<()> {
+    let puller = Arc::new(Recorder::default());
+    let (root, state) = state_with(puller.clone())?;
+    let image = "alpine:3.21";
+    let response = sshpool::api::routes(state.clone())
+        .oneshot(
+            Request::post("/v1/nodes/test-node/prepare")
+                .header("authorization", format!("Bearer {}", state.token))
+                .header("content-type", "application/json")
+                .body(Body::from(serde_json::to_vec(
+                    &serde_json::json!({ "image": image }),
+                )?))?,
+        )
+        .await?;
+    assert_eq!(response.status(), StatusCode::OK);
+    let bytes = axum::body::to_bytes(response.into_body(), 65536).await?;
+    let applied: serde_json::Value = serde_json::from_slice(&bytes)?;
+    assert_eq!(applied["pulled"], serde_json::json!(true));
+    assert_eq!(applied["image"], serde_json::json!(image));
+
+    // 顺序：拉取发生时配置里还没有这张镜像 —— 否则就是「先授权再拉取」。
+    assert_eq!(
+        puller.calls(),
+        vec![("test-node".to_string(), image.to_string())]
+    );
+    let at_pull = puller
+        .config_at_pull
+        .lock()
+        .unwrap()
+        .clone()
+        .context("the puller never observed the configuration")?;
+    assert!(
+        !at_pull.contains(image),
+        "the image must not be authorized before it is pulled:\n{at_pull}"
+    );
+
+    // 生效：内存与磁盘同时有，且只加在这台节点上。
+    let nodes = state.nodes().await;
+    let updated = nodes.iter().find(|node| node.name == "test-node").unwrap();
+    assert!(updated.images.iter().any(|approved| approved == image));
+    let untouched = nodes
+        .iter()
+        .find(|node| node.name == "second-node")
+        .unwrap();
+    assert!(!untouched.images.iter().any(|approved| approved == image));
+    let stored = sshpool::config::read(root.path())?;
+    assert_eq!(
+        stored
+            .nodes
+            .iter()
+            .find(|node| node.name == "test-node")
+            .unwrap(),
+        updated
+    );
+
+    // 进入调度：同一台机器的同一份健康读数，改之前报未授权，改之后不报。
+    let health = sshpool::model::Health {
+        name: "test-node".into(),
+        enabled: true,
+        os: "linux".into(),
+        arch: "x86_64".into(),
+        cpus: 8,
+        memory_available_mib: 32_000,
+        disk_available_mib: 100_000,
+        load: 0.1,
+        runtime_memory_mib: 32_000,
+        runtime_arch: "x86_64".into(),
+        swap_used_mib: None,
+        memory_pressure_percent: None,
+        io_pressure_percent: None,
+        error: None,
+    };
+    let build = Build {
+        image: image.into(),
+        platform: "linux/amd64".into(),
+        ..Build::default()
+    };
+    let mut before = updated.clone();
+    before.images = vec!["alpine:3.22".into()];
+    let reason = sshpool::scheduler::score(&before, &health, &build, &[])
+        .expect_err("an unapproved image must be refused");
+    assert!(reason.contains("image not approved"), "{reason}");
+    assert!(
+        sshpool::scheduler::score(updated, &health, &build, &[]).is_ok(),
+        "the freshly approved image must be schedulable without a restart"
+    );
+    Ok(())
+}
+
+/// 重复准备同一张镜像不重复拉取，也不写盘：它已经是授权状态。
+#[tokio::test]
+async fn node_prepare_is_idempotent_for_an_already_approved_image() -> Result<()> {
+    let puller = Arc::new(Recorder::default());
+    let (root, state) = state_with(puller.clone())?;
+    let body = serde_json::json!({ "image": "alpine:3.22" });
+    let response = sshpool::api::routes(state.clone())
+        .oneshot(
+            Request::post("/v1/nodes/test-node/prepare")
+                .header("authorization", format!("Bearer {}", state.token))
+                .header("content-type", "application/json")
+                .body(Body::from(serde_json::to_vec(&body)?))?,
+        )
+        .await?;
+    assert_eq!(response.status(), StatusCode::OK);
+    let bytes = axum::body::to_bytes(response.into_body(), 65536).await?;
+    let applied: serde_json::Value = serde_json::from_slice(&bytes)?;
+    assert_eq!(
+        applied["pulled"],
+        serde_json::json!(false),
+        "an already approved image must not be pulled again"
+    );
+    assert!(puller.calls().is_empty(), "no remote side effect expected");
+    // 清单里仍然只有一份，没有重复项。
+    let node = state.node("test-node").await?;
+    assert_eq!(
+        node.images
+            .iter()
+            .filter(|item| *item == "alpine:3.22")
+            .count(),
+        1
+    );
+    assert_eq!(
+        sshpool::config::read(root.path())?.nodes[0].images,
+        node.images
+    );
+    Ok(())
+}
+
+/// 拉取失败必须不改配置：先授权后拉取会留下「已批准但机器上没有」的镜像。
+#[tokio::test]
+async fn a_failed_pull_leaves_the_configuration_unchanged() -> Result<()> {
+    let puller = Arc::new(Recorder {
+        failure: Some("docker pull failed: manifest unknown".into()),
+        ..Recorder::default()
+    });
+    let (root, state) = state_with(puller.clone())?;
+    let original = fs::read_to_string(root.path().join("config.toml"))?;
+    let body = serde_json::json!({ "image": "alpine:3.19" });
+    let response = sshpool::api::routes(state.clone())
+        .oneshot(
+            Request::post("/v1/nodes/test-node/prepare")
+                .header("authorization", format!("Bearer {}", state.token))
+                .header("content-type", "application/json")
+                .body(Body::from(serde_json::to_vec(&body)?))?,
+        )
+        .await?;
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    let bytes = axum::body::to_bytes(response.into_body(), 65536).await?;
+    let message = String::from_utf8_lossy(&bytes);
+    assert!(message.contains("manifest unknown"), "{message}");
+    assert_eq!(
+        fs::read_to_string(root.path().join("config.toml"))?,
+        original,
+        "a failed pull must not touch the configuration"
+    );
+    assert!(
+        !state
+            .node("test-node")
+            .await?
+            .images
+            .iter()
+            .any(|i| i == "alpine:3.19"),
+        "a failed pull must not grant the image in memory either"
+    );
+    Ok(())
+}
+
+/// 手改过的配置不能被 prepare 整份覆盖；也不该先用一次远端拉取去撞这个错误。
+#[tokio::test]
+async fn node_prepare_refuses_to_overwrite_an_external_config_edit() -> Result<()> {
+    let puller = Arc::new(Recorder::default());
+    let (root, state) = state_with(puller.clone())?;
+    let mut edited = sshpool::config::read(root.path())?;
+    edited.nodes[0].priority = 42;
+    fs::write(
+        root.path().join("config.toml"),
+        toml::to_string_pretty(&edited)?,
+    )?;
+    let body = serde_json::json!({ "image": "alpine:3.21" });
+    let response = sshpool::api::routes(state.clone())
+        .oneshot(
+            Request::post("/v1/nodes/test-node/prepare")
+                .header("authorization", format!("Bearer {}", state.token))
+                .header("content-type", "application/json")
+                .body(Body::from(serde_json::to_vec(&body)?))?,
+        )
+        .await?;
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    let bytes = axum::body::to_bytes(response.into_body(), 65536).await?;
+    let message = String::from_utf8_lossy(&bytes);
+    assert!(
+        message.contains("edited outside the controller"),
+        "{message}"
+    );
+    assert!(
+        puller.calls().is_empty(),
+        "a configuration conflict must be detected before the remote pull"
+    );
+    assert_eq!(sshpool::config::read(root.path())?.nodes[0].priority, 42);
+    Ok(())
+}
+
+/// 拉取镜像不能在调度锁内完成：一个大镜像会拉几分钟，持锁期间所有派发都会停住。
+///
+/// 判据是「拉取进行中，另一路还能拿到调度锁」——只在拉取结束后检查锁是否释放
+/// 是恒真的，看不出它是否整段持锁。
+#[tokio::test]
+async fn the_pull_does_not_hold_the_scheduling_lock() -> Result<()> {
+    struct BlockingPuller {
+        started: tokio::sync::mpsc::UnboundedSender<()>,
+        release: Arc<tokio::sync::Semaphore>,
+    }
+
+    impl sshpool::state::ImagePuller for BlockingPuller {
+        fn pull<'a>(
+            &'a self,
+            _node: &'a Node,
+            _image: &'a str,
+        ) -> futures_util::future::BoxFuture<'a, Result<()>> {
+            Box::pin(async move {
+                let _ = self.started.send(());
+                let _ = self.release.acquire().await;
+                Ok(())
+            })
+        }
+    }
+
+    let (started, mut started_rx) = tokio::sync::mpsc::unbounded_channel();
+    let release = Arc::new(tokio::sync::Semaphore::new(0));
+    let root = tempfile::tempdir()?;
+    fs::write(
+        root.path().join("token"),
+        "test-only-token-not-a-production-secret",
+    )?;
+    let config = Config {
+        min_free_disk_mib: 0,
+        max_upload_mib: 1,
+        max_artifact_mib: 1,
+        max_log_mib: 1,
+        max_active_jobs: 1,
+        nodes: vec![test_node("test-node")],
+        ..Config::default()
+    };
+    fs::write(
+        root.path().join("config.toml"),
+        toml::to_string_pretty(&config)?,
+    )?;
+    let state = State::load_with_puller(
+        root.path().into(),
+        config,
+        Arc::new(BlockingPuller {
+            started,
+            release: release.clone(),
+        }),
+    )?;
+
+    let app = sshpool::api::routes(state.clone());
+    let token = state.token.clone();
+    let pending = tokio::spawn(async move {
+        let body = serde_json::json!({ "image": "rust:1.93" });
+        app.oneshot(
+            Request::post("/v1/nodes/test-node/prepare")
+                .header("authorization", format!("Bearer {token}"))
+                .header("content-type", "application/json")
+                .body(Body::from(serde_json::to_vec(&body).expect("body builds")))
+                .expect("request builds"),
+        )
+        .await
+    });
+
+    tokio::time::timeout(Duration::from_secs(5), started_rx.recv())
+        .await
+        .context("the pull never started")?
+        .context("the puller dropped without starting")?;
+
+    // 拉取正在进行：调度锁必须仍然可拿。
+    let acquired = tokio::time::timeout(Duration::from_millis(500), state.scheduling.lock()).await;
+    assert!(
+        acquired.is_ok(),
+        "the remote pull must not hold the scheduling lock"
+    );
+    drop(acquired);
+
+    release.add_permits(1);
+    let response = pending.await??;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert!(
+        state
+            .node("test-node")
+            .await?
+            .images
+            .iter()
+            .any(|image| image == "rust:1.93")
+    );
+    Ok(())
+}
+
+/// 未知节点、非法镜像名、越权都要在动远端之前就拒绝。
+#[tokio::test]
+async fn node_prepare_rejects_bad_input_before_touching_the_worker() -> Result<()> {
+    let puller = Arc::new(Recorder::default());
+    let (root, state) = state_with(puller.clone())?;
+    let original = fs::read_to_string(root.path().join("config.toml"))?;
+    for (name, image) in [
+        ("not-present", "alpine:3.21"),
+        ("test-node", ""),
+        ("test-node", "-rm"),
+        ("test-node", "alpine 3.21"),
+    ] {
+        let body = serde_json::json!({ "image": image });
+        let response = sshpool::api::routes(state.clone())
+            .oneshot(
+                Request::post(format!("/v1/nodes/{name}/prepare"))
+                    .header("authorization", format!("Bearer {}", state.token))
+                    .header("content-type", "application/json")
+                    .body(Body::from(serde_json::to_vec(&body)?))?,
+            )
+            .await?;
+        assert!(
+            response.status().is_client_error(),
+            "{name} with {image:?} should be refused, got {}",
+            response.status()
+        );
+    }
+    assert_eq!(
+        fs::read_to_string(root.path().join("config.toml"))?,
+        original
+    );
+    assert!(
+        puller.calls().is_empty(),
+        "invalid input must be refused before any remote pull"
     );
     Ok(())
 }
