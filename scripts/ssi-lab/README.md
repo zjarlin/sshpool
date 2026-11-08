@@ -4,6 +4,8 @@
 
 这些工具只用于独立实验 VM，不是 SSHPool 的生产 SSI 后端。先阅读 [实验记录](../../docs/ssi-lab.md)，再阅读 [严格 SSI 验收](../../docs/ssi-feasibility.md)。两台节点位于同一台 ESXi 的测试不能证明物理故障容错或不同物理机的性能相加。
 
+`probe-transport-fence.py` / `check-transport-fence.py` 验证 PF25 在同一准入锁中等待本地工作归零并封闭新请求，覆盖真实反向取页、缓存、超时、故障和竞争。它没有实现全局 CLOSE/ACK；完整客体回归也不冒充新关闭协议集成。范围与原始证据见 [本地传输封闭](../../docs/ssi-transport-fence.md)。
+
 `probe-router-startup.py` / `check-router-startup.py` 用原生 ioctl 与线程退出记录检查协议混配。协议 5 候选自身在客体执行前拒绝旧端，但旧主节点仍可能已经执行，完整场景保持 partial；实测矩阵和强制清理失败见 [启动版本实验](../../docs/ssi-router-startup.md)。
 
 `check-physical-host.py` 核对已脱敏的物理 Worker 接入与真实构建证据。它要求 VM 的 KVM 线程确有物理执行时间、业务目录和块设备未暴露、构建清理闭环，同时拒绝把任务卸载提升为跨物理 SSI、Ceph 或数据库接管。对应物理盘没有归属确认时也不能建立 RAID/LVM/OSD。

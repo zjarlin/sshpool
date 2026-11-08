@@ -1,0 +1,230 @@
+--- a/arch/x86/include/asm/kvm_host.h
++++ b/arch/x86/include/asm/kvm_host.h
+@@ -1783,6 +1783,8 @@
+ 	spinlock_t dsm_admission_lock;
+ 	wait_queue_head_t dsm_ioctl_wait;
+ 	u64 dsm_ioctl_generation;
++	/* 在计数为零的同一个临界区封闭页面请求与出站事务准入。 */
++	u64 dsm_transport_generation;
+ 	unsigned int dsm_active_ioctls;
+ 	/* 与准入计数共用锁，快照不会把缓存响应误认为已消费。 */
+ 	u32 dsm_active_exchanges;
+--- a/arch/x86/kvm/dsm-util.h
++++ b/arch/x86/kvm/dsm-util.h
+@@ -45,7 +45,7 @@
+ int kvm_dsm_exchange_begin(struct kvm *kvm);
+ void kvm_dsm_exchange_done(struct kvm *kvm);
+ void kvm_dsm_cache_count(struct kvm *kvm, bool add);
+-void kvm_dsm_request_count(struct kvm *kvm, bool add);
++int kvm_dsm_request_count(struct kvm *kvm, bool add);
+ 
+ struct dsm_address {
+ 	const char *host;
+--- a/arch/x86/kvm/dsm.c
++++ b/arch/x86/kvm/dsm.c
+@@ -480,10 +480,16 @@
+ void kvm_dsm_fail(struct kvm *kvm, int error)
+ {
+ 	struct task_struct *root;
++	unsigned long flags;
++	int first;
+ 
+ 	if (WARN_ON_ONCE(error >= 0))
+ 		error = -EIO;
+-	if (cmpxchg(&kvm->arch.dsm_error, 0, error))
++	/* 首次错误与传输封闭使用相同临界区，已知故障不得被零计数覆盖。 */
++	spin_lock_irqsave(&kvm->arch.dsm_admission_lock, flags);
++	first = cmpxchg(&kvm->arch.dsm_error, 0, error);
++	spin_unlock_irqrestore(&kvm->arch.dsm_admission_lock, flags);
++	if (first)
+ 		return;
+ 	pr_err("kvm-dsm: node-%d failed with %d; VM cannot continue\n",
+ 	       kvm->arch.dsm_id, error);
+@@ -1077,7 +1083,8 @@
+ 	if (vm_ioctl && (ioctl == KVM_DSM_IOCTL_DRAIN ||
+ 			 ioctl == KVM_DSM_IOCTL_STATUS ||
+ 			 ioctl == KVM_DSM_TRANSPORT_STATUS ||
+-			 ioctl == KVM_DSM_PIN_STATUS))
++			 ioctl == KVM_DSM_PIN_STATUS ||
++			 ioctl == KVM_DSM_TRANSPORT_FENCE))
+ 		return 0;
+ 	spin_lock_irqsave(&kvm->arch.dsm_admission_lock, flags);
+ 	ret = READ_ONCE(kvm->arch.dsm_error);
+@@ -1188,6 +1195,8 @@
+ 	ret = READ_ONCE(kvm->arch.dsm_error);
+ 	if (!ret && READ_ONCE(kvm->arch.dsm_stopped))
+ 		ret = -EPIPE;
++	if (!ret && kvm->arch.dsm_transport_generation)
++		ret = -ESHUTDOWN;
+ 	if (!ret)
+ 		kvm->arch.dsm_active_exchanges++;
+ 	spin_unlock_irqrestore(&kvm->arch.dsm_admission_lock, flags);
+@@ -1204,6 +1213,7 @@
+ 	else if (!WARN_ON_ONCE(!*counter))
+ 		(*counter)--;
+ 	spin_unlock_irqrestore(&kvm->arch.dsm_admission_lock, flags);
++	wake_up_all(&kvm->arch.dsm_ioctl_wait);
+ }
+ 
+ void kvm_dsm_exchange_done(struct kvm *kvm)
+@@ -1216,31 +1226,118 @@
+ 	dsm_counter_update(kvm, &kvm->arch.dsm_cached_responses, add);
+ }
+ 
+-void kvm_dsm_request_count(struct kvm *kvm, bool add)
+-{
+-	dsm_counter_update(kvm, &kvm->arch.dsm_active_requests, add);
++/* 页面准入与封闭共用锁；不能先放行请求，再检查独立的零计数快照。 */
++int kvm_dsm_request_count(struct kvm *kvm, bool add)
++{
++	unsigned long flags;
++	int ret = 0;
++
++	spin_lock_irqsave(&kvm->arch.dsm_admission_lock, flags);
++	if (add) {
++		ret = READ_ONCE(kvm->arch.dsm_error);
++		if (!ret && READ_ONCE(kvm->arch.dsm_stopped))
++			ret = -EPIPE;
++		if (!ret && kvm->arch.dsm_transport_generation)
++			ret = -ESHUTDOWN;
++		if (!ret)
++			kvm->arch.dsm_active_requests++;
++	} else if (!WARN_ON_ONCE(!kvm->arch.dsm_active_requests)) {
++		kvm->arch.dsm_active_requests--;
++	}
++	spin_unlock_irqrestore(&kvm->arch.dsm_admission_lock, flags);
++	wake_up_all(&kvm->arch.dsm_ioctl_wait);
++	return ret;
+ }
+ 
+ static int kvm_dsm_transport_status(struct kvm *kvm, void __user *argp)
+ {
+-	struct kvm_dsm_transport_status status = { .version = 1 };
++	struct kvm_dsm_transport_status status = { .version = 2 };
+ 	unsigned long flags;
+ 
+ 	spin_lock_irqsave(&kvm->arch.dsm_admission_lock, flags);
+ 	status.exchanges = kvm->arch.dsm_active_exchanges;
+ 	status.cached_responses = kvm->arch.dsm_cached_responses;
+ 	status.inbound_requests = kvm->arch.dsm_active_requests;
++	status.state = !!kvm->arch.dsm_transport_generation;
++	status.generation = kvm->arch.dsm_transport_generation;
+ 	status.error = READ_ONCE(kvm->arch.dsm_error);
+ 	spin_unlock_irqrestore(&kvm->arch.dsm_admission_lock, flags);
+ 	return copy_to_user(argp, &status, sizeof(status)) ? -EFAULT : 0;
+ }
+ 
++/* 无锁条件只用来唤醒；成功判断和状态提交必须在下面的准入锁内重做。 */
++static bool dsm_transport_idle(struct kvm *kvm)
++{
++	return !READ_ONCE(kvm->arch.dsm_active_ioctls) &&
++	       !READ_ONCE(kvm->arch.dsm_active_pin_ops) &&
++	       !READ_ONCE(kvm->arch.dsm_read_pins) &&
++	       !READ_ONCE(kvm->arch.dsm_write_pins) &&
++	       !READ_ONCE(kvm->arch.dsm_active_exchanges) &&
++	       !READ_ONCE(kvm->arch.dsm_cached_responses) &&
++	       !READ_ONCE(kvm->arch.dsm_active_requests);
++}
++
++/* 返回 EAGAIN 表示仍有真实工作；该路径不改变任何准入状态。 */
++static int dsm_transport_try_fence(struct kvm *kvm, u64 generation)
++{
++	unsigned long flags;
++	int ret;
++
++	spin_lock_irqsave(&kvm->arch.dsm_admission_lock, flags);
++	ret = READ_ONCE(kvm->arch.dsm_error);
++	if (!ret && READ_ONCE(kvm->arch.dsm_stopped))
++		ret = -EPIPE;
++	if (!ret && !kvm->arch.dsm_ioctl_generation)
++		ret = -EPERM;
++	if (!ret && kvm->arch.dsm_ioctl_generation != generation)
++		ret = -ESTALE;
++	if (!ret && !dsm_transport_idle(kvm))
++		ret = -EAGAIN;
++	if (!ret)
++		kvm->arch.dsm_transport_generation = generation;
++	spin_unlock_irqrestore(&kvm->arch.dsm_admission_lock, flags);
++	return ret;
++}
++
++/* 超时或信号不封闭传输，已准入请求仍可完成反向调用和响应消费。 */
++static int kvm_dsm_transport_fence(struct kvm *kvm, void __user *argp)
++{
++	struct kvm_dsm_ioctl_drain params;
++	unsigned long deadline;
++	long remaining;
++	int ret;
++
++	if (copy_from_user(&params, argp, sizeof(params)))
++		return -EFAULT;
++	if (params.version != 1 || params.flags || !params.generation ||
++	    !params.timeout_ms || params.timeout_ms > 30000 || params.reserved)
++		return -EINVAL;
++	if (!READ_ONCE(kvm->arch.dsm_enabled))
++		return -EINVAL;
++	deadline = jiffies + msecs_to_jiffies(params.timeout_ms);
++	for (;;) {
++		ret = dsm_transport_try_fence(kvm, params.generation);
++		if (ret != -EAGAIN)
++			return ret;
++		remaining = (long)(deadline - jiffies);
++		if (remaining <= 0)
++			return -ETIMEDOUT;
++		remaining = wait_event_killable_timeout(kvm->arch.dsm_ioctl_wait,
++			dsm_transport_idle(kvm) || READ_ONCE(kvm->arch.dsm_error) ||
++			READ_ONCE(kvm->arch.dsm_stopped), remaining);
++		if (remaining < 0)
++			return remaining;
++	}
++}
++
+ long kvm_vm_ioctl_dsm(struct kvm *kvm, unsigned int ioctl, unsigned long arg)
+ {
+ 	void __user *argp = (void __user *)arg;
+ 	int r = -EFAULT;
+ 
+ 	switch (ioctl) {
++	case KVM_DSM_TRANSPORT_FENCE:
++		return kvm_dsm_transport_fence(kvm, argp);
+ 	case KVM_DSM_PIN_STATUS:
+ 		return kvm_dsm_pin_status(kvm, argp);
+ 	case KVM_DSM_TRANSPORT_STATUS:
+--- a/arch/x86/kvm/ivy.c
++++ b/arch/x86/kvm/ivy.c
+@@ -623,8 +623,11 @@
+ 		ret = dsm_drain_request(conn, req, tx_add);
+ 		goto out;
+ 	}
++	ret = kvm_dsm_request_count(kvm, true);
++	if (ret)
++		goto out;
+ 	atomic_inc(&conn->active_requests);
+-	kvm_dsm_request_count(kvm, true);
++	ret = sizeof(*req);
+ out:
+ 	/* 先锁存流内错误再允许下一读者进入，避免后续屏障越过已识别的故障。 */
+ 	if (ret < 0 && !(READ_ONCE(kvm->arch.dsm_stopped) &&
+--- a/include/uapi/linux/kvm.h
++++ b/include/uapi/linux/kvm.h
+@@ -1429,7 +1429,9 @@
+ 	__u32 cached_responses;
+ 	__u32 inbound_requests;
+ 	__s32 error;
+-	__u32 reserved[3];
++	/* 版本二：state 为一表示本地传输已封闭，不代表全局关闭完成。 */
++	__u32 state;
++	__u64 generation;
+ };
+ 
+ #define KVM_DSM_TRANSPORT_STATUS _IOR(KVMIO, 0xf8, struct kvm_dsm_transport_status)
+@@ -1445,6 +1447,9 @@
+ };
+ 
+ #define KVM_DSM_PIN_STATUS _IOR(KVMIO, 0xf9, struct kvm_dsm_pin_status)
++
++/* 研究 ABI：要求相同世代的 ioctl 封闭，等待本地计数归零后永久封闭传输。 */
++#define KVM_DSM_TRANSPORT_FENCE _IOW(KVMIO, 0xfa, struct kvm_dsm_ioctl_drain)
+ 
+ /**
+  * struct kvm_dsm_memcpy - Parameters for DSM memory copy between guest and userspace.
