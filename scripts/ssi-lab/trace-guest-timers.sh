@@ -16,7 +16,7 @@ start)
     [ -z "$(ls -A "$root/instances")" ]
     [ -z "$(cat "$root/kprobe_events")" ]
     mode=${2:-timers}
-    case "$mode" in timers|irq|ktime) ;; *) echo 'unknown capture mode' >&2; exit 2;; esac
+    case "$mode" in timers|irq|ktime|writer) ;; *) echo 'unknown capture mode' >&2; exit 2;; esac
     if [ "$mode" != timers ]; then
         if ! grep -q ' /sys/kernel/debug debugfs ' /proc/mounts; then
             mount -t debugfs debugfs /sys/kernel/debug
@@ -54,12 +54,20 @@ start)
             echo "p:ssi_guest_irq/${symbol}_enter $symbol" >> "$root/kprobe_events"
             echo "r128:ssi_guest_irq/${symbol}_exit $symbol" >> "$root/kprobe_events"
         done
-        if [ "$mode" = ktime ]; then
+        if { [ "$mode" = ktime ] || [ "$mode" = writer ]; }; then
             # 偏移只对应本次哈希固定的 6.8 客体，避开高频 PAUSE 循环。
             grep -qx 'ffffffff81213bc0 T ktime_get_update_offsets_now' "$output/kallsyms"
             echo 'p:ssi_guest_irq/ktime_seq_even ktime_get_update_offsets_now+0x38 seq=%r13:u32' >> "$root/kprobe_events"
             echo 'p:ssi_guest_irq/ktime_clock_done ktime_get_update_offsets_now+0x4e' >> "$root/kprobe_events"
             echo 'p:ssi_guest_irq/ktime_seq_check ktime_get_update_offsets_now+0xda before=%r13:u32 after=%dx:u32' >> "$root/kprobe_events"
+        fi
+        if [ "$mode" = writer ]; then
+            # 固定 ELF 的正常 tick 写入路径；序列值只在持有写锁时读取。
+            grep -qx 'ffffffff81212a30 t timekeeping_advance' "$output/kallsyms"
+            grep -qx 'ffffffff8401b4c0 b tk_core' "$output/kallsyms"
+            echo 'p:ssi_guest_irq/tk_write_begin timekeeping_advance+0x2e3 seq=@0xffffffff8401b4c0:u32' >> "$root/kprobe_events"
+            echo 'p:ssi_guest_irq/tk_update_done timekeeping_advance+0x2f2 seq=@0xffffffff8401b4c0:u32' >> "$root/kprobe_events"
+            echo 'p:ssi_guest_irq/tk_write_end timekeeping_advance+0x30f seq=@0xffffffff8401b4c0:u32' >> "$root/kprobe_events"
         fi
         for event in "$instance"/events/ssi_guest_irq/*; do
             [ -d "$event" ] || continue
@@ -103,8 +111,13 @@ stop)
             echo "-:ssi_guest_irq/${symbol}_enter" >> "$root/kprobe_events"
             echo "-:ssi_guest_irq/${symbol}_exit" >> "$root/kprobe_events"
         done
-        if [ "$mode" = ktime ]; then
+        if { [ "$mode" = ktime ] || [ "$mode" = writer ]; }; then
             for name in ktime_seq_even ktime_clock_done ktime_seq_check; do
+                echo "-:ssi_guest_irq/$name" >> "$root/kprobe_events"
+            done
+        fi
+        if [ "$mode" = writer ]; then
+            for name in tk_write_begin tk_update_done tk_write_end; do
                 echo "-:ssi_guest_irq/$name" >> "$root/kprobe_events"
             done
         fi
@@ -116,5 +129,5 @@ stop)
     echo complete > "$output/cleanup"
     echo GUEST_TIMER_TRACE_STOPPED
     ;;
-*) echo 'usage: trace-guest-timers.sh start [timers|irq|ktime] | stop' >&2; exit 2;;
+*) echo 'usage: trace-guest-timers.sh start [timers|irq|ktime|writer] | stop' >&2; exit 2;;
 esac

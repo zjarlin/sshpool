@@ -1,6 +1,19 @@
 Feature: SSI 客体计时信息保持跨节点一致
   TSC、KVM 纳秒时钟和客体共享的 pvclock 页面必须分别验证。
 
+  # evidence: docs/evidence/ssi-timekeeper-writer-20261108.json
+  @verified @p0
+  Scenario: 时间写入者观测核对奇偶序列并保留连续缺页的解释边界
+    Given 固定 PF29 和客体 ELF 的单节点对照与四次双节点运行
+    When 完整采集时间写入临界区并在一轮双节点实验覆盖所有六次计时的宿主缺页
+    Then 检查器拒绝写入阶段丢失重复身份错误和非法序列并允许 u32 回绕
+    And 与标记相交的完整调用校验阶段但只有窗口内调用进入耗时分布
+    And 宿主缺页按同一 vCPU 的连续指令地址和错误码分组且验证计数线程和时钟
+    And 普通 CI 重放六份完整客体归档与两份完整宿主缺页归档
+    And 最大九百五十二毫秒写入区间和原二百五十毫秒应用超限均被保留
+    And 重复缺页跨度不被称作单次缺页耗时或已确定的运行时根因
+    And 原生关闭和 stock 内核恢复通过不替代严格 SSI 验收
+
   # evidence: docs/evidence/ssi-guest-irq-20261108.json
   @verified @p0
   Scenario: 客体中断函数观测拒绝启停漏记并保留时间读取分段

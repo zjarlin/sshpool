@@ -204,9 +204,9 @@ class GuestIrqTests(unittest.TestCase):
             for key in ('remaining_processes', 'remaining_trace_instances', 'remaining_experiment_tcp'):
                 self.assertEqual(node[key], [])
 
-    def test_live_collector_matches_shipped_source(self):
+    def test_historical_collector_source_is_preserved(self):
         source = self.evidence['collector_sources']['d']
-        raw = (HERE / 'trace-guest-timers.sh').read_bytes()
+        raw = source['source'].encode()
         self.assertEqual(hashlib.sha256(raw).hexdigest(), source['sha256'])
         self.assertEqual(raw.decode(), source['source'])
         subprocess.run(['sh', '-n', str(HERE / 'trace-guest-timers.sh')], check=True, capture_output=True)

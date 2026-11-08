@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """核对客体函数探针计数，并将完整调用与实际定时器中断关联。"""
 import argparse
+from bisect import bisect_left, bisect_right
 from collections import Counter, defaultdict
 import importlib.util
 import json
@@ -20,6 +21,10 @@ STAGE_PROBES = (
     'p:ssi_guest_irq/ktime_clock_done ktime_get_update_offsets_now+78',
     'p:ssi_guest_irq/ktime_seq_check ktime_get_update_offsets_now+218 before=%r13:u32 after=%dx:u32',
 )
+WRITER_STAGES = ('tk_write_begin', 'tk_update_done', 'tk_write_end')
+WRITER_OFFSETS = ('2e3', '2f2', '30f')
+WRITER_PROBES = tuple(f'p:ssi_guest_irq/{name} timekeeping_advance+{int(offset, 16)} '
+                      'seq=@0xffffffff8401b4c0:u32' for name, offset in zip(WRITER_STAGES, WRITER_OFFSETS))
 
 
 def profile(text, events):
@@ -37,6 +42,7 @@ def profile(text, events):
 
 def capture_events(files):
     stage_mode = any('ktime_seq_even' in line for line in files['probes'].splitlines())
+    writer_mode = any('tk_write_begin' in line for line in files['probes'].splitlines())
     events = FUNCTION_EVENTS | (set(STAGES) if stage_mode else set())
     definitions = []
     for symbol in SYMBOLS:
@@ -46,6 +52,12 @@ def capture_events(files):
         definitions += list(STAGE_PROBES)
         demand('ffffffff81213bc0 T ktime_get_update_offsets_now' in files['kallsyms'].splitlines(),
                '分段偏移的符号地址不符')
+    if writer_mode:
+        demand(stage_mode, '写入者观测需要完整读者分段')
+        demand({'ffffffff81212a30 t timekeeping_advance', 'ffffffff8401b4c0 b tk_core'} <=
+               set(files['kallsyms'].splitlines()), '写入者或序列地址不符')
+        events |= set(WRITER_STAGES)
+        definitions += list(WRITER_PROBES)
     demand(files['probes'].splitlines() == definitions, '探针定义或偏移不符')
     for key, value in [('kprobes-before', '1'), ('kprobes-disabled', '0'), ('kprobes-restored', '1')]:
         demand(files.get(key, '').strip() == value, '探针停用同步或恢复证据缺失')
@@ -101,6 +113,45 @@ def attach_stages(calls, rows, marks):
     return [split_stages(call, staged[call['start']['index']]) for call in calls]
 
 
+def inspect_writers(rows, marks, readers):
+    """核对每段奇数序列的唯一更新与发布，只报告读写区间的实际重叠。"""
+    calls, boundaries = guest.pair_nested(rows, 'tk_write_begin', 'tk_write_end', lambda row: row['pid'])
+    demand(all(row['index'] < marks[0]['index'] for row in boundaries['prefix']), '窗口内写入者缺少起点')
+    demand(all(row['index'] > marks[1]['index'] for row in boundaries['suffix']), '窗口内写入者未完成')
+    measured = [call for call in calls if marks[0]['index'] < call['start']['index'] <
+                call['end']['index'] < marks[1]['index']]
+    demand(bool(measured), '窗口内没有完整写入者')
+    # 启停会依次切换探针；只验证与测量窗口相交的调用，跨标记调用不计入分布。
+    relevant = [call for call in calls if call['start']['index'] < marks[1]['index'] and
+                marks[0]['index'] < call['end']['index']]
+    stages = [row for row in rows if row['name'] == 'tk_update_done']
+    indices = [row['index'] for row in stages]
+    used = set()
+    for call in relevant:
+        start, end = call['start'], call['end']
+        inside = stages[bisect_right(indices, start['index']):bisect_left(indices, end['index'])]
+        demand(len(inside) == 1, '写入者更新阶段缺失或重复')
+        middle = inside[0]
+        demand((middle['pid'], middle['cpu']) == (start['pid'], start['cpu']), '写入者更新阶段身份不符')
+        begin_seq, middle_seq, end_seq = (sequence_value(row, 'seq') for row in (start, middle, end))
+        demand(begin_seq % 2 == 1 and middle_seq == begin_seq and end_seq == (begin_seq + 1) % 2 ** 32,
+               '写入者序列未按奇数到下一偶数发布')
+        used.add(middle['index'])
+        call.update(update_done=middle, update_ns=middle['ns'] - start['ns'], publish_ns=end['ns'] - middle['ns'])
+    demand(all(row['index'] in used for row in stages if marks[0]['index'] < row['index'] < marks[1]['index']),
+           '窗口内更新阶段缺少完整写入者')
+    ordered = sorted(relevant, key=lambda call: call['start']['index'])
+    demand(all(a['end']['index'] < b['start']['index'] for a, b in zip(ordered, ordered[1:])), '写入临界区重叠')
+    overlaps = []
+    for reader in sorted(readers, key=lambda call: -call['duration_ns'])[:20]:
+        writers = [call for call in relevant if call['start']['ns'] < reader['end']['ns'] and
+                   reader['start']['ns'] < call['end']['ns']]
+        overlaps.append({'reader': reader, 'writers': writers})
+    return {'distribution': latency.distribution([call['duration_ns'] for call in measured]),
+            'boundaries': boundaries, 'longest': sorted(measured, key=lambda call: -call['duration_ns'])[:20],
+            'reader_overlap': overlaps}
+
+
 def inspect(files, log):
     events = capture_events(files)
     rows, marks = guest.parse(files, events)
@@ -109,7 +160,10 @@ def inspect(files, log):
         name = row['name']
         if name not in events:
             continue
-        if name in STAGES:
+        if name in WRITER_STAGES:
+            offset = WRITER_OFFSETS[WRITER_STAGES.index(name)]
+            pattern = r'\(timekeeping_advance\+0x' + offset + r'/0x4a0\) seq=\d+'
+        elif name in STAGES:
             offset, fields = {
                 'ktime_seq_even': ('38', r' seq=\d+'),
                 'ktime_clock_done': ('4e', ''),
@@ -145,8 +199,12 @@ def inspect(files, log):
         irq = timer['irq']
         timer['irq_functions'] = [call for call in measured_calls if call['start']['cpu'] == timer['cpu'] and
                                   irq['start']['index'] < call['start']['index'] < call['end']['index'] < irq['end']['index']]
-    return {'timer_analysis': timer_analysis, 'functions': functions, 'profile_counts_match': True,
-            'stage_mode': set(STAGES) <= events, 'stall_cause_established': False, 'full_ssi_accepted': False}
+    result = {'timer_analysis': timer_analysis, 'functions': functions, 'profile_counts_match': True,
+              'stage_mode': set(STAGES) <= events, 'stall_cause_established': False, 'full_ssi_accepted': False}
+    if set(WRITER_STAGES) <= events:
+        readers = [call for call in measured_calls if call['function'] == SYMBOLS[0]]
+        result['writers'] = inspect_writers(rows, marks, readers)
+    return result
 
 
 if __name__ == '__main__':
