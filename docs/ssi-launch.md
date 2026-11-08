@@ -2,7 +2,7 @@
 
 2026-11-08。新增实验命令 `sshpool ssi-launch`：两个远端 helper 先从实际输入字节计算摘要并封存 QEMU、guest kernel、initramfs；控制器确认两份准备报告一致后，才向双方发送执行许可。它针对旧主节点在新节点拒绝版本前已经执行客体的问题，背景见 [路由版本实验](ssi-router-startup.md)。
 
-当前实现尚未完成真实 PF24 双端混版本和工作区回归，`180-ssi-device-order.feature` 对应场景保持 **partial**。已有 Rust 检查、Linux memfd/父进程死亡信号实测以及原版内核拒绝记录，不能替代双端 QEMU 验收。[开发阶段记录](evidence/ssi-launch-development-20261108.json) 保留实际结果和中断原因。
+当前实现尚未完成真实 PF24 双端混版本和工作区回归，`180-ssi-device-order.feature` 对应场景保持 **partial**。已有 Rust 检查、Linux memfd/父进程死亡信号实测以及原版内核拒绝记录，不能替代双端 QEMU 验收。[初版 e7d29b7 的开发阶段记录](evidence/ssi-launch-development-20261108.json) 保留实际结果和中断原因。
 
 ## 使用
 
@@ -60,7 +60,7 @@ sshpool ssi-launch --plan lab-plan.json --ssh-config lab-ssh-config --output new
 
 退出零要求双方已准入、许可已发送、真实封存启动事件与结束事件匹配、两条 SSH 会话正常退出，并且没有错误或强制清理。报告固定保留 `full_ssi_accepted=false`。客体 SSH、时钟、跨节点共享内存、SFTP、DSM 关闭和持久化要分别验收。
 
-## 本轮检查与中断
+## 初版检查与中断
 
 - Rust 全套：300 项通过，30 项需要专用外部环境的测试未运行；新增 5 项覆盖计划、报告一致性和缺失/伪造生命周期拒绝。格式化和 Clippy 通过。
 - SSI Python：Mac 上 372 项发现，367 项通过、5 项 Linux 专用测试跳过。5 项 Linux 测试在添加 core 限制和最终退出状态轮询前，已在独占实验 VM 的原版内核上真实通过，包括不可写 memfd、原子替换源路径、错误摘要/符号链接、许可重放、helper 被杀后子进程停止并释放继承锁，以及父进程变化竞态。
@@ -68,5 +68,13 @@ sshpool ssi-launch --plan lab-plan.json --ssh-config lab-ssh-config --output new
 - 切换节点 0 到一次性 PF24 启动项后，节点 1 在本轮未发出重启命令的情况下被 ESXi root 于 11:49:56（Asia/Shanghai）发起 Guest OS Shutdown，11:50:00 关机。本轮双端实验因此未开始。节点 0 随后恢复原版内核，核对原引导文件、防火墙、空 GRUB 待执行项和无残留进程；它又在 11:56:17 被 root 发起 Guest OS Shutdown。两台均保持外部关机状态，等待确认资源仍可用。
 
 后续仍需真实 CLI 的 3/5、5/3、4/5、5/4 混配原生跟踪，证明双方准备完成但都没有 QEMU exec 或 `KVM_RUN`；同版本 proof guest、原 250 ms 时钟门槛、共享内存和 1 MiB SFTP；以及真实 QEMU 的路径替换、半许可、控制器断连、租约与锁冲突。已有 `/bin/true`、`/bin/sleep` Linux 测试不能替代这些实验。
+
+## 输入与控制流边界修正
+
+镜像路径误指向 FIFO 时，初版的阻塞式 `open` 会在文件类型检查之前等待写入者，可能一直占住运行锁。现在以非阻塞方式打开，再用同一 fd 检查常规文件；常规文件的复制与封存流程保持一致。Linux 回归测试创建没有写入者的真实 FIFO，要求 helper 在三秒内明确拒绝。
+
+控制 JSONL 每行最多 64 KiB，每个节点累计最多 256 KiB，控制器事件队列最多 16 条，连续小报文也不能无限积压。接收端先保留有界原始字节再校验；截断、超长、字段缺失和过期身份均会留下可复核的失败输入。新增三项 Rust 测试覆盖拒绝记录、报文顺序和累计上限。
+
+新增 Linux 管道测试覆盖半帧等待期限、半帧 EOF、超长输入和同次读取中的多条报文。这些测试验证文件和控制流边界；两台专用 VM 的混版本、半许可及断连 QEMU 实验仍未完成，场景保持 partial。
 
 代码阅读顺序：[启动计划和校验](../src/ssi_launch/model.rs) → [控制流程](../src/ssi_launch.rs) → [远端执行与监督](../src/ssi_launch_worker.py)。

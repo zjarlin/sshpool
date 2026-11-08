@@ -20,6 +20,77 @@ if sys.platform == 'linux':
 
 @unittest.skipUnless(sys.platform == 'linux', 'requires real Linux memfd seals')
 class LaunchWorkerTest(unittest.TestCase):
+    def test_fifo_is_rejected_without_waiting_for_a_writer(self):
+        script = '''
+import sys
+sys.path.insert(0, sys.argv[1])
+import ssi_launch_worker as worker
+try:
+    worker.freeze({'path': sys.argv[2], 'sha256': '0' * 64}, 'qemu')
+except ValueError as error:
+    assert str(error) == 'input must be a bounded regular file'
+else:
+    raise AssertionError('FIFO was admitted')
+'''
+        with tempfile.TemporaryDirectory() as directory:
+            fifo = Path(directory) / 'runtime'
+            os.mkfifo(fifo)
+            subprocess.run([sys.executable, '-c', script, str(source.parent), str(fifo)],
+                           check=True, timeout=3)
+
+    def test_control_half_frame_cannot_extend_the_read_deadline(self):
+        script = '''
+import sys
+sys.path.insert(0, sys.argv[1])
+import ssi_launch_worker as worker
+try:
+    worker.Channel().read(0.1)
+except TimeoutError:
+    print('expired', flush=True)
+else:
+    raise AssertionError('partial frame accepted')
+'''
+        process = subprocess.Popen([sys.executable, '-c', script, str(source.parent)],
+                                   stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+        try:
+            process.stdin.write(b'{"op":')
+            process.stdin.flush()
+            self.assertEqual(process.wait(timeout=3), 0)
+            self.assertEqual(process.stdout.read(), b'expired\n')
+        finally:
+            if process.poll() is None:
+                process.kill()
+            process.wait(timeout=3)
+            process.stdin.close()
+            process.stdout.close()
+
+    def test_control_eof_size_limit_and_buffered_frames(self):
+        script = '''
+import sys
+sys.path.insert(0, sys.argv[1])
+import ssi_launch_worker as worker
+channel = worker.Channel()
+mode = sys.argv[2]
+if mode == 'buffered':
+    assert channel.read(1) == {'first': 1}
+    assert channel.read(1) == {'second': 2}
+else:
+    try:
+        channel.read(1)
+    except (EOFError, ValueError) as error:
+        assert str(error) == mode
+    else:
+        raise AssertionError('invalid control frame accepted')
+'''
+        for mode, data in [
+            ('controller disconnected', b'{"op":'),
+            ('control message too large', b' ' * 65536 + b'\n'),
+            ('buffered', b'{"first":1}\n{"second":2}\n'),
+        ]:
+            with self.subTest(mode=mode):
+                subprocess.run([sys.executable, '-c', script, str(source.parent), mode],
+                               input=data, check=True, timeout=3)
+
     def test_parent_killed_releases_child_and_inherited_lock(self):
         script = '''
 import fcntl, os, subprocess, sys

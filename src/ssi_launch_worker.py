@@ -38,7 +38,8 @@ def freeze(source, label):
     """摘要来自实际复制的字节；封存后只能从同一个 fd 执行或读取。"""
     path = source['path']
     require(Path(path).is_absolute(), 'input path must be absolute')
-    with os.fdopen(os.open(path, os.O_RDONLY | os.O_NOFOLLOW), 'rb') as stream:
+    # FIFO 必须先以非阻塞方式打开，才能在 fstat 处拒绝，避免永久占用运行锁。
+    with os.fdopen(os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK), 'rb') as stream:
         before = os.fstat(stream.fileno())
         require(stat.S_ISREG(before.st_mode) and 0 < before.st_size <= LIMIT, 'input must be a bounded regular file')
         descriptor = os.memfd_create('sshpool-ssi-' + label, os.MFD_CLOEXEC | os.MFD_ALLOW_SEALING)

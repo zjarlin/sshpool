@@ -42,7 +42,7 @@ pub async fn launch(
         full_ssi_accepted: false,
     };
     std::fs::write(output.join("plan.json"), serde_json::to_vec_pretty(&plan)?)?;
-    let (sender, mut receiver) = mpsc::unbounded_channel();
+    let (sender, mut receiver) = mpsc::channel(16);
     let mut agents: [Option<Agent>; 2] = [None, None];
     let mut closed = [false; 2];
     for index in 0..2 {
