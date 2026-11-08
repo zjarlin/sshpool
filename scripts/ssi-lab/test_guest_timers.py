@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 import re
 import subprocess
+import sys
 import tarfile
 import tempfile
 import unittest
@@ -177,6 +178,14 @@ class GuestTimerTests(unittest.TestCase):
         self.assertFalse(result['timer_gate_passed'])
         self.assertEqual(result['timer_gate_ns'], 250_000_000)
         self.assertFalse(result['full_ssi_accepted'])
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'clock.log'
+            path.write_text(log)
+            archive = ROOT / 'docs/evidence' / self.pair['archive']['file']
+            command = [sys.executable, str(HERE / 'check-guest-timers.py'), str(archive), str(path)]
+            process = subprocess.run(command, capture_output=True, text=True, check=False)
+            self.assertEqual(process.returncode, 1, process.stderr)
+            self.assertEqual(json.loads(process.stdout), result)
 
     def test_restore_keeps_both_stock_boots_and_cleans_experiment_state(self):
         self.assertEqual(len(self.evidence['restoration']['nodes']), 2)

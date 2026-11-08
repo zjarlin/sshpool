@@ -61,7 +61,7 @@ python3 scripts/ssi-lab/check-guest-timers.py guest-timers.tar.gz clock.log
 python3 -m unittest discover -s scripts/ssi-lab -p 'test_guest_timers.py'
 ```
 
-检查器核对头部、四 CPU 计数、零丢失、事件过滤与窗口；按初始化代次识别指针复用，要求每个应用区间拥有唯一的启动、到期、返回、睡眠、唤醒及重新运行记录。取消、错误时钟、CPU/PID 混用、内部孤立返回和不完整目标区间都失败。中断和回调按 CPU 栈配对，边界未完成部分单列，不补造耗时。250 ms 门槛单独返回，`CLOCK_PASS` 和解析成功均不能覆盖它。
+检查器核对头部、四 CPU 计数、零丢失、事件过滤与窗口；按初始化代次识别指针复用，要求每个应用区间拥有唯一的启动、到期、返回、睡眠、唤醒及重新运行记录。取消、错误时钟、CPU/PID 混用、内部孤立返回和不完整目标区间都失败。中断和回调按 CPU 栈配对，边界未完成部分单列，不补造耗时。250 ms 门槛单独报告，超限时 CLI 在输出完整 JSON 后退出一；`CLOCK_PASS` 和解析成功均不能覆盖它。
 
 [证据清单](evidence/ssi-guest-timers-20261108.json) 包含四次客体和工作负载日志、三次双端关闭记录、防火墙快照、应用构建哈希、失败仪器计数与恢复检查。[双节点完整 trace](evidence/ssi-guest-timers-20261108-pair.tar.gz) 和 [单节点完整 trace](evidence/ssi-guest-timers-20261108-control.tar.gz) 一并提交，普通 CI 核对哈希并重放全部 48 个应用定时器，不只重放选中的慢片段。
 

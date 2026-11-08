@@ -266,4 +266,6 @@ if __name__ == '__main__':
     parser.add_argument('archive', type=Path)
     parser.add_argument('clock_log', type=Path)
     args = parser.parse_args()
-    print(json.dumps(inspect(read_archive(args.archive), args.clock_log.read_text()), indent=2))
+    result = inspect(read_archive(args.archive), args.clock_log.read_text())
+    print(json.dumps(result, indent=2))
+    raise SystemExit(0 if result['timer_gate_passed'] else 1)
