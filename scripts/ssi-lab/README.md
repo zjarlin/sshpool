@@ -4,6 +4,8 @@
 
 这些工具只用于独立实验 VM，不是 SSHPool 的生产 SSI 后端。先阅读 [实验记录](../../docs/ssi-lab.md)，再阅读 [严格 SSI 验收](../../docs/ssi-feasibility.md)。两台节点位于同一台 ESXi 的测试不能证明物理故障容错或不同物理机的性能相加。
 
+`probe-router-startup.py` / `check-router-startup.py` 用原生 ioctl 与线程退出记录检查协议混配。协议 5 候选自身在客体执行前拒绝旧端，但旧主节点仍可能已经执行，完整场景保持 partial；实测矩阵和强制清理失败见 [启动版本实验](../../docs/ssi-router-startup.md)。
+
 `check-physical-host.py` 核对已脱敏的物理 Worker 接入与真实构建证据。它要求 VM 的 KVM 线程确有物理执行时间、业务目录和块设备未暴露、构建清理闭环，同时拒绝把任务卸载提升为跨物理 SSI、Ceph 或数据库接管。对应物理盘没有归属确认时也不能建立 RAID/LVM/OSD。
 
 入口顺序：`build-host-kernel.sh` 构建宿主内核，`guest-proof.c` 构建无磁盘测试客体的 PID 1，`run-node.sh` 在两个节点各运行一个 QEMU，最终共同承载一个 Linux 客体。脚本不访问 SSH 密钥、不创建 ESXi VM、不接触公司数据，也不自动安装或重启宿主。

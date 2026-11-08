@@ -12,11 +12,13 @@ Feature: SSI 远端设备操作具有可验证的完成边界
     And 完成确认候选通过相同客体的全部二百五十六次检查
     And 检查器从每次失败明细重算结果并拒绝缺失轮次
 
+  # evidence: docs/evidence/ssi-router-startup-20261108.json
   @partial @p0
   Scenario: 不兼容的设备完成协议在客体启动前失败
     Given 两端的路由协议版本不一致
-    When 启动时钟握手校验版本
-    Then 返回协议错误且不把旧数据当作 MMIO 完成确认
+    When 启动握手校验版本
+    Then 双方在首次 KVM_RUN 前返回协议错误
+    And 不把旧数据当作 MMIO 完成确认
     And 保留失败日志及实验实例清理证据
 
   @research @p0

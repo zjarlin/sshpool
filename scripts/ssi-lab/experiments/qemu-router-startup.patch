@@ -1,0 +1,212 @@
+--- a/interrupt-router.c
++++ b/interrupt-router.c
+@@ -24,7 +24,10 @@
+ #include "system/cpus.h"
+ 
+ /* 启动版本包含 MMIO 完成确认与关机排空协议，拒绝旧版混用。 */
+-#define ROUTER_PROTOCOL_VERSION 4
++#define ROUTER_PROTOCOL_VERSION 5
++#define ROUTER_HELLO 0x53534948
++#define ROUTER_HELLO_ACK 0x53534941
++#define ROUTER_STARTUP_TIMEOUT_MS 15000
+ #define ROUTER_DRAIN_ACK 0x44524149
+ #define ROUTER_DRAIN_TIMEOUT_MS 15000
+ #define MMIO_WRITE_COMPLETE 0x4d4d494f
+@@ -68,6 +71,101 @@
+ {
+     MachineState *ms = MACHINE(qdev_get_machine());
+     return ms->local_cpu_start_index / ms->local_cpus;
++}
++
++/* 连接版本必须在任何设备报文与客体执行之前确定，不能借可变长时钟帧协商。 */
++static QemuMutex startup_mutex;
++static QemuCond startup_cond;
++static bool startup_complete;
++static uint64_t startup_received;
++
++static void router_startup_fail(const char *reason)
++{
++    error_report("SSI router startup protocol error: %s", reason);
++    /* 初始化线程可能持有 BQL，失败停止不能等待正常退出通知再次取锁。 */
++    _exit(EXIT_FAILURE);
++}
++
++static void *router_startup_watchdog(void *opaque)
++{
++    int64_t deadline = qemu_clock_get_ms(QEMU_CLOCK_REALTIME) + ROUTER_STARTUP_TIMEOUT_MS;
++
++    qemu_mutex_lock(&startup_mutex);
++    while (!startup_complete) {
++        int64_t left = deadline - qemu_clock_get_ms(QEMU_CLOCK_REALTIME);
++        if (left <= 0) {
++            router_startup_fail("deadline expired before compatible peers were ready");
++        }
++        qemu_cond_timedwait(&startup_cond, &startup_mutex, left);
++    }
++    qemu_mutex_unlock(&startup_mutex);
++    return NULL;
++}
++
++static void router_write_hello(QEMUFile *file, uint32_t magic, unsigned int target)
++{
++    MachineState *ms = MACHINE(qdev_get_machine());
++
++    qemu_put_be32(file, magic);
++    qemu_put_be32(file, ROUTER_PROTOCOL_VERSION);
++    qemu_put_be32(file, router_index());
++    qemu_put_be32(file, target);
++    qemu_put_be32(file, ms->qemu_nums);
++    qemu_put_be32(file, ms->smp.cpus);
++    qemu_put_be32(file, ms->local_cpus);
++    qemu_fflush(file);
++    if (qemu_file_get_error(file)) {
++        router_startup_fail("hello send failed");
++    }
++}
++
++static unsigned int router_read_hello(QEMUFile *file, uint32_t expected_magic)
++{
++    MachineState *ms = MACHINE(qdev_get_machine());
++    uint32_t magic = qemu_get_be32(file);
++
++    /* 先校验固定前缀，不读取旧版可能永远不会发送的剩余字段。 */
++    if (qemu_file_get_error(file) || magic != expected_magic) {
++        router_startup_fail("missing or invalid hello magic");
++    }
++    uint32_t version = qemu_get_be32(file);
++    if (qemu_file_get_error(file) || version != ROUTER_PROTOCOL_VERSION) {
++        router_startup_fail("incompatible protocol version");
++    }
++    uint32_t sender = qemu_get_be32(file);
++    uint32_t target = qemu_get_be32(file);
++    uint32_t nodes = qemu_get_be32(file);
++    uint32_t cpus = qemu_get_be32(file);
++    uint32_t local_cpus = qemu_get_be32(file);
++    if (qemu_file_get_error(file) || sender >= ms->qemu_nums ||
++        sender == router_index() || target != router_index() ||
++        nodes != ms->qemu_nums || cpus != ms->smp.cpus ||
++        local_cpus != ms->local_cpus) {
++        router_startup_fail("incomplete hello or mismatched node topology");
++    }
++    return sender;
++}
++
++static void router_accept_hello(QEMUFile *request, QEMUFile *response)
++{
++    unsigned int peer = router_read_hello(request, ROUTER_HELLO);
++
++    qemu_mutex_lock(&startup_mutex);
++    if (startup_received & (UINT64_C(1) << peer)) {
++        router_startup_fail("duplicate peer connection");
++    }
++    startup_received |= UINT64_C(1) << peer;
++    qemu_mutex_unlock(&startup_mutex);
++    router_write_hello(response, ROUTER_HELLO_ACK, peer);
++    fprintf(stderr, "SSI_ROUTER_HELLO_RECEIVED node=%u peer=%u version=%u\n",
++            router_index(), peer, ROUTER_PROTOCOL_VERSION);
++    qemu_mutex_lock(&startup_mutex);
++    qemu_cond_broadcast(&startup_cond);
++    /* 单个连接通过不等于本节点全部出入站连接都已通过。 */
++    while (!startup_complete) {
++        qemu_cond_wait(&startup_cond, &startup_mutex);
++    }
++    qemu_mutex_unlock(&startup_mutex);
+ }
+ 
+ static void router_forward_lock(void)
+@@ -226,6 +324,7 @@
+     QEMUFile *req_file = argp->req_file;
+     QEMUFile *rsp_file = argp->rsp_file;
+ 
++    router_accept_hello(req_file, rsp_file);
+     while(1) {
+         type = qemu_get_be16(req_file);
+         if (!type) {
+@@ -784,6 +883,7 @@
+                                             &err) == 0) {
+             break;
+         }
++        error_free(err);
+         err = NULL;
+         usleep(100000);
+     }
+@@ -791,6 +891,14 @@
+     qio_channel_set_delay(channel, false);
+     req_files[index] = qemu_file_new_output(channel);
+     rsp_files[index] = qemu_file_get_return_path(req_files[index]);
++    router_write_hello(req_files[index], ROUTER_HELLO, index);
++    unsigned int peer = router_read_hello(rsp_files[index], ROUTER_HELLO_ACK);
++    if (peer != index) {
++        router_startup_fail("reply came from the wrong peer");
++    }
++    fprintf(stderr, "SSI_ROUTER_HELLO_ACK node=%u peer=%u version=%u\n",
++            router_index(), peer, ROUTER_PROTOCOL_VERSION);
++    qapi_free_SocketAddress(connect_addr);
+     printf("connecting io router done\n");
+ }
+ #endif /* ROUTER_CONNECTION_RDMA */
+@@ -851,13 +959,14 @@
+         exit(1);
+     }
+ 
+-    qio_channel_add_watch(QIO_CHANNEL(lioc),
+-                          G_IO_IN,
+-                          io_router_accept_connection,
+-                          lioc,
+-                          (GDestroyNotify)object_unref);
+-
+     qapi_free_SocketAddress(listen_addr);
++    /* 启动阶段主循环尚未接收事件，独立监听线程必须能处理双向握手。 */
++    for (unsigned int peer = 0; peer < ms->qemu_nums - 1; peer++) {
++        qio_channel_wait(QIO_CHANNEL(lioc), G_IO_IN);
++        io_router_accept_connection(QIO_CHANNEL(lioc), G_IO_IN, NULL);
++    }
++    /* 本轮所需连接已接收，关闭监听器，禁止关闭设备时再创建接收线程。 */
++    object_unref(OBJECT(lioc));
+ #endif
+     return NULL;
+ }
+@@ -998,6 +1107,7 @@
+ void start_io_router(void)
+ {
+     IORouter router;
++    QemuThread watchdog;
+     router.thread_id = -1;
+     int size;
+ 
+@@ -1006,6 +1116,8 @@
+     qemu_mutex_init(&ipi_mutex);
+     qemu_mutex_init(&drain_mutex);
+     qemu_cond_init(&drain_cond);
++    qemu_mutex_init(&startup_mutex);
++    qemu_cond_init(&startup_cond);
+     if (ms->local_cpus == ms->smp.cpus) {
+         return;
+     }
+@@ -1026,10 +1138,25 @@
+     listen_rsp_files = (QEMUFile **)g_malloc0(size);
+ 
+ 
++    qemu_thread_create(&watchdog, "ssi-start-deadline", router_startup_watchdog,
++                       NULL, QEMU_THREAD_JOINABLE);
+     qemu_thread_create(&(router.thread), "io-router-listener", qemu_io_router_thread_run,
+-                   &router, QEMU_THREAD_JOINABLE);
++                       &router, QEMU_THREAD_JOINABLE);
+ 
+     connect_io_router();
++    uint64_t expected = (UINT64_MAX >> (64 - ms->qemu_nums)) &
++                        ~(UINT64_C(1) << router_index());
++    qemu_mutex_lock(&startup_mutex);
++    while (startup_received != expected) {
++        qemu_cond_wait(&startup_cond, &startup_mutex);
++    }
++    startup_complete = true;
++    qemu_cond_broadcast(&startup_cond);
++    qemu_mutex_unlock(&startup_mutex);
++    qemu_thread_join(&watchdog);
++    qemu_thread_join(&router.thread);
++    fprintf(stderr, "SSI_ROUTER_READY node=%u peers=%u version=%u\n",
++            router_index(), ms->qemu_nums - 1, ROUTER_PROTOCOL_VERSION);
+ }
+ 
+ /*
