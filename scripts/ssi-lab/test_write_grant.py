@@ -132,10 +132,10 @@ class WriteGrantTests(unittest.TestCase):
         with tarfile.open(fileobj=io.BytesIO(raw), mode='r:gz') as archive:
             files = {member.name: archive.extractfile(member).read() for member in archive.getmembers()}
         self.assertEqual({name: digest(data) for name, data in files.items()}, source['sha256'])
-        for original, public in [('probe-grant.c', 'probe-write-grant.c'),
-                                 ('kernel-write-grace-candidate.patch', 'experiments/kernel-dsm-write-grace.patch'),
+        for original, public in [('kernel-write-grace-candidate.patch', 'experiments/kernel-dsm-write-grace.patch'),
                                  ('qemu-pf30-profile.patch', 'experiments/qemu-pf30-lab-profile.patch')]:
             self.assertEqual(files[original], (HERE / public).read_bytes())
+        # 历史二进制继续对应归档源码，新增原子模式由独立运行记录核对。
         self.assertEqual(digest(files['probe-grant.c']), self.evidence['probe_build']['source_sha256'])
         paths = ['arch/x86/include/asm/kvm_host.h', 'arch/x86/kvm/ivy.c']
         with tempfile.TemporaryDirectory() as tmp:

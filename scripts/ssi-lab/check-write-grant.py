@@ -53,7 +53,7 @@ def parse_trace(capture, pid):
     return rows
 
 
-def invocations(rows, node):
+def invocations(rows, node, hlt_rip=0x1004):
     """仅在同一对 begin/end 之间累计缺页，不把相邻调用拼成一次停顿。"""
     calls, active = [], None
     for row in rows:
@@ -75,7 +75,7 @@ def invocations(rows, node):
         demand(match is not None, '缺页字段不符')
         vcpu = int(match[1])
         rip, address, error = (int(match[i], 16) for i in (2, 3, 4))
-        demand(vcpu == node and rip in (0x1000, 0x1004) and address in (0x1000, 0x2000), '缺页超出固定客体')
+        demand(vcpu == node and rip in (0x1000, hlt_rip) and address in (0x1000, 0x2000), '缺页超出固定客体')
         if address == 0x2000:
             demand(rip == 0x1000 and error & 2, '不是唯一写指令')
             active['faults'].append(row)

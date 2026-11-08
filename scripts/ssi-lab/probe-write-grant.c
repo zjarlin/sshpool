@@ -26,7 +26,7 @@ struct dsm_close { uint32_t version, flags; uint64_t generation; uint32_t timeou
 #define DSM_CLOSE _IOW(KVMIO, 0xfb, struct dsm_close)
 _Static_assert(sizeof(struct dsm_copy) == 32, "copy ABI");
 _Static_assert(sizeof(struct dsm_close) == 24, "close ABI");
-static int vm, marker = -1;
+static int vm, marker = -1, atomic_mode;
 static uint8_t *memory;
 static atomic_bool reading;
 static pthread_t reader;
@@ -95,8 +95,10 @@ int main(int argc, char **argv)
     struct utsname host;
     struct in_addr ip;
     setvbuf(stdout, NULL, _IONBF, 0);
-    if (argc != 5 || (strcmp(argv[1], "0") && strcmp(argv[1], "1")) || uname(&host) ||
+    if ((argc != 5 && argc != 6) || (strcmp(argv[1], "0") && strcmp(argv[1], "1")) || uname(&host) ||
         strcmp(host.machine, "x86_64") || strcmp(host.release, argv[4])) { return 2; }
+    atomic_mode = argc == 6 && !strcmp(argv[5], "--atomic");
+    if (argc == 6 && !atomic_mode) { return 2; }
     int node = atoi(argv[1]), count = strcmp(argv[3], "-") ? 2 : 1;
     if (node >= count) { return 2; }
     char *peers[] = {argv[2], argv[3]};
@@ -113,7 +115,15 @@ int main(int argc, char **argv)
     if (memory == MAP_FAILED) { fail("mmap"); }
     /* 16 位实模式地址、32 位操作数：mov [0x2000],eax；随后只有 HLT。 */
     const uint8_t code[] = {0x66, 0xa3, 0x00, 0x20, 0xf4};
-    memcpy(memory, code, sizeof(code));
+    /* 原子模式使用同一页上的 LOCK XADD，EAX 返回修改前的唯一计数。 */
+    const uint8_t atomic_code[] = {0xf0, 0x66, 0x0f, 0xc1, 0x06, 0x00, 0x20, 0xf4};
+    if (atomic_mode) {
+        memcpy(memory, atomic_code, sizeof(atomic_code));
+        uint32_t guard = UINT32_C(0x51a7c0de);
+        memcpy(memory + 4100, &guard, sizeof(guard));
+    } else {
+        memcpy(memory, code, sizeof(code));
+    }
     struct kvm_userspace_memory_region region = {.slot = 0, .guest_phys_addr = 0x1000,
         .memory_size = 8192, .userspace_addr = (uintptr_t)memory};
     checked(vm, KVM_SET_USER_MEMORY_REGION, &region);
@@ -128,12 +138,26 @@ int main(int argc, char **argv)
     checked(cpu, KVM_SET_SREGS, &sregs);
     printf("{\"op\":\"ready\",\"node\":%d,\"nodes\":%d,\"pid\":%d,\"rip\":4096,\"address\":8192}\n", node, count, getpid());
     char command[160], extra;
-    unsigned amount, base;
+    unsigned amount, base, armed_amount = 0, armed_base = 0;
     uint64_t generation;
     int sealed = 0;
     while (fgets(command, sizeof(command), stdin)) {
         if (!strcmp(command, "quit\n")) { break; }
         if (sealed) { errno = EINVAL; fail("sealed"); }
+        if (atomic_mode && sscanf(command, "arm %u %u %c", &amount, &base, &extra) == 2 &&
+            amount > 0 && amount <= 4096 && base <= UINT32_MAX - amount && !armed_amount) {
+            armed_amount = amount;
+            armed_base = base;
+            printf("{\"op\":\"armed\",\"amount\":%u,\"base\":%u}\n", amount, base);
+            continue;
+        }
+        if (atomic_mode && !strcmp(command, "go\n")) {
+            if (!armed_amount) { errno = EINVAL; fail("not_armed"); }
+            snprintf(command, sizeof(command), "write %u %u\n", armed_amount, armed_base);
+            armed_amount = 0;
+        } else if (atomic_mode && !strncmp(command, "write ", 6)) {
+            errno = EINVAL; fail("atomic_requires_arm");
+        }
         if (!strcmp(command, "trace\n")) {
             char path[160];
             snprintf(path, sizeof(path), "/sys/kernel/tracing/instances/sshpool_grant_%d/trace_marker", getpid());
@@ -145,7 +169,7 @@ int main(int argc, char **argv)
             if (marker < 0 || close(marker)) { fail("trace_close"); }
             marker = -1;
             puts("{\"op\":\"trace_closed\"}");
-        } else if (!strcmp(command, "reader_start\n")) {
+        } else if (!strcmp(command, "reader_start\n") && !atomic_mode) {
             if (atomic_load(&reading)) { errno = EALREADY; fail("reader_active"); }
             last_value = read_value(); reads = regressions = 0;
             atomic_store(&reading, 1);
@@ -156,13 +180,23 @@ int main(int argc, char **argv)
             if (!atomic_load(&reading)) { errno = EINVAL; fail("reader_inactive"); }
             stop_reader();
         } else if (!strcmp(command, "read\n")) {
-            printf("{\"op\":\"read\",\"value\":%u}\n", read_value());
+            if (atomic_mode) {
+                uint32_t data[2];
+                struct dsm_copy request = {.host = (uintptr_t)(memory + 4096), .user = (uintptr_t)data, .length = sizeof(data)};
+                checked(vm, DSM_MEMCPY, &request);
+                printf("{\"op\":\"read\",\"value\":%u,\"guard\":%u}\n", data[0], data[1]);
+            } else {
+                printf("{\"op\":\"read\",\"value\":%u}\n", read_value());
+            }
         } else if (sscanf(command, "write %u %u %c", &amount, &base, &extra) == 2 &&
                    amount > 0 && amount <= 4096 && base <= UINT32_MAX - amount) {
             if (atomic_load(&reading)) { errno = EBUSY; fail("reader_local"); }
+            if (atomic_mode) {
+                printf("{\"op\":\"batch_started\",\"amount\":%u,\"base\":%u}\n", amount, base);
+            }
             for (unsigned i = 1; i <= amount; i++) {
                 uint32_t value = base + i;
-                struct kvm_regs regs = {.rip = 0x1000, .rflags = 2, .rax = value};
+                struct kvm_regs regs = {.rip = 0x1000, .rflags = 2, .rax = atomic_mode ? 1 : value};
                 struct kvm_mp_state mp = {.mp_state = KVM_MP_STATE_RUNNABLE};
                 checked(cpu, KVM_SET_REGS, &regs);
                 checked(cpu, KVM_SET_MP_STATE, &mp);
@@ -172,6 +206,14 @@ int main(int argc, char **argv)
                 uint64_t end = now_ns();
                 mark("end", value);
                 checked(cpu, KVM_GET_REGS, &regs);
+                if (atomic_mode) {
+                    printf("{\"op\":\"atomic\",\"value\":%u,\"previous\":%u,\"exit_reason\":%u,\"rip\":%" PRIu64
+                           ",\"elapsed_ns\":%" PRIu64 "}\n", value, (uint32_t)regs.rax, run->exit_reason, (uint64_t)regs.rip, end - begin);
+                    if (run->exit_reason != KVM_EXIT_HLT || regs.rip != 0x1008 || regs.rax > UINT32_MAX) {
+                        errno = EIO; fail("guest_atomic");
+                    }
+                    continue;
+                }
                 uint32_t observed;
                 memcpy(&observed, memory + 4096, sizeof(observed));
                 printf("{\"op\":\"write\",\"value\":%u,\"observed\":%u,\"exit_reason\":%u,\"rip\":%" PRIu64

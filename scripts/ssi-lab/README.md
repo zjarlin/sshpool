@@ -228,3 +228,5 @@ timeout --kill-after=5 45 python3 scripts/ssi-lab/probe-dsm-device.py \
 ## 单指令写授权实验
 
 `probe-write-grant.c` 每次 KVM_RUN 只执行共享页写入与 HLT，以宿主 trace_marker 标记唯一调用；远端真实 DSM_MEMCPY 读者制造竞争。`check-write-grant.py <记录.json.gz>` 核对完整调用边界、缺页、读回数据、远端读者与原生关闭。`test_write_grant.py` 重放完整记录、实际编译源与 Linux 客体开关对照，原 250 ms 门槛不变。实验开关、恢复和限制见 [写授权记录](../../docs/ssi-write-grant.md)，PF30 不进入默认安装或 CLI 准入。
+
+同一探针的可选 `--atomic` 模式执行 `LOCK XADD`，通过 `arm COUNT BASE` / `go` 屏障启动双端批次。`check-atomic-grant.py <记录.json.gz>` 核对每次返回计数、全局唯一连续序列、相邻哨兵、完整跟踪和同代际原生关闭。`test_atomic_grant.py` 重放四轮双端结果、单端对照和旧 store 模式，主动破坏计数与并发屏障，并保留启动连接超时的失败记录。实际范围、恢复与剩余问题见 [原子操作实验](../../docs/ssi-atomic-grant.md)；有限进展不等于任意负载公平性。

@@ -75,6 +75,18 @@ Feature: 隔离的同 ISA 双节点 GiantVM 实验
     And 通过内存压力并发原子操作与长时间运行验证
     And 未完成该门槛前不迁移生产数据库
 
+  # evidence: docs/ssi-atomic-grant.md
+  @verified @p0
+  Scenario: 双端固定原子指令的有限批次没有重复或丢失计数
+    Given 同一 ESXi 上两台独占实验 VM 使用相同 PF30 内核与原子探针
+    When 关闭和开启一毫秒写授权保留时分别完成两轮并发批次
+    Then 每端每轮完成 4096 次 LOCK XADD 并正常到达 HLT
+    And 每轮合并返回计数严格覆盖零到 8191 且相邻哨兵不变
+    And 两端最终读取 8192 并以同一原生关闭代际完成清理
+    And 完整跟踪按独立调用统计重复缺页且两轮开启样本没有重复缺页
+    And 初始连接超时的失败轮次单独保留且不计作通过
+    And 不将有限进展推断为任意负载公平性或跨物理容量通过
+
   # evidence: docs/evidence/ssi-scheduling-20261106.json
   @verified @p0
   Scenario: 性能实验前检查虚拟化层限额和真实限速计数

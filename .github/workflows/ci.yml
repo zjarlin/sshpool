@@ -116,6 +116,9 @@ jobs:
           grant_status=0
           "$RUNNER_TEMP/probe-write-grant" 0 127.0.0.1 - kernel-must-not-match || grant_status=$?
           test "$grant_status" -eq 2
+          atomic_status=0
+          "$RUNNER_TEMP/probe-write-grant" 0 127.0.0.1 - kernel-must-not-match --atomic || atomic_status=$?
+          test "$atomic_status" -eq 2
           latency_status=0
           "$RUNNER_TEMP/probe-dsm-latency" 0 127.0.0.1 - kernel-must-not-match || latency_status=$?
           test "$latency_status" -eq 2
