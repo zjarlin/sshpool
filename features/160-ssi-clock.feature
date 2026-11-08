@@ -1,6 +1,17 @@
 Feature: SSI 客体计时信息保持跨节点一致
   TSC、KVM 纳秒时钟和客体共享的 pvclock 页面必须分别验证。
 
+  # evidence: docs/evidence/ssi-guest-timers-20261108.json
+  @verified @p0
+  Scenario: 客体定时器观测区分中断内等待与重新运行
+    Given 同一物理 ESXi 上的单节点对照与双节点客体使用相同 tracepoint 集合
+    When 按 PID CPU 和定时器初始化代次关联应用区间与完整客体跟踪
+    Then 检查器拒绝漏采取消重复回调和错误时钟域或线程归属
+    And 本地中断和回调按 CPU 嵌套配对且边界未知部分不补造耗时
+    And 唤醒后仍在中断内的区间不被称作普通调度队列等待
+    And 普通 CI 重放已提交的四十八个应用定时器与完整跟踪
+    And 函数探针漏采与三百九十毫秒超限保留为失败且不声称已修复停顿
+
   # evidence: docs/evidence/ssi-clock-stalls-20261108.json
   @verified @p0
   Scenario: 活动时钟与取页观测区分完整调用和采集边界

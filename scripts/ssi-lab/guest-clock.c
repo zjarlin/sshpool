@@ -54,7 +54,7 @@ static int select_cpu(int cpu)
     return 0;
 }
 
-static int check_timer(int cpu)
+static int check_timer(int cpu, int timer_intervals)
 {
     uint64_t before;
     uint64_t after;
@@ -80,14 +80,20 @@ static int check_timer(int cpu)
     }
     printf("CLOCK_TIMER cpu=%d requested_ns=%" PRIu64 " elapsed_ns=%" PRIu64 "\n",
            cpu, TIMER_NS, after - before);
+    /* 额外记录在测量结束后输出，供客体定时器跟踪关联同一线程与单调时钟区间。 */
+    if (timer_intervals) {
+        printf("TIMER_INTERVAL pid=%ld cpu=%d before_ns=%" PRIu64 " after_ns=%" PRIu64 "\n",
+               (long)getpid(), cpu, before, after);
+    }
     return 0;
 }
 
 int main(int argc, char **argv)
 {
     int interactive = argc == 2 && strcmp(argv[1], "--pause-rounds") == 0;
-    if (argc != 1 && !interactive) {
-        fprintf(stderr, "usage: guest-clock [--pause-rounds]\n");
+    int timer_intervals = argc == 2 && strcmp(argv[1], "--timer-intervals") == 0;
+    if (argc != 1 && !interactive && !timer_intervals) {
+        fprintf(stderr, "usage: guest-clock [--pause-rounds|--timer-intervals]\n");
         return 2;
     }
     setvbuf(stdout, NULL, _IONBF, 0);
@@ -136,7 +142,7 @@ int main(int argc, char **argv)
             }
             printf("CLOCK_SAMPLE round=%d cpu=%d tsc=%" PRIu64 " mono=%" PRIu64 " raw=%" PRIu64 " boot=%" PRIu64 "\n",
                    round, cpu, tsc, previous[0], previous[1], previous[2]);
-            if (round == ROUNDS - 1 && check_timer(cpu) != 0) {
+            if (round == ROUNDS - 1 && check_timer(cpu, timer_intervals) != 0) {
                 return 1;
             }
         }
