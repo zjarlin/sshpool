@@ -49,6 +49,18 @@ enum Action {
         #[arg(long)]
         ssh_config: Option<PathBuf>,
     },
+    /// 按显式计划运行两个专用 PF24 实验节点；不挂磁盘，不提供生产 SSI。
+    SsiLaunch {
+        #[arg(long)]
+        plan: PathBuf,
+        #[arg(long)]
+        output: PathBuf,
+        #[arg(long)]
+        ssh_config: Option<PathBuf>,
+        /// 记录原生系统调用，供启动拒绝取证；输出达到上限时中止本次实验。
+        #[arg(long)]
+        trace_syscalls: bool,
+    },
     /// 离线校验外部灾备包并生成数据库恢复证据。
     Dr {
         #[command(subcommand)]
@@ -395,6 +407,25 @@ async fn dispatch(cli: Cli) -> Result<i32> {
             } else {
                 2
             });
+        }
+        Action::SsiLaunch {
+            plan,
+            output,
+            ssh_config,
+            trace_syscalls,
+        } => {
+            let plan = serde_json::from_slice(&fs::read(plan)?)?;
+            let report =
+                sshpool::ssi_launch::launch(plan, ssh_config.as_deref(), output, *trace_syscalls)
+                    .await?;
+            println!("{}", serde_json::to_string_pretty(&report)?);
+            return Ok(
+                if sshpool::ssi_launch::processes_exited_successfully(&report) {
+                    0
+                } else {
+                    2
+                },
+            );
         }
         Action::StorageAdmission {
             ssh,

@@ -1,0 +1,121 @@
+{
+  "schema": 1,
+  "status": "development-only; PF24 paired validation not run",
+  "feature_status": "partial",
+  "full_ssi_accepted": false,
+  "stock_guard": {
+    "stage": "initial CLI before lifecycle hardening",
+    "report": {
+      "schema": 1,
+      "run_id": "c090d10582784a538a2b72bf130a129a",
+      "plan_sha256": "645bc5c35529c9f345564af30150b3fec1f1f564b113422f74548a799069a72d",
+      "worker_sha256": "ff081cba7b1eda3e2a32aa61491b3754757843ca5199346889c92266d9f93204",
+      "admission_passed": false,
+      "commit_sent": [
+        false,
+        false
+      ],
+      "nodes": [
+        {
+          "prepared": null,
+          "started": null,
+          "finished": null,
+          "ssh_exit": 2,
+          "transport_error": null
+        },
+        {
+          "prepared": null,
+          "started": null,
+          "finished": null,
+          "ssh_exit": 2,
+          "transport_error": null
+        }
+      ],
+      "errors": [
+        "node0 ended without a successful complete lifecycle",
+        "node1 ended without a successful complete lifecycle"
+      ],
+      "full_ssi_accepted": false
+    },
+    "stderr": [
+      "dedicated x86_64 PF24 kernel required\n",
+      "dedicated x86_64 PF24 kernel required\n"
+    ]
+  },
+  "linux_primitives": {
+    "kernel": "6.8.0-147-generic",
+    "node": 0,
+    "log": "test_commit_cannot_replay_or_change_local_preparation (__main__.LaunchWorkerTest.test_commit_cannot_replay_or_change_local_preparation) ... ok\ntest_parent_change_during_installation_prevents_exec (__main__.LaunchWorkerTest.test_parent_change_during_installation_prevents_exec) ... ok\ntest_parent_killed_releases_child_and_inherited_lock (__main__.LaunchWorkerTest.test_parent_killed_releases_child_and_inherited_lock) ... ok\ntest_replacing_source_cannot_replace_executed_elf (__main__.LaunchWorkerTest.test_replacing_source_cannot_replace_executed_elf) ... ok\ntest_wrong_hash_or_symlink_cannot_leave_a_prepared_descriptor (__main__.LaunchWorkerTest.test_wrong_hash_or_symlink_cannot_leave_a_prepared_descriptor) ... ok\n\n----------------------------------------------------------------------\nRan 5 tests in 0.063s\n\nOK\n",
+    "scope": "real memfd and process primitives; before addition of core-file limit and final test exit-state polling; no QEMU"
+  },
+  "local_checks": {
+    "rust": {
+      "passed": 300,
+      "ignored": 30,
+      "failed": 0
+    },
+    "ssi_python": {
+      "discovered": 372,
+      "passed": 367,
+      "skipped_linux_only": 5
+    },
+    "clippy": "passed",
+    "format": "passed"
+  },
+  "restoration": {
+    "node": 0,
+    "kernel": "6.8.0-147-generic",
+    "identity_matches": true,
+    "old_boot_files_unchanged": true,
+    "firewall_matches_original": true,
+    "lib_target": "usr/lib",
+    "grub_environment": "",
+    "remaining_processes": []
+  },
+  "external_power_events": [
+    {
+      "node": 0,
+      "power": "poweredOff"
+    },
+    {
+      "node": 0,
+      "time": "2026-11-08 03:56:25.887274+00:00",
+      "kind": "vim.event.VmPoweredOffEvent",
+      "user": "User"
+    },
+    {
+      "node": 0,
+      "time": "2026-11-08 03:56:17.936099+00:00",
+      "kind": "vim.event.VmGuestShutdownEvent",
+      "user": "root"
+    },
+    {
+      "node": 1,
+      "power": "poweredOff"
+    },
+    {
+      "node": 1,
+      "time": "2026-11-08 03:50:00.718430+00:00",
+      "kind": "vim.event.VmPoweredOffEvent",
+      "user": "User"
+    },
+    {
+      "node": 1,
+      "time": "2026-11-08 03:49:56.401837+00:00",
+      "kind": "vim.event.VmGuestShutdownEvent",
+      "user": "root"
+    }
+  ],
+  "paired_runs": [],
+  "pending": [
+    "PF24 mixed-version native exec/ioctl matrix",
+    "same-version guest and workspace regression",
+    "actual QEMU path replacement, half commit, disconnect, lease and lock conflict"
+  ],
+  "source_sha256": {
+    "src/ssi_launch.rs": "0c79a1057344c2fd484b1b19c6e31cafb4c1c61a1687d18321c6c1af47c97358",
+    "src/ssi_launch/model.rs": "ec9643a94f160faa86d51b7665982e46b97100d7ed93835d7249bb59bc3bffb3",
+    "src/ssi_launch/session.rs": "c8f7f1903de189470db29836d9e47b1fec32e825ee58907ea13b7944d6c8ab8a",
+    "src/ssi_launch_worker.py": "fdf0b95d42c552f80adc1042846f9933b90c5e0feae9bec1da72b8ca6fead8cc"
+  }
+}

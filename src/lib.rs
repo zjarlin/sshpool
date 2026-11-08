@@ -21,6 +21,7 @@ pub mod runner;
 pub mod scheduler;
 pub mod shim;
 pub mod ssi;
+pub mod ssi_launch;
 pub mod state;
 pub mod state_audit;
 pub mod storage;

@@ -13,6 +13,7 @@ Feature: SSI 远端设备操作具有可验证的完成边界
     And 检查器从每次失败明细重算结果并拒绝缺失轮次
 
   # evidence: docs/evidence/ssi-router-startup-20261108.json
+  # implementation: docs/ssi-launch.md (双端 CLI 实测待完成)
   @partial @p0
   Scenario: 不兼容的设备完成协议在客体启动前失败
     Given 两端的路由协议版本不一致
