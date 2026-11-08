@@ -1,6 +1,17 @@
 Feature: SSI 客体计时信息保持跨节点一致
   TSC、KVM 纳秒时钟和客体共享的 pvclock 页面必须分别验证。
 
+  # evidence: docs/evidence/ssi-clock-stalls-20261108.json
+  @verified @p0
+  Scenario: 活动时钟与取页观测区分完整调用和采集边界
+    Given 同一物理 ESXi 的两个独占 PF28 VM 正在执行真实四 CPU 客体
+    When 在 SSH 就绪至 SFTP 完成之间记录时钟更新和页面获取
+    Then 检查器核对入口命中和逐 CPU 事件计数并拒绝漏采或线程身份变化
+    And 停用后的返回命中只允许对应末尾未完成调用且不补造耗时
+    And 原生关闭通过与客体 watchdog 及 workqueue 告警分别保留
+    And 探针退出零但定时器超过原二百五十毫秒门槛时仍记录验收失败
+    And 零次时钟更新和有限取页分布不被当作停顿根因或完整 SSI 验收
+
   # evidence: docs/evidence/ssi-clock-baseline-20261105.txt
   @verified @p0
   Scenario: 时钟探针能区分单节点对照与真实跨节点倒退

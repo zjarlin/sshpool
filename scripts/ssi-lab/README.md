@@ -1,5 +1,7 @@
 # GiantVM 双节点实验工具
 
+`trace-clock-stalls.py` / `check-clock-stalls.py` 测量 PF28 活动客体的时钟更新和页面获取，严格检查入口计数与丢失，并单独报告停用后的返回命中和窗口边界调用。真实记录未建立停顿根因，使用方式与证据范围见 [时钟与取页观测](../../docs/ssi-clock-stalls.md)。
+
 真实 Linux 客体块请求的故障生命周期使用 `guest-block-init.sh` 和 `probe-virtio-pending.py`，按 `check-virtio-pending.py` 核对原始 QMP、设备跟踪、磁盘内容及退出码。本轮只在原版内核上验证单节点，未观察双节点 DSM 页引用；复现和限制见 [virtio 请求实验](../../docs/ssi-virtio-pending.md)。
 
 这些工具只用于独立实验 VM，不是 SSHPool 的生产 SSI 后端。先阅读 [实验记录](../../docs/ssi-lab.md)，再阅读 [严格 SSI 验收](../../docs/ssi-feasibility.md)。两台节点位于同一台 ESXi 的测试不能证明物理故障容错或不同物理机的性能相加。
