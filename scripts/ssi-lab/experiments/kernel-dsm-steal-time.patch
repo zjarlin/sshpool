@@ -1,0 +1,121 @@
+--- a/arch/x86/kvm/x86.c
++++ b/arch/x86/kvm/x86.c
+@@ -3783,7 +3783,7 @@
+ }
+ EXPORT_SYMBOL_FOR_KVM_INTERNAL(kvm_service_local_tlb_flush_requests);
+ 
+-static void record_steal_time(struct kvm_vcpu *vcpu)
++static int record_steal_time(struct kvm_vcpu *vcpu)
+ {
+ 	struct gfn_to_hva_cache *ghc = &vcpu->arch.st.cache;
+ 	struct kvm_steal_time __user *st;
+@@ -3791,17 +3791,22 @@
+ 	gpa_t gpa = vcpu->arch.st.msr_val & KVM_STEAL_VALID_BITS;
+ 	u64 steal;
+ 	u32 version;
++#ifdef CONFIG_KVM_DSM
++	struct kvm_memory_slot *dsm_slot = NULL;
++	bool dsm_locked = false;
++	int access;
++#endif
+ 
+ 	if (kvm_xen_msr_enabled(vcpu->kvm)) {
+ 		kvm_xen_runstate_set_running(vcpu);
+-		return;
++		return 0;
+ 	}
+ 
+ 	if (!(vcpu->arch.st.msr_val & KVM_MSR_ENABLED))
+-		return;
++		return 0;
+ 
+ 	if (WARN_ON_ONCE(current->mm != vcpu->kvm->mm))
+-		return;
++		return 0;
+ 
+ 	slots = kvm_memslots(vcpu->kvm);
+ 
+@@ -3813,8 +3818,20 @@
+ 
+ 		if (kvm_gfn_to_hva_cache_init(vcpu->kvm, ghc, gpa, sizeof(*st)) ||
+ 		    kvm_is_error_hva(ghc->hva) || !ghc->memslot)
+-			return;
+-	}
++			return 0;
++	}
++
++#ifdef CONFIG_KVM_DSM
++	/* 缓存地址不代表 DSM 写权限；整个版本更新必须持有同页的独占权限。 */
++	if (vcpu->kvm->arch.dsm_enabled) {
++		access = kvm_dsm_vcpu_acquire_page(vcpu, &dsm_slot,
++						 gpa_to_gfn(gpa), true);
++		if (access < 0) {
++			return access;
++		}
++		dsm_locked = true;
++	}
++#endif
+ 
+ 	st = (struct kvm_steal_time __user *)ghc->hva;
+ 	/*
+@@ -3826,7 +3843,7 @@
+ 		int err = -EFAULT;
+ 
+ 		if (!user_access_begin(st, sizeof(*st)))
+-			return;
++			goto release;
+ 
+ 		asm volatile("1: xchgb %0, %2\n"
+ 			     "xor %1, %1\n"
+@@ -3851,7 +3868,7 @@
+ 			goto dirty;
+ 	} else {
+ 		if (!user_access_begin(st, sizeof(*st)))
+-			return;
++			goto release;
+ 
+ 		unsafe_put_user(0, &st->preempted, out);
+ 		vcpu->arch.st.preempted = 0;
+@@ -3879,6 +3896,13 @@
+ 	user_access_end();
+  dirty:
+ 	mark_page_dirty_in_slot(vcpu->kvm, ghc->memslot, gpa_to_gfn(ghc->gpa));
++ release:
++#ifdef CONFIG_KVM_DSM
++	if (dsm_locked) {
++		kvm_dsm_vcpu_release_page(vcpu, dsm_slot, gpa_to_gfn(gpa));
++	}
++#endif
++	return 0;
+ }
+ 
+ /*
+@@ -5302,6 +5326,13 @@
+ 	if (!(vcpu->arch.st.msr_val & KVM_MSR_ENABLED))
+ 		return;
+ 
++#ifdef CONFIG_KVM_DSM
++	/* 调度退出上下文不能等待远端页面；省略可选提示，不能写失去所有权的副本。 */
++	if (vcpu->kvm->arch.dsm_enabled) {
++		return;
++	}
++#endif
++
+ 	if (vcpu->arch.st.preempted)
+ 		return;
+ 
+@@ -11326,8 +11357,12 @@
+ 			r = 1;
+ 			goto out;
+ 		}
+-		if (kvm_check_request(KVM_REQ_STEAL_UPDATE, vcpu))
+-			record_steal_time(vcpu);
++		if (kvm_check_request(KVM_REQ_STEAL_UPDATE, vcpu)) {
++			r = record_steal_time(vcpu);
++			if (r) {
++				goto out;
++			}
++		}
+ 		if (kvm_check_request(KVM_REQ_PMU, vcpu))
+ 			kvm_pmu_handle_event(vcpu);
+ 		if (kvm_check_request(KVM_REQ_PMI, vcpu))

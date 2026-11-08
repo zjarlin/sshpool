@@ -1,6 +1,19 @@
 Feature: SSI 客体计时信息保持跨节点一致
   TSC、KVM 纳秒时钟和客体共享的 pvclock 页面必须分别验证。
 
+  # evidence: docs/evidence/ssi-steal-time-20261108.json
+  @verified @p0
+  Scenario: 受控页面交接后远端能够读到新的 steal time 记录
+    Given 同一物理 ESXi 的两个独占实验 VM 使用同一最小 KVM 探针
+    When 将包含两条 steal time 记录的页面交给远端后再次由原节点更新
+    Then PF28 八次复现旧记录而 PF29 八次取得新记录且两版单节点对照通过
+    And 同页另一条记录与远端标记不被缓存地址写入覆盖
+    And 原生关闭代际与连接计数完成后才释放两端 VM fd
+    And 普通 CI 重放完整原始交互并核对补丁与实际编译源码一致
+    And 原 QEMU 版本校验导致的完整客体关闭失败保留
+    And 新 QEMU 正常关闭仍保留三百五十九毫秒定时器超限失败
+    And 不声称抢占提示并发撕裂或既有定时器停顿已完成验收
+
   # evidence: docs/evidence/ssi-guest-timers-20261108.json
   @verified @p0
   Scenario: 客体定时器观测区分中断内等待与重新运行

@@ -21,6 +21,9 @@
 #define MARKER_OFFSET 256
 #define KVM_CAP_X86_DSM 249
 #define MSR_KVM_SYSTEM_TIME_NEW 0x4b564d01
+#define MSR_KVM_STEAL_TIME 0x4b564d03
+
+static int steal_mode;
 
 struct dsm_params {
     uint32_t node;
@@ -50,9 +53,29 @@ struct clock_record {
     uint8_t padding[2];
 };
 
+struct steal_record {
+    uint64_t steal;
+    uint32_t version;
+    uint32_t flags;
+    uint8_t preempted;
+    uint8_t padding[47];
+};
+
+struct dsm_close_request {
+    uint32_t version;
+    uint32_t flags;
+    uint64_t generation;
+    uint32_t timeout_ms;
+    uint32_t reserved;
+};
+
+#define DSM_CLOSE _IOW(KVMIO, 0xfb, struct dsm_close_request)
+
 _Static_assert(sizeof(struct clock_record) == 32, "pvclock ABI size");
 _Static_assert(sizeof(struct dsm_params) == 16, "DSM params ABI size");
 _Static_assert(sizeof(struct dsm_copy) == 32, "DSM copy ABI size");
+_Static_assert(sizeof(struct steal_record) == 64, "steal-time ABI size");
+_Static_assert(sizeof(struct dsm_close_request) == 24, "DSM close ABI size");
 
 static void fail(const char *operation)
 {
@@ -84,13 +107,26 @@ static void copy_page(int vm, void *page, void *buffer, size_t length, int write
 static void print_page(const char *operation, const void *data)
 {
     struct clock_record record[2];
+    struct steal_record stolen[2];
     uint64_t marker;
 
     memcpy(&record[0], data, sizeof(record[0]));
     memcpy(&record[1], (const char *)data + RECORD_STRIDE, sizeof(record[1]));
+    memcpy(&stolen[0], data, sizeof(stolen[0]));
+    memcpy(&stolen[1], (const char *)data + RECORD_STRIDE, sizeof(stolen[1]));
     memcpy(&marker, (const char *)data + MARKER_OFFSET, sizeof(marker));
     printf("{\"op\":\"%s\",\"marker\":%" PRIu64 ",\"records\":[", operation, marker);
     for (int cpu = 0; cpu < 2; cpu++) {
+        if (steal_mode) {
+            printf("%s{\"version\":%u,\"steal\":%" PRIu64 ",\"flags\":%u,\"preempted\":%u,\"padding\":\"",
+                   cpu ? "," : "", stolen[cpu].version, stolen[cpu].steal,
+                   stolen[cpu].flags, stolen[cpu].preempted);
+            for (size_t byte = 0; byte < sizeof(stolen[cpu].padding); byte++) {
+                printf("%02x", stolen[cpu].padding[byte]);
+            }
+            printf("\"}");
+            continue;
+        }
         printf("%s{\"version\":%u,\"tsc\":%" PRIu64 ",\"time\":%" PRIu64
                ",\"multiplier\":%u,\"shift\":%d,\"flags\":%u}",
                cpu ? "," : "", record[cpu].version, record[cpu].tsc,
@@ -107,7 +143,7 @@ static void tick(int vm, int cpu, struct kvm_run *run, int index, void *page)
         struct kvm_msr_entry entry;
     } msrs = {
         .header.nmsrs = 1,
-        .entry.index = MSR_KVM_SYSTEM_TIME_NEW,
+        .entry.index = steal_mode ? MSR_KVM_STEAL_TIME : MSR_KVM_SYSTEM_TIME_NEW,
         .entry.data = CLOCK_GPA + index * RECORD_STRIDE + 1,
     };
     struct kvm_regs regs = { .rip = CODE_GPA, .rflags = 2 };
@@ -118,8 +154,10 @@ static void tick(int vm, int cpu, struct kvm_run *run, int index, void *page)
         errno = ENOTSUP;
         fail("enable_pvclock");
     }
-    checked_ioctl(vm, KVM_GET_CLOCK, &clock);
-    checked_ioctl(vm, KVM_SET_CLOCK, &clock);
+    if (!steal_mode) {
+        checked_ioctl(vm, KVM_GET_CLOCK, &clock);
+        checked_ioctl(vm, KVM_SET_CLOCK, &clock);
+    }
     checked_ioctl(cpu, KVM_SET_REGS, &regs);
     checked_ioctl(cpu, KVM_SET_MP_STATE, &state);
     checked_ioctl(cpu, KVM_RUN, NULL);
@@ -140,8 +178,9 @@ int main(int argc, char **argv)
     struct kvm_run *runs[2];
 
     setvbuf(stdout, NULL, _IONBF, 0);
-    if (argc != 5 || (strcmp(argv[1], "0") && strcmp(argv[1], "1"))) {
-        fprintf(stderr, "usage: probe-pvclock NODE PEER0 PEER1_OR_DASH REQUIRED_KERNEL\n");
+    steal_mode = argc == 6 && strcmp(argv[5], "--steal-time") == 0;
+    if ((argc != 5 && !steal_mode) || (strcmp(argv[1], "0") && strcmp(argv[1], "1"))) {
+        fprintf(stderr, "usage: probe-pvclock NODE PEER0 PEER1_OR_DASH REQUIRED_KERNEL [--steal-time]\n");
         return 2;
     }
     if (uname(&host) || strcmp(host.machine, "x86_64") || strcmp(host.release, argv[4])) {
@@ -199,8 +238,27 @@ int main(int argc, char **argv)
     }
     void *page = (char *)memory + PAGE_SIZE;
     char command[80];
+    int sealed = 0;
     printf("{\"op\":\"ready\",\"node\":%d,\"nodes\":%d}\n", node, count);
     while (fgets(command, sizeof(command), stdin)) {
+        if (steal_mode && !strncmp(command, "seal ", 5)) {
+            char *end;
+            errno = 0;
+            uint64_t generation = strtoull(command + 5, &end, 10);
+            if (errno || generation == 0 || strcmp(end, "\n") || sealed) {
+                fprintf(stderr, "PVCLOCK_ERROR operation=invalid_close_generation\n");
+                return 2;
+            }
+            struct dsm_close_request request = { .version = 1, .generation = generation, .timeout_ms = 15000 };
+            checked_ioctl(vm, DSM_CLOSE, &request);
+            sealed = 1;
+            printf("{\"op\":\"sealed\",\"generation\":%" PRIu64 "}\n", generation);
+            continue;
+        }
+        if (sealed && strcmp(command, "quit\n")) {
+            fprintf(stderr, "PVCLOCK_ERROR operation=command_after_close\n");
+            return 2;
+        }
         if (!strcmp(command, "tick0\n") || !strcmp(command, "tick1\n")) {
             int index = command[4] - '0';
             tick(vm, cpus[index], runs[index], index, page);

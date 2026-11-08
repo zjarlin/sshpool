@@ -6,6 +6,7 @@ import ipaddress
 import json
 from pathlib import Path
 import shlex
+import time
 
 
 class Worker:
@@ -28,6 +29,8 @@ class Worker:
         await self.process.stdin.drain()
         result = await self.receive()
         expected = 'tick' if value.startswith('tick') else value
+        if value.startswith('seal '):
+            expected = 'sealed'
         if value == 'quit':
             expected = 'closed'
         if result.get('op') != expected:
@@ -35,12 +38,18 @@ class Worker:
         return result
 
 
-def check_exchange(before, previous, latest, observed, cpu, reader_node):
+def check_exchange(before, previous, latest, observed, cpu, reader_node, kind='clock'):
     """核对内核实际写回的版本、远端可见内容及同页其他字段，不采信通过标记。"""
     record = latest['records'][cpu]
-    valid = (record['version'] > previous['records'][cpu]['version']
-             and record['version'] % 2 == 0
-             and record['time'] > 0 and record['multiplier'] > 0)
+    old = previous['records'][cpu]
+    valid = record['version'] > old['version'] and record['version'] % 2 == 0
+    if kind == 'steal':
+        valid = (valid and record['steal'] >= old['steal'] and record['preempted'] == 0
+                 and record['flags'] == old['flags'] and record['padding'] == old['padding'])
+    elif kind == 'clock':
+        valid = valid and record['time'] > 0 and record['multiplier'] > 0
+    else:
+        raise ValueError('未知页面记录类型')
     same = (latest['records'] == observed['records']
             and latest['marker'] == observed['marker'] == reader_node + 1)
     unchanged = previous['records'] == before['records']
@@ -59,8 +68,11 @@ async def run(args, log):
     try:
         for node, host in enumerate(args.host):
             peers = args.peer if len(args.host) == 2 else ['127.0.0.1', '-']
-            remote = shlex.join(['timeout', '--kill-after=5', '180', args.worker,
-                                 str(node), *peers, args.require_kernel])
+            command = ['timeout', '--kill-after=5', '180', args.worker,
+                       str(node), *peers, args.require_kernel]
+            if args.kind == 'steal':
+                command.append('--steal-time')
+            remote = shlex.join(command)
             # 拒绝复用其他 DSM 实例的监听端口；实验节点仍必须由操作者独占。
             preflight = (
                 "set -eu; listeners=$(ss -H -ltn '( sport = :37710 or sport = :37711 )'); "
@@ -94,7 +106,7 @@ async def run(args, log):
                 latest = await writer.command(f'tick{cpu}')
                 observed = await reader.command('read')
                 result = {'round': round_number, 'cpu': cpu,
-                          **check_exchange(before, previous, latest, observed, cpu, reader.node)}
+                          **check_exchange(before, previous, latest, observed, cpu, reader.node, args.kind)}
                 print('PVCLOCK_CHECK ' + json.dumps(result), flush=True)
                 log.write('PVCLOCK_CHECK ' + json.dumps(result) + '\n')
                 log.flush()
@@ -104,6 +116,14 @@ async def run(args, log):
     except (OSError, ValueError, RuntimeError, asyncio.TimeoutError) as error:
         errors.append(str(error) or type(error).__name__)
     finally:
+        if args.kind == 'steal' and workers:
+            generation = time.monotonic_ns()
+            # 两端同时进入原生关闭屏障，完成后才释放 VM fd。
+            sealed = await asyncio.gather(*(worker.command(f'seal {generation}') for worker in workers),
+                                          return_exceptions=True)
+            for worker, result in zip(workers, sealed):
+                if isinstance(result, BaseException) or result != {'op': 'sealed', 'generation': generation}:
+                    errors.append(f'节点 {worker.node} 原生关闭失败：{result}')
         # 先关从节点，再关主节点；每个 closed 标记都在 VM fd 释放之后。
         for worker in reversed(workers):
             try:
@@ -132,6 +152,7 @@ def main():
     parser.add_argument('--peer', action='append', default=[])
     parser.add_argument('--worker', default='ssi/probe-pvclock')
     parser.add_argument('--require-kernel', required=True)
+    parser.add_argument('--kind', choices=['clock', 'steal'], default='clock')
     parser.add_argument('--log', type=Path, required=True)
     args = parser.parse_args()
     if len(args.host) not in (1, 2):

@@ -1,0 +1,20 @@
+--- a/system/ssi-close.inc
++++ b/system/ssi-close.inc
+@@ -1,5 +1,5 @@
+ /* SPDX-License-Identifier: GPL-2.0-or-later */
+-/* 独占 PF28 实验的设备清理与内核关闭接线；普通单节点不进入此路径。 */
++/* 独占 PF29 实验的设备清理与内核关闭接线；普通单节点不进入此路径。 */
+ #include "system/kvm.h"
+ #include "hw/virtio/virtio.h"
+ #include "hw/virtio/virtio-net.h"
+@@ -75,8 +75,8 @@
+     }
+     if (!enabled || strcmp(enabled, "1") || !kvm_enabled() || ms->shm_path ||
+         ms->smp.cpus != 4 || ms->local_cpus != 2 || ms->qemu_nums != 2 ||
+-        uname(&system) || strcmp(system.release, "7.1.0-rc3-sshpool-gvm-pf28")) {
+-        ssi_close_fail("requires the explicit two-node PF28 lab profile");
++        uname(&system) || strcmp(system.release, "7.1.0-rc3-sshpool-gvm-pf29")) {
++        ssi_close_fail("requires the explicit two-node PF29 lab profile");
+     }
+     qemu_mutex_init(&ssi_close_mutex);
+     qemu_cond_init(&ssi_close_cond);

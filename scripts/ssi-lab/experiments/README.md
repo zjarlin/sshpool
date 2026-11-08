@@ -175,3 +175,9 @@ PF23 后应用 `kernel-dsm-pin-release.patch`，单独构建 `-sshpool-gvm-pf24`
 在时钟恢复候选后应用 `qemu-router-startup.patch`，宿主仍为 PF24。协议 5 在路由初始化时交换固定格式 HELLO/ACK，全部连接完成后才继续启动，并在接齐连接后关闭监听口。补丁为 GPL-2.0-or-later，不进入默认构建。
 
 新节点在与协议 3/4 混配时均未执行 KVM_RUN；旧主节点仍可能先执行或需要超时清理，不能据此宣布双方启动前拒绝已完成。原生跟踪、同版本回归和剩余启动器准入缺口见 [启动版本实验](../../../docs/ssi-router-startup.md)。
+
+## PF29 steal-time 页面一致性
+
+在完整 PF28 内核补丁序列之后应用 `kernel-dsm-steal-time.patch`，配置只将 LOCALVERSION 改为 `-sshpool-gvm-pf29`。它让 KVM 的缓存 steal-time 计账写入持有 DSM 页权限，并在不可睡眠的调度上下文省略 DSM 的可选 preempted 提示。源码快照、实际编译摘要和真实交接结果见 [实验记录](../../../docs/ssi-steal-time.md)。
+
+`qemu-pf29-lab-profile.patch` 应用在 `qemu-global-close.patch` 之后，仅创建精确 PF29 的独立实验构建；原来的双节点、四 CPU、KVM 与环境开关限制全部保留。不要用新版本替换历史 PF28 证据中的运行时身份，也不要加入默认构建或 CLI 准入。旧版本校验拒绝和客体告警仍在新证据中保留。

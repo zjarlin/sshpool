@@ -218,3 +218,7 @@ timeout --kill-after=5 45 python3 scripts/ssi-lab/probe-dsm-device.py \
 `trace-kernel-close.py --pid <实验QEMU> --node <0或1> --output <新文件>` 记录实际 QEMU 关闭窗口，ready 后由驱动执行关机，收到标准输入 `stop` 后保存完整原生事件；`check-qemu-close.py <双节点条目.json>` 校验设备销毁、QUIESCE/DRAIN、零引用、相同代际与根线程回收。`probe-close-devices.py` 复用实际 virtio-blk 客体采集器，限定 PF28 和 `--pin-query none`；`check-close-devices.py <块实验条目.json>` 区分正常握手与 EIO/ENOSPC 失败停止。保存的驱动与启动参数、源码来源、证据提取方式见 [QEMU 关闭](../../docs/ssi-qemu-close.md)。
 
 `test_kernel_close.py` 与 `test_qemu_close.py` 在普通 CI 重放证据及篡改测试，不在 CI 启动研究内核。两个补丁仍仅位于 `experiments/`，默认构建不应用。watchdog、任意后台设备、跨物理机、持久化和完整 SSI 仍待完成。
+
+## Steal-time 页面交接
+
+`probe-pvclock.py --kind steal` 复用同一 KVM 探针和跨节点交接驱动，C worker 增加 `--steal-time` 模式；默认 pvclock 行为保持兼容。`check-steal-time.py <原始.jsonl> --nodes 1|2` 重算页面更新与关闭顺序，失败退出一。`test_steal_time.py` 在普通 CI 重放 PF28 的八次真实失败、PF29 的八次通过和单节点对照，并核对源码补丁；真实内核探针仍只在独占实验 VM 执行。使用参数、完整客体回归及未验证的抢占提示见 [steal-time 实验](../../docs/ssi-steal-time.md)。
