@@ -1,6 +1,27 @@
 Feature: SSI 客体计时信息保持跨节点一致
   TSC、KVM 纳秒时钟和客体共享的 pvclock 页面必须分别验证。
 
+  # evidence: docs/evidence/ssi-tsc-multivcpu-20261109.json
+  @verified @p0
+  Scenario: 同一 VM 的交替双 vCPU 速率与执行后冻结可以独立验收
+    Given 专用 PF32 VM 为两个 vCPU 显式选择相同比例并设置读回共同偏移
+    When 十二轮采样交替执行顺序并轮换宿主 CPU 绑定
+    Then 五百毫秒轮间隔矩阵的三条 TSC 路径与 pvclock 全部速率包络通过原千分之一门槛
+    And AUX 身份一致且每个 vCPU 正常 HLT 后改频被拒绝并保持偏移
+    And 三组矩阵与各自实际源码及 ELF 均保留且原版内核配置已恢复
+    And 交替执行不提升为同时执行或跨物理同一客体通过
+
+  # evidence: docs/evidence/ssi-tsc-multivcpu-20261109.json
+  @verified @p0
+  Scenario: 跨 vCPU 偏移验收区分确定错位和测量不确定
+    Given 三组矩阵包含共同偏移配置和向 vCPU 一注入五十毫秒的真实对照
+    When 检查器逐轮重算三条 TSC 路径及 pvclock 的偏移区间
+    Then 对照的三条 TSC 路径全部离开正负一百微秒门槛并包含有符号注入值
+    And 部分重叠的区间保留为不确定而不宣称真实偏移已经超限
+    And 最后一组速率通过但四个共同偏移配置均未完成对齐验收
+    And 普通 CI 拒绝丢弃失败矩阵错误身份与把证据检查成功改成整体通过
+    And 冷启动同步与完整 SSI 场景保持原验收状态
+
   # evidence: docs/evidence/ssi-tsc-scaling-20261109.json
   @verified @p0
   Scenario: 显式软件缩放必须同时改变三条 TSC 路径并保持 pvclock 一致

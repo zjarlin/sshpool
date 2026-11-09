@@ -1,5 +1,7 @@
 # GiantVM 双节点实验工具
 
+`probe-tsc-multivcpu.c` / `check-tsc-multivcpu.py` 验证同一 PF32 KVM 实例中交替执行的两个 vCPU。三组完整矩阵保留了速率未通过与偏移不确定的结果；最后一组速率全部通过、50 ms 错位被检出，但 ±100 微秒对齐尚未验收。检查器退出零只表示证据重放一致，见 [双 vCPU 计时实验](../../docs/ssi-tsc-multivcpu.md)。
+
 `trace-guest-timers.sh start irq|ktime` / `check-guest-irq.py` 进一步核对函数探针启停边界与时间读取阶段。真实双节点记录把一次 467.787 ms 函数调用的主要等待缩小到首次偶数序列之前，同时保留 553.933 ms 应用超时与 SSH 握手失败；尚未确定运行时根因。见 [客体函数观测](../../docs/ssi-guest-irq.md)。
 
 `trace-guest-timers.sh` / `check-guest-timers.py` 关联应用定时器与客体到期、唤醒和中断区间，完整重放已提交的单/双节点跟踪。一次慢定时器的大部分唤醒等待仍在中断内；额外 kprobe 实验漏采并出现 390.605 ms 超限，尚未确定根因或修复。见 [客体定时器观测](../../docs/ssi-guest-timers.md)。

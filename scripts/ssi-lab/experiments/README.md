@@ -4,7 +4,9 @@
 
 在 PF30 后依次应用 `kernel-software-tsc.patch` 与 `kernel-software-tsc-msr.patch`，分别构建独立 PF31/PF32。PF31 默认关闭，使用额外的逐 vCPU 实验属性，不伪造硬件能力；PF32 补上 TSC MSR 读取拦截。**PF31 非原生频率的 MSR 路径已实测失败，不应作为最终候选。** 两份 Linux 补丁均为 GPL-2.0-only，均不进入默认构建和 CLI 准入。
 
-`probe-tsc-scaling.patch` 和 `capture-tsc-scaling.patch` 应用到原频率探针/采集器的独立副本；不要覆盖历史源码。四次矩阵、三组失败、实际源码与恢复记录见 [软件缩放实验](../../../docs/ssi-tsc-scaling.md)。PF32 只通过短窗口单 vCPU 计时，未验证完整 Linux、定时器、多 vCPU 或跨物理同一客体。
+`probe-tsc-scaling.patch` 和 `capture-tsc-scaling.patch` 应用到原频率探针/采集器的独立副本；不要覆盖历史源码。四次矩阵、三组失败、实际源码与恢复记录见 [软件缩放实验](../../../docs/ssi-tsc-scaling.md)。PF32 已通过短窗口单 vCPU 计时，未验证完整 Linux、定时器或跨物理同一客体。
+
+后续 `capture-tsc-multivcpu.patch` 应用到归档的 `capture-tsc-scaling.py` 独立副本，配合上级 `probe-tsc-multivcpu.c`，复用 PF32 而不增加内核改动。[双 vCPU 实验](../../../docs/ssi-tsc-multivcpu.md)保留三组矩阵与各自 ELF：最后一组速率通过、50 ms 偏移对照检出，但共同偏移配置未建立 ±100 微秒界限，也没有验证同时执行。
 
 本目录不是默认安装路径，不能部署到业务宿主。QEMU 补丁为 GPL-2.0-or-later，Linux 内核补丁为 GPL-2.0-only，正文见上级目录的 `COPYING.GPL-2.0`。PF2 历史内存测试不等于稳定性保证，后续探针已复现其设备脏页与映射销毁缺陷。
 
