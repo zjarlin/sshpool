@@ -1,0 +1,355 @@
+{
+  "kernel": "7.1.0-rc3-sshpool-gvm-pf30",
+  "kernel_sha256": "bf3b1beec9bf65ec3a330b9773a527d1cff3e0539fa0a9f329bed3f0d8fe698a",
+  "probe_build": {
+    "source_sha256": "9c2e01f767c33983a38b663e293417a361c5f83bb481f3ebfeab3353cafb26f1",
+    "binary_sha256": "19379170276a834e53eeb7e934e8e67f03112d2659f8cccf9c3a41543d561864",
+    "bytes": 1070808
+  },
+  "runs": [
+    {
+      "label": "control-1000-b",
+      "archive": {
+        "file": "ssi-grant-cancel-20261109-control-1000-b.json.gz",
+        "bytes": 3907,
+        "sha256": "6f44fd96e97242347228e30cf3443c1760969dd7380ed4a3739f3dd0dfb70769",
+        "raw_sha256": "a741ff02adafa7ff955a81d7c18298c807b8396d14d659735466b3a3ff928aa4"
+      },
+      "analysis": {
+        "mode": "control",
+        "grace_us": 1000,
+        "sleep_count": 1,
+        "max_sleep_ns": 494000,
+        "full_ssi_accepted": false,
+        "native_close_accepted": false
+      }
+    },
+    {
+      "label": "control-off-a",
+      "archive": {
+        "file": "ssi-grant-cancel-20261109-control-off-a.json.gz",
+        "bytes": 3760,
+        "sha256": "d4dcc5a9e72d3a4b32449699cd9b8061718def47f287d532375691fd36301996",
+        "raw_sha256": "ff1a831fa6b3f6f55c550d93932b5f20ffa61f2aabc42ee372e6ac8fed44595c"
+      },
+      "analysis": {
+        "mode": "control",
+        "grace_us": 0,
+        "sleep_count": 0,
+        "max_sleep_ns": 0,
+        "full_ssi_accepted": false,
+        "native_close_accepted": false
+      }
+    },
+    {
+      "label": "handler-1000-b",
+      "archive": {
+        "file": "ssi-grant-cancel-20261109-handler-1000-b.json.gz",
+        "bytes": 4485,
+        "sha256": "a28617539251a34b3bf3529d8f5481a475b6201bc983b3067dbbf0d0e9fea816",
+        "raw_sha256": "d3830eff17df08a8f3fff3194019b0b83ca28ec59ff8f29470ad4b8be67f445a"
+      },
+      "analysis": {
+        "mode": "handler",
+        "grace_us": 1000,
+        "sleep_count": 3,
+        "max_sleep_ns": 161000,
+        "full_ssi_accepted": false,
+        "native_close_accepted": false,
+        "in_wait": true,
+        "first_error": -4,
+        "injection_to_root_exit_ns": 13313000,
+        "wait_return_code": 0,
+        "failed_send_attempts": 0,
+        "error_latched_during_wait": false
+      }
+    },
+    {
+      "label": "handler-1000-c",
+      "archive": {
+        "file": "ssi-grant-cancel-20261109-handler-1000-c.json.gz",
+        "bytes": 4492,
+        "sha256": "478aeade12c33069f19d0660e91cab51a755f151325763b23d4a2b8cd3568578",
+        "raw_sha256": "7a3cc0dcabc3c2cd0abf8907006134d8a1bfe80f26689e31975f12909bb3e907"
+      },
+      "analysis": {
+        "mode": "handler",
+        "grace_us": 1000,
+        "sleep_count": 5,
+        "max_sleep_ns": 137000,
+        "full_ssi_accepted": false,
+        "native_close_accepted": false,
+        "in_wait": true,
+        "first_error": -4,
+        "injection_to_root_exit_ns": 6128000,
+        "wait_return_code": -4,
+        "failed_send_attempts": 0,
+        "error_latched_during_wait": false
+      }
+    },
+    {
+      "label": "reset-1000-d",
+      "archive": {
+        "file": "ssi-grant-cancel-20261109-reset-1000-d.json.gz",
+        "bytes": 4701,
+        "sha256": "cad46b4ff8403d65f7540408bcc8e511398a65927c415306c304a991619a05a5",
+        "raw_sha256": "a7c0351288695cfaf3a1ccd0d5f34d50439a116d48a25f94d16b32eae9c6f773"
+      },
+      "analysis": {
+        "mode": "reset",
+        "grace_us": 1000,
+        "sleep_count": 5,
+        "max_sleep_ns": 506000,
+        "full_ssi_accepted": false,
+        "native_close_accepted": false,
+        "in_wait": true,
+        "first_error": -32,
+        "injection_to_root_exit_ns": 7119000,
+        "wait_return_code": 0,
+        "failed_send_attempts": 1,
+        "error_latched_during_wait": false
+      }
+    },
+    {
+      "label": "root-1000-a",
+      "archive": {
+        "file": "ssi-grant-cancel-20261109-root-1000-a.json.gz",
+        "bytes": 4437,
+        "sha256": "1ae82eb295666a9abee27b32fa6d7bd275febcb2a2b3a810fecb3dcf6a3514e6",
+        "raw_sha256": "27bf56191baca36a69e4d67eac8f362c286ae68d6dce9f014466638d8ac851e2"
+      },
+      "analysis": {
+        "mode": "root",
+        "grace_us": 1000,
+        "sleep_count": 6,
+        "max_sleep_ns": 5883000,
+        "full_ssi_accepted": false,
+        "native_close_accepted": false,
+        "in_wait": true,
+        "first_error": -4,
+        "injection_to_root_exit_ns": 6666000,
+        "wait_return_code": 0,
+        "failed_send_attempts": 0,
+        "error_latched_during_wait": true
+      }
+    }
+  ],
+  "rejected": [
+    {
+      "label": "control-1000-a",
+      "archive": {
+        "file": "ssi-grant-cancel-20261109-control-1000-a.json.gz",
+        "bytes": 1626,
+        "sha256": "2d7bcf871522388c03f89e3c62afb203d7c52d1e9e47efbcfdafd4ed7cffbf14",
+        "raw_sha256": "56909a6ed91418ed0003f28f9c4a2a266c783acf72e3f87ea564e14255bef234"
+      },
+      "accepted": false,
+      "reason": "实验或清理未完成"
+    },
+    {
+      "label": "handler-1000-a",
+      "archive": {
+        "file": "ssi-grant-cancel-20261109-handler-1000-a.json.gz",
+        "bytes": 4328,
+        "sha256": "849b141c1258837e4ea4d0aae13c2de8e86aaa81d363bac51ab7e2536836c4d1",
+        "raw_sha256": "85174ed0e36998f2304918dc5e69ef4e135a16ec00b8f839d95c24ffdd0c4780"
+      },
+      "accepted": false,
+      "reason": "缺少清理前已退出的完整快照与跟踪"
+    },
+    {
+      "label": "reset-1000-a",
+      "archive": {
+        "file": "ssi-grant-cancel-20261109-reset-1000-a.json.gz",
+        "bytes": 4396,
+        "sha256": "e0eeec59cd4e4feb60f9ff87e5b93598b918963b9390cf8b58b73ec0cc2f93e7",
+        "raw_sha256": "bb2eb0877a827f68a2b93e293921ae8f0c813b771cf9be205315555a25ca9d42"
+      },
+      "accepted": false,
+      "reason": "缺少唯一 tcp_send_reset"
+    },
+    {
+      "label": "reset-1000-b",
+      "archive": {
+        "file": "ssi-grant-cancel-20261109-reset-1000-b.json.gz",
+        "bytes": 4621,
+        "sha256": "6e4396f3836a0ea1a362604a3febcd6809f10d88f39f79169298ca56e067b0e3",
+        "raw_sha256": "38f92fac293be57b3effef259aa8271d5ff6808c3975b80e7797c8d206f0241f"
+      },
+      "accepted": false,
+      "reason": "阶段记录不一致"
+    },
+    {
+      "label": "reset-1000-c",
+      "archive": {
+        "file": "ssi-grant-cancel-20261109-reset-1000-c.json.gz",
+        "bytes": 4529,
+        "sha256": "ee26f1bb96fb54b038127c7910a3aa2dcb736cede438621f7308ed70332765c0",
+        "raw_sha256": "7e47ccf68fc95ee9ee29a09943c83bd8b5fa082bed4d925082d8cab1af077534"
+      },
+      "accepted": false,
+      "reason": "取消或故障未落在已观察到的等待内"
+    }
+  ],
+  "goal_complete": false,
+  "full_ssi_accepted": false,
+  "native_close_accepted": false,
+  "restoration": {
+    "nodes": [
+      {
+        "node": 0,
+        "kernel": "6.8.0-147-generic",
+        "identity_matches": true,
+        "old_boot_files_unchanged": true,
+        "boot_hash_manifest_sha256": "e2d1533697fec9a5c3fb92ea1410b84c9517c492eedf754d6df51e3a441a3664",
+        "grub_config_unchanged": true,
+        "firewall_matches_original": true,
+        "lib_target": "usr/lib",
+        "grub_environment": "",
+        "remaining_processes": [],
+        "remaining_trace_instances": [],
+        "remaining_experiment_tcp": [],
+        "stock_grub_default": true,
+        "pf30_grub_entry_removed": true,
+        "write_grace_reset_before_reboot": true,
+        "ephemeral_range": [
+          32768,
+          60999
+        ],
+        "reserved_ports": "",
+        "tcp_collectors_absent": true
+      }
+    ]
+  },
+  "node1-final": {
+    "node": 1,
+    "machine_id": "97609053a4db470a8a9fd24d2d2af76b",
+    "kernel": "6.8.0-147-generic",
+    "unchanged": true,
+    "boot_hash_manifest_sha256": "377c33e907e47a8c9b047352e413c16197f7c0996e5e6f1d1cfcdca029bb40fe",
+    "firewall_matches_prior": true,
+    "grub_matches_prior": true,
+    "remaining_processes": [],
+    "remaining_trace_instances": [],
+    "remaining_experiment_tcp": []
+  },
+  "sources": {
+    "file": "ssi-grant-cancel-20261109-sources.tar.gz",
+    "bytes": 174775,
+    "sha256": "ad158205bfb8bc38ed2c1ff4437857bc54042782a07974eb3bb14390b21dc0db",
+    "raw_sha256": "3db8a3fa1640f0b7d2f5a08ceff39c558489f2374e93aa0d92fdbbc6d4211160",
+    "members": {
+      "attempts/control-1000-a/firewall-active.json": "b46da7f70b8890a30d4b09aa6426a4e905c648784498ccb1d2c0bdd4112267a6",
+      "attempts/control-1000-a/probe-grant-cancel.py": "879b6660e6be1fe242a4789663c0c6e43e7998c3492f952cbbcf37f4dd02b0c7",
+      "attempts/control-1000-a/probe-receive.py": "57d1f57cc0c9de7b67e6837837b37e06c9a823cdb3b1d4317376d38404ed57f6",
+      "attempts/control-1000-a/probe-request-cancel.py": "9ea48ed342fc0f4d575d3164e856a655637d2852889ec18bd3c284ffb638c6cd",
+      "attempts/control-1000-a/probe-request-safety.py": "42fb31eb56156c81c2217befcde9aa94a58bc677da0a4954019ac1acd319fd1e",
+      "attempts/control-1000-a/stderr.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "attempts/control-1000-a/stdout.log": "53f8a1fd350409a3570bb10d504bc94e0d84cc70b8cf232dc1b3ebe1117a21eb",
+      "attempts/control-1000-a/trace-teardown.py": "02aa15ea3889abdd668e631389c1b404a0ecad4a34ca15df3b2bf09c3dd5d51d",
+      "attempts/control-1000-b/firewall-active.json": "37e1c6cbc92473eb16c35ae875be3663a2a7439b5e441f7cdd7035575b6c2f6d",
+      "attempts/control-1000-b/probe-grant-cancel.py": "49b59d765b91240e7839903df0f0823d0b9ac06bd1dd4a4bf48d83653b1534f8",
+      "attempts/control-1000-b/probe-receive.py": "57d1f57cc0c9de7b67e6837837b37e06c9a823cdb3b1d4317376d38404ed57f6",
+      "attempts/control-1000-b/probe-request-cancel.py": "9ea48ed342fc0f4d575d3164e856a655637d2852889ec18bd3c284ffb638c6cd",
+      "attempts/control-1000-b/probe-request-safety.py": "42fb31eb56156c81c2217befcde9aa94a58bc677da0a4954019ac1acd319fd1e",
+      "attempts/control-1000-b/stderr.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "attempts/control-1000-b/stdout.log": "36852901cd75c12c501c32e6135148355642d04662caddc40005cf198135e519",
+      "attempts/control-1000-b/trace-teardown.py": "02aa15ea3889abdd668e631389c1b404a0ecad4a34ca15df3b2bf09c3dd5d51d",
+      "attempts/control-off-a/firewall-active.json": "041d573316414fa6519ea2e52cd734a490811776d6388955e832cb3b5ae8eceb",
+      "attempts/control-off-a/probe-grant-cancel.py": "92842c9d3666fcd8013973d5af047fd2e5fd06affe42f82fd4a4561654a61eea",
+      "attempts/control-off-a/probe-receive.py": "57d1f57cc0c9de7b67e6837837b37e06c9a823cdb3b1d4317376d38404ed57f6",
+      "attempts/control-off-a/probe-request-cancel.py": "9ea48ed342fc0f4d575d3164e856a655637d2852889ec18bd3c284ffb638c6cd",
+      "attempts/control-off-a/probe-request-safety.py": "42fb31eb56156c81c2217befcde9aa94a58bc677da0a4954019ac1acd319fd1e",
+      "attempts/control-off-a/stderr.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "attempts/control-off-a/stdout.log": "36852901cd75c12c501c32e6135148355642d04662caddc40005cf198135e519",
+      "attempts/control-off-a/trace-teardown.py": "02aa15ea3889abdd668e631389c1b404a0ecad4a34ca15df3b2bf09c3dd5d51d",
+      "attempts/handler-1000-a/firewall-active.json": "ea68127b7ad944883bbaa79a8e8419877a840ab6629fe590cb092ae6913a75a5",
+      "attempts/handler-1000-a/probe-grant-cancel.py": "49b59d765b91240e7839903df0f0823d0b9ac06bd1dd4a4bf48d83653b1534f8",
+      "attempts/handler-1000-a/probe-receive.py": "57d1f57cc0c9de7b67e6837837b37e06c9a823cdb3b1d4317376d38404ed57f6",
+      "attempts/handler-1000-a/probe-request-cancel.py": "9ea48ed342fc0f4d575d3164e856a655637d2852889ec18bd3c284ffb638c6cd",
+      "attempts/handler-1000-a/probe-request-safety.py": "42fb31eb56156c81c2217befcde9aa94a58bc677da0a4954019ac1acd319fd1e",
+      "attempts/handler-1000-a/stderr.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "attempts/handler-1000-a/stdout.log": "cc277bd2aaadc543ecdc0835b3430ef099079d52eb6cc55e5217297ce31a55b6",
+      "attempts/handler-1000-a/trace-teardown.py": "02aa15ea3889abdd668e631389c1b404a0ecad4a34ca15df3b2bf09c3dd5d51d",
+      "attempts/handler-1000-b/firewall-active.json": "41506caee433478525cbf165dd68ba5c9e609e092399d157e87d61984cf4549b",
+      "attempts/handler-1000-b/probe-grant-cancel.py": "92842c9d3666fcd8013973d5af047fd2e5fd06affe42f82fd4a4561654a61eea",
+      "attempts/handler-1000-b/probe-receive.py": "57d1f57cc0c9de7b67e6837837b37e06c9a823cdb3b1d4317376d38404ed57f6",
+      "attempts/handler-1000-b/probe-request-cancel.py": "9ea48ed342fc0f4d575d3164e856a655637d2852889ec18bd3c284ffb638c6cd",
+      "attempts/handler-1000-b/probe-request-safety.py": "42fb31eb56156c81c2217befcde9aa94a58bc677da0a4954019ac1acd319fd1e",
+      "attempts/handler-1000-b/stderr.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "attempts/handler-1000-b/stdout.log": "6f18be263f2fdee9b34562d7d87da8176854739c91503ceba066c9e4f25bcad2",
+      "attempts/handler-1000-b/trace-teardown.py": "02aa15ea3889abdd668e631389c1b404a0ecad4a34ca15df3b2bf09c3dd5d51d",
+      "attempts/handler-1000-c/firewall-active.json": "d2a170f44235fc8b06ab5457b6db1f57fd2e318aff51a1e3acd49c5c9149701f",
+      "attempts/handler-1000-c/probe-grant-cancel.py": "ed7f473aa340c1cfd061a82618c9d25b27963dae9564ecd5b0e320e1f88b5e6c",
+      "attempts/handler-1000-c/probe-receive.py": "57d1f57cc0c9de7b67e6837837b37e06c9a823cdb3b1d4317376d38404ed57f6",
+      "attempts/handler-1000-c/probe-request-cancel.py": "9ea48ed342fc0f4d575d3164e856a655637d2852889ec18bd3c284ffb638c6cd",
+      "attempts/handler-1000-c/probe-request-safety.py": "42fb31eb56156c81c2217befcde9aa94a58bc677da0a4954019ac1acd319fd1e",
+      "attempts/handler-1000-c/stderr.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "attempts/handler-1000-c/stdout.log": "615907dbaa29568b76e8deb5ab58ca08ce3777d7a779d108468c9517c76dd953",
+      "attempts/handler-1000-c/trace-teardown.py": "02aa15ea3889abdd668e631389c1b404a0ecad4a34ca15df3b2bf09c3dd5d51d",
+      "attempts/reset-1000-a/firewall-active.json": "5b7977396ab165665b06ed1eb4d517f279b62e247898a1b07458d1503d11bdeb",
+      "attempts/reset-1000-a/probe-grant-cancel.py": "92842c9d3666fcd8013973d5af047fd2e5fd06affe42f82fd4a4561654a61eea",
+      "attempts/reset-1000-a/probe-receive.py": "57d1f57cc0c9de7b67e6837837b37e06c9a823cdb3b1d4317376d38404ed57f6",
+      "attempts/reset-1000-a/probe-request-cancel.py": "9ea48ed342fc0f4d575d3164e856a655637d2852889ec18bd3c284ffb638c6cd",
+      "attempts/reset-1000-a/probe-request-safety.py": "42fb31eb56156c81c2217befcde9aa94a58bc677da0a4954019ac1acd319fd1e",
+      "attempts/reset-1000-a/stderr.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "attempts/reset-1000-a/stdout.log": "973eeda8015ea4ddaf5bd316b7b19cf011dd06808efa79fca04f87483ecb2dda",
+      "attempts/reset-1000-a/trace-teardown.py": "02aa15ea3889abdd668e631389c1b404a0ecad4a34ca15df3b2bf09c3dd5d51d",
+      "attempts/reset-1000-b/firewall-active.json": "9c491f2eba3f24095e1be3ca0e9b9793036a0d548530824d514d323fcd818d9b",
+      "attempts/reset-1000-b/probe-grant-cancel.py": "ed7f473aa340c1cfd061a82618c9d25b27963dae9564ecd5b0e320e1f88b5e6c",
+      "attempts/reset-1000-b/probe-receive.py": "57d1f57cc0c9de7b67e6837837b37e06c9a823cdb3b1d4317376d38404ed57f6",
+      "attempts/reset-1000-b/probe-request-cancel.py": "9ea48ed342fc0f4d575d3164e856a655637d2852889ec18bd3c284ffb638c6cd",
+      "attempts/reset-1000-b/probe-request-safety.py": "42fb31eb56156c81c2217befcde9aa94a58bc677da0a4954019ac1acd319fd1e",
+      "attempts/reset-1000-b/stderr.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "attempts/reset-1000-b/stdout.log": "de322b3bec0345a585a61b2d8ed8ca34335ca4fa77849eea596c5eefa2677f58",
+      "attempts/reset-1000-b/trace-teardown.py": "02aa15ea3889abdd668e631389c1b404a0ecad4a34ca15df3b2bf09c3dd5d51d",
+      "attempts/reset-1000-c/firewall-active.json": "8391ca43301f488826765c14ec43ba8e80d31788304b45e259563c115ac4a518",
+      "attempts/reset-1000-c/probe-grant-cancel.py": "504195ba75008e2f90e629386edb96ff62c8a96e69f49464e3791d8fd1047d1f",
+      "attempts/reset-1000-c/probe-receive.py": "57d1f57cc0c9de7b67e6837837b37e06c9a823cdb3b1d4317376d38404ed57f6",
+      "attempts/reset-1000-c/probe-request-cancel.py": "9ea48ed342fc0f4d575d3164e856a655637d2852889ec18bd3c284ffb638c6cd",
+      "attempts/reset-1000-c/probe-request-safety.py": "42fb31eb56156c81c2217befcde9aa94a58bc677da0a4954019ac1acd319fd1e",
+      "attempts/reset-1000-c/stderr.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "attempts/reset-1000-c/stdout.log": "ee8fd8d6881e2aecb930feee8e76e81b625a8dabe36f54f02f6ce61767fc5cf1",
+      "attempts/reset-1000-c/trace-teardown.py": "02aa15ea3889abdd668e631389c1b404a0ecad4a34ca15df3b2bf09c3dd5d51d",
+      "attempts/reset-1000-d/firewall-active.json": "8aa4d6e9703da611a4590688ac7e3d514b72c0c1bbf2d5c4adb5c37913bce411",
+      "attempts/reset-1000-d/probe-grant-cancel.py": "b4ba2042fcb47b6c7c53e6a08bcd383eecb833b7d81015145b565f4031aedf1c",
+      "attempts/reset-1000-d/probe-receive.py": "57d1f57cc0c9de7b67e6837837b37e06c9a823cdb3b1d4317376d38404ed57f6",
+      "attempts/reset-1000-d/probe-request-cancel.py": "9ea48ed342fc0f4d575d3164e856a655637d2852889ec18bd3c284ffb638c6cd",
+      "attempts/reset-1000-d/probe-request-safety.py": "42fb31eb56156c81c2217befcde9aa94a58bc677da0a4954019ac1acd319fd1e",
+      "attempts/reset-1000-d/stderr.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "attempts/reset-1000-d/stdout.log": "8734976d33d8a40d884101b257e4c9c25759cc82093a5e05da24a82f5038ca67",
+      "attempts/reset-1000-d/trace-teardown.py": "02aa15ea3889abdd668e631389c1b404a0ecad4a34ca15df3b2bf09c3dd5d51d",
+      "attempts/root-1000-a/firewall-active.json": "46c12816883793a26b8442687964a2c2a5a5ee68a17d315215b6043b203d5501",
+      "attempts/root-1000-a/probe-grant-cancel.py": "92842c9d3666fcd8013973d5af047fd2e5fd06affe42f82fd4a4561654a61eea",
+      "attempts/root-1000-a/probe-receive.py": "57d1f57cc0c9de7b67e6837837b37e06c9a823cdb3b1d4317376d38404ed57f6",
+      "attempts/root-1000-a/probe-request-cancel.py": "9ea48ed342fc0f4d575d3164e856a655637d2852889ec18bd3c284ffb638c6cd",
+      "attempts/root-1000-a/probe-request-safety.py": "42fb31eb56156c81c2217befcde9aa94a58bc677da0a4954019ac1acd319fd1e",
+      "attempts/root-1000-a/stderr.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "attempts/root-1000-a/stdout.log": "d0f2d0f6d9d3964c8245fe2c962a16bdeb745fa8e01f90edd98d572d49683054",
+      "attempts/root-1000-a/trace-teardown.py": "02aa15ea3889abdd668e631389c1b404a0ecad4a34ca15df3b2bf09c3dd5d51d",
+      "check-grant-cancel.py": "b3cf60a0b116bbb5a6a6bf0bd5121d7e5e22956b5eeb4fb518e14508eaef6147",
+      "kernel/arch/x86/kvm/dsm.c": "68bbda428b2098555350cdec37e71b3b9706e5ebeb1bc521f362fc4287030375",
+      "kernel/arch/x86/kvm/ivy.c": "4c36f7c70cb5d4cfdd1ded0ec08b227370372bc0ffdf0a6544de40bcfab47255",
+      "kernel/arch/x86/kvm/ktcp.c": "21dd158364c46a59d1088b7370d87153e030890297d13d4c6ee3badf8de50ea9",
+      "lab/boot.json": "f04c1ea4082c6568142b841bb66a5a7de59f1335fbaef61c501023a45776c8e9",
+      "lab/boot_pf30.py": "bae20136bf60357c27f83728ae33be30a074b100f1cc82a6bd5f39c59e2ccd70",
+      "lab/build_evidence.py": "27709b55f8592aa1b280345b6d8d787978072a204339ca3f28ed6c2956a28a2b",
+      "lab/compiled-source-hashes.json": "5754a15a5c310ce8805738e5baa600f424eb241b0a6521e7e1720d8337aa338c",
+      "lab/node0-before-boot.sha256": "e2d1533697fec9a5c3fb92ea1410b84c9517c492eedf754d6df51e3a441a3664",
+      "lab/node0-before-firewall.json": "e453894a6a90f916cf1839d93db29ae1d9b5462423f5f6de3d9dd7a83ae717cf",
+      "lab/node0-before-grub.cfg": "bfb0d1dacc66d8ef45b972ac8b23f83f8d137198a530266113357e509be5146d",
+      "lab/node0-entry": "ff014df0793f3d195e136c1c5b7e51d77b24b2c06aefd3cc81b2d5a68a125f19",
+      "lab/node0-grub.cfg": "2f31ff423d529dc14016e34815ba50112f198edd5e9aa04c6a3ad2c29b7e97c2",
+      "lab/nodes.json": "f04c1ea4082c6568142b841bb66a5a7de59f1335fbaef61c501023a45776c8e9",
+      "lab/probe-build.json": "e176bed36a7b56dc202ff3e77e23303726d22483cbac8f9f8db6546f3010f617",
+      "lab/restore_lab.py": "db14fe115080545f5dc66211cb6aaee422ee7e4ba6a4427c06298f41979c9736",
+      "lab/run_probe.py": "794197d0456beb33a88e7b432603627db2322d628f0cc7a7ccb497c41f03a770",
+      "probe-grant-cancel.py": "b4ba2042fcb47b6c7c53e6a08bcd383eecb833b7d81015145b565f4031aedf1c",
+      "probe-receive.py": "57d1f57cc0c9de7b67e6837837b37e06c9a823cdb3b1d4317376d38404ed57f6",
+      "probe-request-cancel.py": "9ea48ed342fc0f4d575d3164e856a655637d2852889ec18bd3c284ffb638c6cd",
+      "probe-request-safety.py": "42fb31eb56156c81c2217befcde9aa94a58bc677da0a4954019ac1acd319fd1e",
+      "probe-write-grant.c": "9c2e01f767c33983a38b663e293417a361c5f83bb481f3ebfeab3353cafb26f1",
+      "trace-teardown.py": "02aa15ea3889abdd668e631389c1b404a0ecad4a34ca15df3b2bf09c3dd5d51d"
+    }
+  }
+}

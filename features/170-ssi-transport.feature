@@ -1,6 +1,18 @@
 Feature: SSI 传输等待与启动资源生命周期
   先在真实 KVM 监听器和独占实验 VM 中验证，不将同一 ESXi 的结果当作跨物理机性能。
 
+  # evidence: docs/ssi-grant-cancel.md
+  @verified @p0
+  Scenario: 有期限写授权等待中的 READ 请求可以取消或按连接故障回收
+    Given 独占 PF30 VM 完成单条真实客体写入并收到受控对端的 READ 请求
+    When 在线程等待区间内定向取消处理线程或根线程或发送匹配连接的 TCP reset
+    Then 完整内核跟踪证明每次等待前已释放页锁和 VM SRCU
+    And 取消请求不发送页面而复位后的页面发送尝试必须报告失败
+    And 九个 DSM 线程在主动清理前退出且后续管理调用返回 EIO
+    And 原始首次错误保留到根线程返回并在释放 VM 前完成线程退出
+    And 零开关与无故障对照返回正确页面而错过窗口和采集不完整的尝试保持拒绝
+    And 不把故障回收当作原生关闭时间上限多请求公平性或服务恢复
+
   # evidence: docs/ssi-tcp-reply.md
   @verified @p0
   Scenario: 双节点实验的临时端口落入保护区间时仍能接收 TCP 返回包

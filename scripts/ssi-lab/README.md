@@ -232,3 +232,7 @@ timeout --kill-after=5 45 python3 scripts/ssi-lab/probe-dsm-device.py \
 `probe-write-grant.c` 每次 KVM_RUN 只执行共享页写入与 HLT，以宿主 trace_marker 标记唯一调用；远端真实 DSM_MEMCPY 读者制造竞争。`check-write-grant.py <记录.json.gz>` 核对完整调用边界、缺页、读回数据、远端读者与原生关闭。`test_write_grant.py` 重放完整记录、实际编译源与 Linux 客体开关对照，原 250 ms 门槛不变。实验开关、恢复和限制见 [写授权记录](../../docs/ssi-write-grant.md)，PF30 不进入默认安装或 CLI 准入。
 
 同一探针的可选 `--atomic` 模式执行 `LOCK XADD`，通过 `arm COUNT BASE` / `go` 屏障启动双端批次。`check-atomic-grant.py <记录.json.gz>` 核对每次返回计数、全局唯一连续序列、相邻哨兵、完整跟踪和同代际原生关闭。`test_atomic_grant.py` 重放四轮双端结果、单端对照和旧 store 模式，主动破坏计数与并发屏障，并保留启动连接超时的失败记录。实际范围、恢复与剩余问题见 [原子操作实验](../../docs/ssi-atomic-grant.md)；有限进展不等于任意负载公平性。
+
+## 写授权等待取消与复位
+
+`probe-grant-cancel.py` 在指定 PF30 独占 VM 中复用 store 工作进程，用独立通知与归档 trace 观察真实授权睡眠，再取消线程或复位合成对端；错误内核在启动前拒绝。`check-grant-cancel.py` 检查原始等待区间、锁与 SRCU 释放、真实信号/reset、发送失败和清理前线程退出。归档包含当次采集器及未通过记录，使用 `test_grant_cancel.py` 重放；说明见 [取消与复位实验](../../docs/ssi-grant-cancel.md)。合成对端不实现原生 CLOSE，工作进程的错误退出不能记作正常关闭，候选不进入默认运行时。
