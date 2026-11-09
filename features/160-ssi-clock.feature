@@ -1,6 +1,17 @@
 Feature: SSI 客体计时信息保持跨节点一致
   TSC、KVM 纳秒时钟和客体共享的 pvclock 页面必须分别验证。
 
+  # evidence: docs/evidence/ssi-tsc-frequency-20261109.json
+  @verified @p0
+  Scenario: 频率设置和读回不能替代客体实际计时
+    Given 同一物理 ESXi 上两个原版 Linux 实验 VM 均未暴露硬件 TSC 缩放
+    When 标准 KVM 分别请求原生频率升频与降频并由共享内存握手建立宿主时间包络
+    Then 升频设置成功及运行后读回一致仍保留实测频率维持原生的结果
+    And 降频设置失败后即使读回值已改变也不执行该临时客体
+    And 检查器逐段重算 RDTSC 和 pvclock 拒绝错序宽包络非法版本与未清理状态
+    And 普通 CI 重放双端六组记录启动前失败与实际编译源码
+    And 既有不同频率拒绝保持生效且不声称跨物理长期同步或完整 SSI 完成
+
   # evidence: docs/evidence/ssi-write-grant-20261108.json
   @verified @p0
   Scenario: 同一次单指令写入的重复缺页可以重放并比较有期限的授权

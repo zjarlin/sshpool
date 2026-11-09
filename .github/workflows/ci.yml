@@ -113,6 +113,10 @@ jobs:
           cc -O2 -Wall -Wextra -Werror -static scripts/ssi-lab/probe-dsm-request.c -o "$RUNNER_TEMP/probe-dsm-request"
           cc -O2 -Wall -Wextra -Werror -static -pthread scripts/ssi-lab/probe-dsm-latency.c -o "$RUNNER_TEMP/probe-dsm-latency"
           cc -O2 -Wall -Wextra -Werror -static -pthread scripts/ssi-lab/probe-write-grant.c -o "$RUNNER_TEMP/probe-write-grant"
+          cc -O2 -Wall -Wextra -Werror -static -pthread scripts/ssi-lab/probe-tsc-frequency.c -o "$RUNNER_TEMP/probe-tsc-frequency"
+          tsc_status=0
+          "$RUNNER_TEMP/probe-tsc-frequency" kernel-must-not-match native || tsc_status=$?
+          test "$tsc_status" -eq 2
           grant_status=0
           "$RUNNER_TEMP/probe-write-grant" 0 127.0.0.1 - kernel-must-not-match || grant_status=$?
           test "$grant_status" -eq 2

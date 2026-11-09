@@ -236,3 +236,7 @@ timeout --kill-after=5 45 python3 scripts/ssi-lab/probe-dsm-device.py \
 ## 写授权等待取消与复位
 
 `probe-grant-cancel.py` 在指定 PF30 独占 VM 中复用 store 工作进程，用独立通知与归档 trace 观察真实授权睡眠，再取消线程或复位合成对端；错误内核在启动前拒绝。`check-grant-cancel.py` 检查原始等待区间、锁与 SRCU 释放、真实信号/reset、发送失败和清理前线程退出。归档包含当次采集器及未通过记录，使用 `test_grant_cancel.py` 重放；说明见 [取消与复位实验](../../docs/ssi-grant-cancel.md)。合成对端不实现原生 CLOSE，工作进程的错误退出不能记作正常关闭，候选不进入默认运行时。
+
+## 原版 KVM 频率设置
+
+`probe-tsc-frequency.c REQUIRED_KERNEL native|faster|slower` 在标准 KVM 中采样 RDTSC/pvclock，使用两个独立宿主 CPU 和一次 KVM_RUN，不依赖 DSM。`capture-tsc-frequency.py` 验证指定内核及二进制哈希，独占创建结果文件并核对前后身份、启动配置、模块、防火墙与 KVM fd。`check-tsc-frequency.py docs/evidence/ssi-tsc-frequency-20261109.json` 和 `test_tsc_frequency.py` 重放真实包络与失败记录。使用步骤与 SET/GET 不能证明缩放的原因见[频率实验](../../docs/ssi-tsc-frequency.md)，不同频率仍不允许配对。

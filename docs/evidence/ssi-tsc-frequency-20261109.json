@@ -1,0 +1,212 @@
+{
+  "schema": 1,
+  "scope": "同一物理 ESXi 的两个原版 Linux VM，标准 KVM 单 vCPU，无 DSM、磁盘或网络设备",
+  "build": {
+    "source_sha256": "fcbe61ba16cbfbca26aa902d278d3b6955f693b351188ff3cd607ba881367ad0",
+    "binary_sha256": "d8188ccd34482b87029f05786e23b3ca8feb4b2563a7f727d4178f696506368e",
+    "bytes": 957216,
+    "compiler": "x86_64-linux-gnu-gcc (Ubuntu 15.2.0-16ubuntu1) 15.2.0",
+    "capture_sha256": "d93bf2637f4777bda083aab4bfb18f998c913438bc9e529d6c0c80ac313d81b5",
+    "command": [
+      "x86_64-linux-gnu-gcc",
+      "-O2",
+      "-Wall",
+      "-Wextra",
+      "-Werror",
+      "-static",
+      "-pthread",
+      "probe-tsc-frequency.c",
+      "-o",
+      "probe-tsc-frequency"
+    ]
+  },
+  "sources": {
+    "file": "ssi-tsc-frequency-sources-20261109.json.gz",
+    "bytes": 112966,
+    "sha256": "63e1ea3cf2f132aa992f8c7e52916a6dfce2f5636d661e85ac14af1342889964",
+    "raw_sha256": "9919848865dddeb3835173b7d966b1da952b171c9fdad1eeba89bf71ad16765c"
+  },
+  "kernel_source": {
+    "url": "https://git.launchpad.net/~ubuntu-kernel/ubuntu/+source/linux/+git/noble/plain/arch/x86/kvm/x86.c?h=Ubuntu-6.8.0-147.147",
+    "sha256": "e806475579c4a8d2a8d431ce9fa0b2684619e0d0eb7282ab7d657e401dd18bfb"
+  },
+  "nodes": [
+    {
+      "label": "node0",
+      "capture": {
+        "file": "ssi-tsc-frequency-node0-20261109.json.gz",
+        "bytes": 4009,
+        "sha256": "f80c4ab982a3be436d24d2b72d21a4bd2b9124de22de3c19e0df0822ce82b999",
+        "raw_sha256": "5ae0ef98d201e972f89eed30993208f091dc42f780b651b3ac35988f9a81f6d7"
+      },
+      "runner_exit": 0,
+      "kernel_log_delta": "[ 2410.790998] kvm: user requested TSC rate below hardware speed\n",
+      "analysis": [
+        {
+          "mode": "native",
+          "requested_khz": 2394374,
+          "reported_khz_after_run": 2394374,
+          "sample_pair": [
+            1,
+            11
+          ],
+          "tsc_khz_bounds": [
+            2394339.0659588506,
+            2394382.9376673168
+          ],
+          "pvclock_rate_bounds": [
+            0.9999854095046,
+            1.0000037323348874
+          ],
+          "requested_rate_observed": true,
+          "max_bracket_ns": 14619
+        },
+        {
+          "mode": "faster",
+          "requested_khz": 2873248,
+          "reported_khz_after_run": 2873248,
+          "sample_pair": [
+            1,
+            11
+          ],
+          "tsc_khz_bounds": [
+            2394371.5608791485,
+            2394377.0847752816
+          ],
+          "pvclock_rate_bounds": [
+            0.9999989807546167,
+            1.0000012877860704
+          ],
+          "requested_rate_observed": false,
+          "max_bracket_ns": 1963
+        },
+        {
+          "mode": "slower",
+          "requested_khz": 1915499,
+          "rejected_before_run": true
+        }
+      ]
+    },
+    {
+      "label": "node1",
+      "capture": {
+        "file": "ssi-tsc-frequency-node1-20261109.json.gz",
+        "bytes": 4016,
+        "sha256": "1d42ec576b31b873bd55dc21d839c0513e181dc29a213714a20e3cb0083eed7e",
+        "raw_sha256": "a86b91f7a2f013819ed1213f9253fd728492f0cc02e3f2200cf1904bfa159958"
+      },
+      "runner_exit": 0,
+      "kernel_log_delta": "[ 5753.387683] kvm: user requested TSC rate below hardware speed\n",
+      "analysis": [
+        {
+          "mode": "native",
+          "requested_khz": 2394374,
+          "reported_khz_after_run": 2394374,
+          "sample_pair": [
+            1,
+            11
+          ],
+          "tsc_khz_bounds": [
+            2394371.015745515,
+            2394381.0155386818
+          ],
+          "pvclock_rate_bounds": [
+            0.9999987529831247,
+            1.000002929353717
+          ],
+          "requested_rate_observed": true,
+          "max_bracket_ns": 3444
+        },
+        {
+          "mode": "faster",
+          "requested_khz": 2873248,
+          "reported_khz_after_run": 2873248,
+          "sample_pair": [
+            1,
+            11
+          ],
+          "tsc_khz_bounds": [
+            2394371.732512569,
+            2394376.5649126344
+          ],
+          "pvclock_rate_bounds": [
+            0.9999990523012074,
+            1.0000010705323035
+          ],
+          "requested_rate_observed": false,
+          "max_bracket_ns": 1449
+        },
+        {
+          "mode": "slower",
+          "requested_khz": 1915499,
+          "rejected_before_run": true
+        }
+      ]
+    }
+  ],
+  "failed_captures": [
+    {
+      "label": "node0-before-executable-bit",
+      "capture": {
+        "file": "ssi-tsc-frequency-node0-setup-failure-20261109.json.gz",
+        "bytes": 3165,
+        "sha256": "2d0dc6f3b95aff8da228949fe4b795229c26dfa122061c8289994415cc6982ec",
+        "raw_sha256": "ed616d10c59d43271e77d76a884e4103ad34d18d5124c4574337de9c2bb2038c"
+      }
+    },
+    {
+      "label": "node1-before-executable-bit",
+      "capture": {
+        "file": "ssi-tsc-frequency-node1-setup-failure-20261109.json.gz",
+        "bytes": 3166,
+        "sha256": "7148dff78d8c45a9d955d0c8ebf1adc3f96aa1ef62c461297f3e750bf02cc3d2",
+        "raw_sha256": "f6c260aafcd0403d14bd487beef8bac4a272757e1a1f46ba3f77ed2a6d752a60"
+      }
+    }
+  ],
+  "diagnostics": [
+    {
+      "label": "initial-v2-faster",
+      "formal_acceptance": false,
+      "capture": {
+        "file": "ssi-tsc-frequency-initial-v2-faster-20261109.json.gz",
+        "bytes": 843,
+        "sha256": "cb4263afb8362066258f3f48a015cf8987604ef0c74519ae36f8daad6d84c6cb",
+        "raw_sha256": "ff7878a137ac23ec3589cebee893acd946237f6b95872d39fee1bca6d0764077"
+      }
+    },
+    {
+      "label": "initial-v2-native",
+      "formal_acceptance": false,
+      "capture": {
+        "file": "ssi-tsc-frequency-initial-v2-native-20261109.json.gz",
+        "bytes": 809,
+        "sha256": "643a22abb8553052005161f8abd1aeb916648f053082d18e8f57f22ef0401259",
+        "raw_sha256": "258e4a7b1d3f83090c3f79e8b29f00bd285b05c601cb54c7865bc10bc1d8e532"
+      }
+    },
+    {
+      "label": "initial-v2-slower",
+      "formal_acceptance": false,
+      "capture": {
+        "file": "ssi-tsc-frequency-initial-v2-slower-20261109.json.gz",
+        "bytes": 360,
+        "sha256": "3997f25c491038411fbb6a77d34d65b3c0025346326a64790f03253492224e63",
+        "raw_sha256": "509a20c36fce0a26f8f89976b5ed915d3b26c61d1eac6cc6d3ad902b42dd1f74"
+      }
+    },
+    {
+      "label": "initial-v3-faster",
+      "formal_acceptance": false,
+      "capture": {
+        "file": "ssi-tsc-frequency-initial-v3-faster-20261109.json.gz",
+        "bytes": 871,
+        "sha256": "e8b40e10c379d70efab137375cd03940f791fa97f26f531db4337d17196b3d52",
+        "raw_sha256": "d869aadafff7e4b5861fdee45daedc101ea0d735eabe935a343ba7eaac4239ae"
+      }
+    }
+  ],
+  "full_ssi_accepted": false,
+  "cross_physical_verified": false,
+  "guest_hex": "fc66a100206685c074f7663b06042074f06683f8ff743a6689c366a10030a80175f86689c5be0030bf2020b91000f3a50faee80f310faee866a308206689160c2066a100306639e875d066891e0420ebb0f4"
+}
