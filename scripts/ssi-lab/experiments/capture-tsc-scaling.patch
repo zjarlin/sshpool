@@ -1,0 +1,104 @@
+--- a/capture-tsc-frequency.py
++++ b/capture-tsc-frequency.py
+@@ -1,5 +1,5 @@
+ #!/usr/bin/env python3
+-"""在独占的原版 Linux 实验 VM 采集三个频率请求，保留实际退出与前后状态。"""
++"""在独占 PF31 VM 比较默认与显式软件缩放，保留实际读数和前后状态。"""
+ import argparse
+ import hashlib
+ import json
+@@ -19,19 +19,23 @@
+     return subprocess.run(argv, capture_output=True, text=True, check=True, timeout=15).stdout
+ 
+ 
+-def snapshot(kernel):
++def snapshot(kernel, kernel_directory):
+     files = [Path(name) for name in (
+         '/etc/fstab', '/etc/default/grub', '/boot/grub/grub.cfg', '/boot/grub/grubenv',
+         '/etc/ssh/sshd_config', '/proc/cmdline', '/proc/sys/net/ipv4/ip_local_port_range',
+-        f'/boot/vmlinuz-{kernel}', f'/boot/config-{kernel}')]
++        str(kernel_directory / f'vmlinuz-{kernel}'), str(kernel_directory / f'config-{kernel}'))]
+     for pattern in ('netplan/*.yaml', 'ssh/sshd_config.d/*.conf', 'default/grub.d/*.cfg'):
+         files.extend(Path('/etc').glob(pattern))
+     modules = {}
+     for name in ('kvm', 'kvm_intel'):
+-        filename = Path(command(['modinfo', '-F', 'filename', name]).strip())
+-        modules[name] = {'sha256': sha(filename.read_bytes()),
+-                         'srcversion': command(['modinfo', '-F', 'srcversion', name]).strip(),
+-                         'vermagic': command(['modinfo', '-F', 'vermagic', name]).strip()}
++        filename = command(['modinfo', '-F', 'filename', name]).strip()
++        if filename == '(builtin)':
++            modules[name] = {'builtin': True,
++                             'kernel_sha256': sha((kernel_directory / f'vmlinuz-{kernel}').read_bytes())}
++        else:
++            modules[name] = {'builtin': False, 'sha256': sha(Path(filename).read_bytes()),
++                             'srcversion': command(['modinfo', '-F', 'srcversion', name]).strip(),
++                             'vermagic': command(['modinfo', '-F', 'vermagic', name]).strip()}
+         files.extend(Path(f'/sys/module/{name}/parameters').glob('*'))
+     processes, kvm_fds = [], []
+     for proc in Path('/proc').glob('[0-9]*'):
+@@ -57,6 +61,9 @@
+         'files_sha256': {str(path): sha(path.read_bytes()) for path in sorted(set(files))},
+         'firewall_sha256': sha(command(['nft', '--stateless', 'list', 'ruleset']).encode()),
+         'clocksource': Path('/sys/devices/system/clocksource/clocksource0/current_clocksource').read_text().strip(),
++        'parameters': {name: Path('/sys/module/' + name).read_text().strip() for name in (
++            'kvm_intel/parameters/lab_tsc_scaling', 'kvm_intel/parameters/nested',
++            'kvm_intel/parameters/enable_apicv', 'kvm/parameters/dsm_write_grace_us')},
+         'allowed_cpus': sorted(os.sched_getaffinity(0)), 'processes': processes, 'kvm_fds': kvm_fds,
+     }
+ 
+@@ -68,33 +75,46 @@
+     parser.add_argument('--binary-sha256', required=True)
+     parser.add_argument('--source', type=Path, required=True)
+     parser.add_argument('--output', type=Path, required=True)
++    parser.add_argument('--kernel-directory', type=Path, required=True)
++    parser.add_argument('--software', choices=['off', 'on'], required=True)
++    parser.add_argument('--target-khz', type=int, required=True)
+     args = parser.parse_args()
+     if platform.machine() != 'x86_64' or platform.release() != args.require_kernel:
+         print('拒绝：架构或内核与显式要求不符', file=sys.stderr)
+         return 2
++    selected = Path('/sys/module/kvm_intel/parameters/lab_tsc_scaling').read_text().strip()
++    if selected != ('Y' if args.software == 'on' else 'N'):
++        raise ValueError('实验宿主开关与要求不符')
++    if Path('/sys/module/kvm_intel/parameters/nested').read_text().strip() != 'N':
++        raise ValueError('实验要求关闭内层嵌套虚拟化')
+     binary = args.binary.resolve()
+     if sha(binary.read_bytes()) != args.binary_sha256:
+         raise ValueError('二进制哈希不符')
+-    before = snapshot(args.require_kernel)
++    before = snapshot(args.require_kernel, args.kernel_directory)
+     if before['processes'] or before['kvm_fds']:
+         raise ValueError('实验节点仍有 KVM 或研究进程')
+     data = {'schema': 1, 'source_sha256': sha(args.source.read_bytes()),
+             'capture_sha256': sha(Path(__file__).read_bytes()), 'binary_sha256': args.binary_sha256,
+-            'before': before, 'runs': [], 'started_unix_ns': time.time_ns()}
++            'before': before, 'runs': [], 'started_unix_ns': time.time_ns(),
++            'software_enabled': args.software == 'on', 'target_khz': args.target_khz}
+     # 独占创建输出，失败也保留本轮已经取得的记录；不能覆盖旧实验。
+     with args.output.open('x') as output:
+         try:
+-            for mode in ('native', 'faster', 'slower'):
++            plans = [(selection, mode) for selection in ('control', 'software')
++                     for mode in ('native', 'faster', 'slower', 'target')
++                     if selection == 'control' or args.software == 'on' or mode == 'native']
++            for selection, mode in plans:
+                 started = time.monotonic_ns()
+-                result = subprocess.run([str(binary), args.require_kernel, mode],
++                result = subprocess.run([str(binary), args.require_kernel, mode, selection, str(args.target_khz)],
+                                         capture_output=True, text=True, timeout=15)
+-                data['runs'].append({'mode': mode, 'exit': result.returncode,
++                data['runs'].append({'selection': selection, 'mode': mode, 'exit': result.returncode,
+                                      'stdout': result.stdout, 'stderr': result.stderr,
+                                      'elapsed_ns': time.monotonic_ns() - started})
+-                if result.returncode:
+-                    raise RuntimeError(f'{mode} 探针失败，保留输出并停止后续运行')
++                expected_exit = 2 if selection == 'software' and args.software == 'off' else 0
++                if result.returncode != expected_exit:
++                    raise RuntimeError(f'{selection}/{mode} 探针失败，保留输出并停止后续运行')
+         finally:
+-            data['after'] = snapshot(args.require_kernel)
++            data['after'] = snapshot(args.require_kernel, args.kernel_directory)
+             data['finished_unix_ns'] = time.time_ns()
+             json.dump(data, output, ensure_ascii=False, indent=2)
+             output.write('\n')

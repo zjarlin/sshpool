@@ -1,6 +1,27 @@
 Feature: SSI 客体计时信息保持跨节点一致
   TSC、KVM 纳秒时钟和客体共享的 pvclock 页面必须分别验证。
 
+  # evidence: docs/evidence/ssi-tsc-scaling-20261109.json
+  @verified @p0
+  Scenario: 显式软件缩放必须同时改变三条 TSC 路径并保持 pvclock 一致
+    Given 独立 ESXi 的专用 VM 没有向 Linux 暴露硬件 TSC 缩放
+    When PF32 单 vCPU 分别执行原生升频降频和另一节点目标频率
+    Then RDTSC RDTSCP TSC MSR 与 pvclock 的每段实测包络同时满足预设门槛
+    And RDTSCP AUX 与三种读取的零点顺序一致
+    And PF31 的三组 MSR 不一致记录继续被检查器拒绝
+    And 多 vCPU 定时器暂停恢复及跨物理同一客体不因单节点实验升级为通过
+
+  # evidence: docs/evidence/ssi-tsc-scaling-20261109.json
+  @verified @p0
+  Scenario: 软件缩放保持默认关闭和执行后配置冻结
+    Given PF31 与 PF32 分别以默认关闭和显式开启的宿主参数启动
+    When 未选择的普通实例和显式选择的软件实例完成读数采集
+    Then 关闭时软件属性不可用且无客体执行
+    And 硬件能力位保持零且未选择实例仍以原生速率运行
+    And 执行后改频或选择被拒绝且读回状态未变
+    And 原版内核启动配置防火墙网络与下载缓存已恢复并无遗留 KVM fd
+    And 默认预检仍拒绝不同原生频率
+
   # evidence: docs/evidence/ssi-tsc-frequency-candidate-20261109.json
   @verified @p0
   Scenario: 重装后独立候选的身份与实测频率必须对应预检拒绝

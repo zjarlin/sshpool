@@ -1,0 +1,176 @@
+--- a/probe-tsc-frequency.c
++++ b/probe-tsc-frequency.c
+@@ -2,6 +2,7 @@
+ #include <errno.h>
+ #include <fcntl.h>
+ #include <inttypes.h>
++#include <limits.h>
+ #include <linux/kvm.h>
+ #include <pthread.h>
+ #include <sched.h>
+@@ -34,6 +35,10 @@
+     "movw $0x3000, %si\n movw $0x2020, %di\n movw $16, %cx\n rep movsw\n"
+     "lfence\n rdtsc\n lfence\n"
+     "movl %eax, 0x2008\n movl %edx, 0x200c\n"
++    "rdtscp\n lfence\n"
++    "movl %eax, 0x2010\n movl %edx, 0x2014\n movl %ecx, 0x2018\n"
++    "movl $0x10, %ecx\n rdmsr\n lfence\n"
++    "movl %eax, 0x2040\n movl %edx, 0x2044\n"
+     "movl 0x3000, %eax\n cmpl %ebp, %eax\n jne 2b\n"
+     "movl %ebx, 0x2004\n jmp 1b\n"
+     "3: hlt\n"
+@@ -95,25 +100,35 @@
+ static void print_sample(unsigned index, uint64_t before, uint64_t after, const uint8_t *memory)
+ {
+     struct pvclock_record record;
+-    uint64_t tsc;
++    uint64_t tsc, tscp, msr;
++    uint32_t aux;
+     memcpy(&record, memory + 0x2020, sizeof(record));
+     memcpy(&tsc, memory + 0x2008, sizeof(tsc));
++    memcpy(&tscp, memory + 0x2010, sizeof(tscp));
++    memcpy(&aux, memory + 0x2018, sizeof(aux));
++    memcpy(&msr, memory + 0x2040, sizeof(msr));
+     printf("{\"op\":\"sample\",\"index\":%u,\"host_before_ns\":%" PRIu64
+            ",\"host_after_ns\":%" PRIu64 ",\"guest_tsc\":%" PRIu64
++           ",\"guest_tscp\":%" PRIu64 ",\"tsc_aux\":%u,\"guest_msr\":%" PRIu64
+            ",\"pvclock\":{\"version\":%u,\"tsc\":%" PRIu64 ",\"system_time\":%" PRIu64
+            ",\"multiplier\":%u,\"shift\":%d,\"flags\":%u}}\n",
+-           index, before, after, tsc, record.version, record.tsc, record.system_time,
++           index, before, after, tsc, tscp, aux, msr, record.version, record.tsc, record.system_time,
+            record.multiplier, record.shift, record.flags);
+ }
+ 
+ int main(int argc, char **argv)
+ {
+     struct utsname host;
+-    if (argc != 3 || uname(&host) || strcmp(host.machine, "x86_64") || strcmp(host.release, argv[1]) ||
+-        (strcmp(argv[2], "native") && strcmp(argv[2], "faster") && strcmp(argv[2], "slower"))) {
+-        fprintf(stderr, "usage: probe-tsc-frequency REQUIRED_KERNEL native|faster|slower\n");
++    if (argc != 5 || uname(&host) || strcmp(host.machine, "x86_64") || strcmp(host.release, argv[1]) ||
++        (strcmp(argv[2], "native") && strcmp(argv[2], "faster") && strcmp(argv[2], "slower") && strcmp(argv[2], "target")) ||
++        (strcmp(argv[3], "control") && strcmp(argv[3], "software"))) {
++        fprintf(stderr, "usage: probe-tsc-scaling REQUIRED_KERNEL native|faster|slower|target control|software TARGET_KHZ\n");
+         return 2;
+     }
++    char *end;
++    unsigned long target = strtoul(argv[4], &end, 10);
++    if (!*argv[4] || *end || !target || target > INT_MAX) { return 2; }
++    int selected = !strcmp(argv[3], "software");
+     setvbuf(stdout, NULL, _IONBF, 0);
+     prctl(PR_SET_NAME, "probe-tsc");
+     /* 看门狗只终止本探针；标准 KVM fd 随进程退出释放，不改变宿主时钟。 */
+@@ -136,10 +151,48 @@
+     int vm = checked(kvm, KVM_CREATE_VM, NULL);
+     int cpu = checked(vm, KVM_CREATE_VCPU, NULL);
+     uint32_t native = checked(cpu, KVM_GET_TSC_KHZ, NULL);
++    /* 属性只由本实验内核提供；默认能力位仍保持真实硬件值。 */
++    uint64_t enabled = 0;
++    struct kvm_device_attr attribute = {.group = KVM_VCPU_TSC_CTRL,
++        .attr = 0x53534931ULL, .addr = (uintptr_t)&enabled};
++    errno = 0;
++    int supported = ioctl(cpu, KVM_HAS_DEVICE_ATTR, &attribute) == 0;
++    if (!supported && errno != ENXIO) { fail("has_software_attribute"); }
++    if (selected && !supported) {
++        if (close(cpu) || close(vm) || close(kvm)) { fail("close_unavailable"); }
++        puts("{\"op\":\"unavailable\",\"fds_closed\":3,\"run_calls\":0}");
++        return 2;
++    }
++    int invalid_value_errno = 0, invalid_flags_errno = 0;
++    if (selected) {
++        errno = 0;
++        if (ioctl(cpu, KVM_SET_DEVICE_ATTR, &attribute) != -1) { fail("invalid_value_accepted"); }
++        invalid_value_errno = errno;
++        attribute.flags = 1;
++        errno = 0;
++        if (ioctl(cpu, KVM_SET_DEVICE_ATTR, &attribute) != -1) { fail("invalid_flags_accepted"); }
++        invalid_flags_errno = errno;
++        attribute.flags = 0;
++        checked(cpu, KVM_GET_DEVICE_ATTR, &attribute);
++        if (enabled) { fail("invalid_attribute_changed_selection"); }
++        enabled = 1;
++        checked(cpu, KVM_SET_DEVICE_ATTR, &attribute);
++    }
++    if (supported) {
++        checked(cpu, KVM_GET_DEVICE_ATTR, &attribute);
++        if (enabled != (uint64_t)selected) { fail("selection_readback"); }
++    }
++    struct kvm_cpuid2 *cpuid = calloc(1, sizeof(*cpuid) + 256 * sizeof(struct kvm_cpuid_entry2));
++    if (!cpuid) { fail("cpuid_allocation"); }
++    cpuid->nent = 256;
++    checked(kvm, KVM_GET_SUPPORTED_CPUID, cpuid);
++    checked(cpu, KVM_SET_CPUID2, cpuid);
++    free(cpuid);
+     uint32_t requested = native;
++    if (!strcmp(argv[2], "target")) { requested = target; }
+     if (!strcmp(argv[2], "faster")) { requested = (uint64_t)native * 6 / 5; }
+     if (!strcmp(argv[2], "slower")) { requested = (uint64_t)native * 4 / 5; }
+-    /* 先完成客体状态初始化，再设置频率；不能在设置后写 MSR 掩盖 catch-up 状态。 */
++    /* 本变体先确定比例，再以 MSR 建立该比例下的零点；历史元数据探针保持不变。 */
+     uint8_t *memory = mmap(NULL, 65536, PROT_READ | PROT_WRITE, MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
+     if (memory == MAP_FAILED) { fail("guest_memory"); }
+     size_t code_bytes = (uintptr_t)sshpool_tsc_guest_end - (uintptr_t)sshpool_tsc_guest_begin;
+@@ -158,23 +211,26 @@
+     checked(cpu, KVM_SET_SREGS, &sregs);
+     struct kvm_regs regs = {.rip = 0x1000, .rflags = 2};
+     checked(cpu, KVM_SET_REGS, &regs);
+-    struct { struct kvm_msrs header; struct kvm_msr_entry entries[2]; } msrs = {
+-        .header.nmsrs = 2, .entries = {{.index = 0x10, .data = 0}, {.index = 0x4b564d01, .data = 0x3001}}};
+-    if (checked(cpu, KVM_SET_MSRS, &msrs) != 2) { errno = ENOTSUP; fail("clock_msrs"); }
+     errno = 0;
+     int set_result = ioctl(cpu, KVM_SET_TSC_KHZ, (unsigned long)requested);
+     int set_error = errno;
+     int reported = checked(cpu, KVM_GET_TSC_KHZ, NULL);
+     printf("{\"op\":\"configuration\",\"kernel\":\"%s\",\"mode\":\"%s\",\"native_khz\":%u,"
+            "\"requested_khz\":%u,\"reported_khz\":%d,\"control\":%d,\"set_result\":%d,\"set_errno\":%d,"
+-           "\"vcpu_host_cpu\":%d,\"observer_host_cpu\":%d}\n",
+-           host.release, argv[2], native, requested, reported, control, set_result, set_error, first, second);
++           "\"vcpu_host_cpu\":%d,\"observer_host_cpu\":%d,\"selected\":%s,\"attribute_supported\":%s,"
++           "\"invalid_value_errno\":%d,\"invalid_flags_errno\":%d}\n",
++           host.release, argv[2], native, requested, reported, control, set_result, set_error, first, second,
++           selected ? "true" : "false", supported ? "true" : "false", invalid_value_errno, invalid_flags_errno);
+     if (set_result < 0) {
+         /* 失败也可能已改变临时 vCPU 字段；直接释放，绝不在此实例上继续运行。 */
+         if (munmap(memory, 65536) || close(cpu) || close(vm) || close(kvm)) { fail("close_rejected"); }
+         puts("{\"op\":\"closed\",\"run_calls\":0,\"fds_closed\":3,\"rejected\":true}");
+         return 0;
+     }
++    struct { struct kvm_msrs header; struct kvm_msr_entry entries[3]; } msrs = {
++        .header.nmsrs = 3, .entries = {{.index = 0x10, .data = 0},
++            {.index = 0xc0000103, .data = 0x53534901}, {.index = 0x4b564d01, .data = 0x3001}}};
++    if (checked(cpu, KVM_SET_MSRS, &msrs) != 3) { errno = ENOTSUP; fail("clock_msrs"); }
+     int run_bytes = checked(kvm, KVM_GET_VCPU_MMAP_SIZE, NULL);
+     struct kvm_run *run = mmap(NULL, run_bytes, PROT_READ | PROT_WRITE, MAP_SHARED, cpu, 0);
+     if (run == MAP_FAILED) { fail("run_mapping"); }
+@@ -217,6 +273,31 @@
+     if (execution.result != 0 || run->exit_reason != KVM_EXIT_HLT || regs.rip != 0x1000 + code_bytes) {
+         errno = EIO; fail("guest_halt");
+     }
++    if (selected) {
++        errno = 0;
++        int late_rate = ioctl(cpu, KVM_SET_TSC_KHZ, (unsigned long)requested + 1000);
++        int late_rate_errno = errno;
++        errno = 0;
++        int late_attribute = ioctl(cpu, KVM_SET_DEVICE_ATTR, &attribute);
++        int late_attribute_errno = errno;
++        int after_rejection = checked(cpu, KVM_GET_TSC_KHZ, NULL);
++        printf("{\"op\":\"late_change\",\"rate_result\":%d,\"rate_errno\":%d,"
++               "\"attribute_result\":%d,\"attribute_errno\":%d,\"reported_khz\":%d}\n",
++               late_rate, late_rate_errno, late_attribute, late_attribute_errno, after_rejection);
++        if (late_rate != -1 || late_rate_errno != EINVAL || late_attribute != -1 ||
++            late_attribute_errno != EBUSY || after_rejection != (int)requested) { fail("late_change_guard"); }
++    }
++    if (!selected && supported) {
++        /* 普通实例执行后也不能切换到软件模式。 */
++        enabled = 1;
++        errno = 0;
++        int late_selection = ioctl(cpu, KVM_SET_DEVICE_ATTR, &attribute);
++        int late_selection_errno = errno;
++        checked(cpu, KVM_GET_DEVICE_ATTR, &attribute);
++        printf("{\"op\":\"late_selection\",\"result\":%d,\"errno\":%d,\"selected\":%s}\n",
++               late_selection, late_selection_errno, enabled ? "true" : "false");
++        if (late_selection != -1 || late_selection_errno != EBUSY || enabled) { fail("late_selection_guard"); }
++    }
+     if (munmap(run, run_bytes) || close(cpu) || close(vm) || munmap(memory, 65536) || close(kvm)) { fail("close"); }
+     alarm(0);
+     puts("{\"op\":\"closed\",\"run_calls\":1,\"fds_closed\":3,\"rejected\":false}");

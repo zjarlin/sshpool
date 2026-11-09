@@ -1,0 +1,206 @@
+--- a/arch/x86/include/asm/kvm_host.h
++++ b/arch/x86/include/asm/kvm_host.h
+@@ -987,6 +987,9 @@
+ 	u32 virtual_tsc_khz;
+ 	s64 ia32_tsc_adjust_msr;
+ 	u64 msr_ia32_power_ctl;
++	/* 实验软件缩放只允许首次进入前选择，普通 vCPU 保持硬件路径。 */
++	bool lab_tsc_scaling;
++	bool lab_tsc_started;
+ 	u64 l1_tsc_scaling_ratio;
+ 	u64 tsc_scaling_ratio; /* current scaling ratio */
+ 
+--- a/arch/x86/include/uapi/asm/kvm.h
++++ b/arch/x86/include/uapi/asm/kvm.h
+@@ -961,6 +961,8 @@
+ /* for KVM_{GET,SET,HAS}_DEVICE_ATTR */
+ #define KVM_VCPU_TSC_CTRL 0 /* control group for the timestamp counter (TSC) */
+ #define   KVM_VCPU_TSC_OFFSET 0 /* attribute for the TSC offset */
++/* 仅供 PF31 实验，不是上游或默认 SSHPool ABI；值只能为 1。 */
++#define   KVM_VCPU_TSC_LAB_SOFTWARE 0x53534931ULL
+ 
+ /* x86-specific KVM_EXIT_HYPERCALL flags. */
+ #define KVM_EXIT_HYPERCALL_LONG_MODE	_BITULL(0)
+--- a/arch/x86/kvm/x86.h
++++ b/arch/x86/kvm/x86.h
+@@ -15,6 +15,8 @@
+ struct kvm_caps {
+ 	/* control of guest tsc rate supported? */
+ 	bool has_tsc_control;
++	/* 仅开放实验属性，不改变 KVM_CAP_TSC_CONTROL 的硬件含义。 */
++	bool lab_tsc_scaling;
+ 	/* maximum supported tsc_khz for guests */
+ 	u32  max_guest_tsc_khz;
+ 	/* number of bits of the fractional part of the TSC scaling ratio */
+--- a/arch/x86/kvm/x86.c
++++ b/arch/x86/kvm/x86.c
+@@ -2542,7 +2542,7 @@
+ 	}
+ 
+ 	/* TSC scaling supported? */
+-	if (!kvm_caps.has_tsc_control) {
++	if (!kvm_caps.has_tsc_control && !vcpu->arch.lab_tsc_scaling) {
+ 		if (user_tsc_khz > tsc_khz) {
+ 			vcpu->arch.tsc_catchup = 1;
+ 			vcpu->arch.tsc_always_catchup = 1;
+@@ -2572,6 +2572,12 @@
+ 	u32 thresh_lo, thresh_hi;
+ 	int use_scaling = 0;
+ 
++	/* 实验不支持运行中改变比例；先拒绝，避免修改任何频率元数据。 */
++	if (vcpu->arch.lab_tsc_scaling &&
++	    (vcpu->arch.lab_tsc_started || !user_tsc_khz ||
++	     user_tsc_khz > INT_MAX))
++		return -EINVAL;
++
+ 	/* tsc_khz can be zero if TSC calibration fails */
+ 	if (user_tsc_khz == 0) {
+ 		/* set tsc_scaling_ratio to a safe value */
+@@ -2598,7 +2604,7 @@
+ 			 user_tsc_khz, thresh_lo, thresh_hi);
+ 		use_scaling = 1;
+ 	}
+-	return set_tsc_khz(vcpu, user_tsc_khz, use_scaling);
++	return set_tsc_khz(vcpu, user_tsc_khz, use_scaling || vcpu->arch.lab_tsc_scaling);
+ }
+ 
+ static u64 compute_guest_tsc(struct kvm_vcpu *vcpu, s64 kernel_ns)
+@@ -3413,7 +3419,7 @@
+ 
+ 	/* With all the info we got, fill in the values */
+ 
+-	if (kvm_caps.has_tsc_control) {
++	if (kvm_caps.has_tsc_control || vcpu->lab_tsc_scaling) {
+ 		tgt_tsc_khz = kvm_scale_tsc(tgt_tsc_khz,
+ 					    v->arch.l1_tsc_scaling_ratio);
+ 		tgt_tsc_khz = tgt_tsc_khz ? : 1;
+@@ -5998,6 +6004,9 @@
+ 	int r;
+ 
+ 	switch (attr->attr) {
++	case KVM_VCPU_TSC_LAB_SOFTWARE:
++		r = kvm_caps.lab_tsc_scaling && !attr->flags ? 0 : -ENXIO;
++		break;
+ 	case KVM_VCPU_TSC_OFFSET:
+ 		r = 0;
+ 		break;
+@@ -6015,6 +6024,10 @@
+ 	int r;
+ 
+ 	switch (attr->attr) {
++	case KVM_VCPU_TSC_LAB_SOFTWARE:
++		if (!kvm_caps.lab_tsc_scaling || attr->flags)
++			return -ENXIO;
++		return put_user((u64)vcpu->arch.lab_tsc_scaling, uaddr) ? -EFAULT : 0;
+ 	case KVM_VCPU_TSC_OFFSET:
+ 		r = -EFAULT;
+ 		if (put_user(vcpu->arch.l1_tsc_offset, uaddr))
+@@ -6036,6 +6049,22 @@
+ 	int r;
+ 
+ 	switch (attr->attr) {
++	case KVM_VCPU_TSC_LAB_SOFTWARE: {
++		u64 enabled;
++
++		if (!kvm_caps.lab_tsc_scaling || attr->flags)
++			return -ENXIO;
++		if (get_user(enabled, uaddr))
++			return -EFAULT;
++		if (enabled != 1 || vcpu->arch.guest_tsc_protected)
++			return -EINVAL;
++		/* 必须从未执行且未使用 catch-up 的原生频率实例开始。 */
++		if (vcpu->arch.lab_tsc_started || vcpu->arch.tsc_catchup ||
++		    vcpu->arch.virtual_tsc_khz != tsc_khz || kvm_check_tsc_unstable())
++			return -EBUSY;
++		vcpu->arch.lab_tsc_scaling = true;
++		return 0;
++	}
+ 	case KVM_VCPU_TSC_OFFSET: {
+ 		u64 offset, tsc, ns;
+ 		unsigned long flags;
+--- a/arch/x86/kvm/vmx/vmx.c
++++ b/arch/x86/kvm/vmx/vmx.c
+@@ -155,6 +155,9 @@
+ /* Guest_tsc -> host_tsc conversion requires 64-bit division.  */
+ static int __read_mostly cpu_preemption_timer_multi;
+ static bool __read_mostly enable_preemption_timer = 1;
++/* 默认关闭；只在独占实验内核提供额外的逐 vCPU 选择入口。 */
++static bool __read_mostly lab_tsc_scaling;
++module_param(lab_tsc_scaling, bool, 0444);
+ #ifdef CONFIG_KVM_DSM
+ /* 仅在独占实验节点显式启用；普通 VM 和具备 PLE 的宿主保持原路径。 */
+ static bool __read_mostly dsm_force_pause_exit;
+@@ -6280,6 +6283,35 @@
+ 	return vmx_get_instr_info_reg(vmcs_read32(VMX_INSTRUCTION_INFO));
+ }
+ 
++/* 两种读指令与 MSR/pvclock 共用比例和偏移，保留权限及 AUX 语义。 */
++static int handle_lab_tsc(struct kvm_vcpu *vcpu)
++{
++	bool rdtscp = vmx_get_exit_reason(vcpu).basic == EXIT_REASON_RDTSCP;
++	struct msr_data aux = { .index = MSR_TSC_AUX };
++	u64 tsc;
++
++	if (!vcpu->arch.lab_tsc_scaling || is_guest_mode(vcpu))
++		return kvm_handle_invalid_op(vcpu);
++	if (rdtscp && !guest_cpu_cap_has(vcpu, X86_FEATURE_RDTSCP)) {
++		kvm_queue_exception(vcpu, UD_VECTOR);
++		return 1;
++	}
++	if (vmx_get_cpl(vcpu) && kvm_read_cr4_bits(vcpu, X86_CR4_TSD)) {
++		kvm_inject_gp(vcpu, 0);
++		return 1;
++	}
++	if (rdtscp && vmx_get_msr(vcpu, &aux)) {
++		kvm_inject_gp(vcpu, 0);
++		return 1;
++	}
++	tsc = kvm_read_l1_tsc(vcpu, rdtsc_ordered());
++	kvm_rax_write(vcpu, (u32)tsc);
++	kvm_rdx_write(vcpu, tsc >> 32);
++	if (rdtscp)
++		kvm_rcx_write(vcpu, (u32)aux.data);
++	return kvm_skip_emulated_instruction(vcpu);
++}
++
+ static int handle_rdmsr_imm(struct kvm_vcpu *vcpu)
+ {
+ 	return kvm_emulate_rdmsr_imm(vcpu, vmx_get_exit_qual(vcpu),
+@@ -6313,6 +6345,8 @@
+ 	[EXIT_REASON_INVD]		      = kvm_emulate_invd,
+ 	[EXIT_REASON_INVLPG]		      = handle_invlpg,
+ 	[EXIT_REASON_RDPMC]                   = kvm_emulate_rdpmc,
++	[EXIT_REASON_RDTSC]                   = handle_lab_tsc,
++	[EXIT_REASON_RDTSCP]                  = handle_lab_tsc,
+ 	[EXIT_REASON_VMCALL]                  = kvm_emulate_hypercall,
+ 	[EXIT_REASON_VMCLEAR]		      = handle_vmx_instruction,
+ 	[EXIT_REASON_VMLAUNCH]		      = handle_vmx_instruction,
+@@ -7569,6 +7603,13 @@
+ 	}
+ #endif
+ 
++	/* 实际进入前封闭实验配置，并为显式选择的 vCPU 强制两种 TSC 读退出。 */
++	if (kvm_caps.lab_tsc_scaling) {
++		vcpu->arch.lab_tsc_started = true;
++		if (vcpu->arch.lab_tsc_scaling)
++			exec_controls_setbit(vmx, CPU_BASED_RDTSC_EXITING);
++	}
++
+ 	trace_kvm_entry(vcpu, force_immediate_exit);
+ 
+ 	if (vmx->ple_window_dirty) {
+@@ -8723,6 +8764,14 @@
+ 	if (cpu_has_vmx_tsc_scaling())
+ 		kvm_caps.has_tsc_control = true;
+ 
++	/* 首个实验限定无硬件缩放且禁用内层嵌套；不掩盖不支持的宿主。 */
++	if (lab_tsc_scaling) {
++		if (kvm_caps.has_tsc_control || nested ||
++		    !(vmcs_config.cpu_based_exec_ctrl & CPU_BASED_RDTSC_EXITING))
++			return -EOPNOTSUPP;
++		kvm_caps.lab_tsc_scaling = true;
++	}
++
+ 	kvm_caps.max_tsc_scaling_ratio = KVM_VMX_TSC_MULTIPLIER_MAX;
+ 	kvm_caps.tsc_scaling_ratio_frac_bits = 48;
+ 	kvm_caps.has_bus_lock_exit = cpu_has_vmx_bus_lock_detection();

@@ -1,0 +1,15 @@
+--- a/arch/x86/kvm/vmx/vmx.c
++++ b/arch/x86/kvm/vmx/vmx.c
+@@ -7606,8 +7606,11 @@
+ 	/* 实际进入前封闭实验配置，并为显式选择的 vCPU 强制两种 TSC 读退出。 */
+ 	if (kvm_caps.lab_tsc_scaling) {
+ 		vcpu->arch.lab_tsc_started = true;
+-		if (vcpu->arch.lab_tsc_scaling)
++		if (vcpu->arch.lab_tsc_scaling) {
+ 			exec_controls_setbit(vmx, CPU_BASED_RDTSC_EXITING);
++			/* 硬件直读 MSR 不应用软件比例，必须进入已有的公共换算路径。 */
++			vmx_enable_intercept_for_msr(vcpu, MSR_IA32_TSC, MSR_TYPE_R);
++		}
+ 	}
+ 
+ 	trace_kvm_entry(vcpu, force_immediate_exit);
