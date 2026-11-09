@@ -135,11 +135,14 @@ def inspect_capture(data, build, guest_hex):
     require(data['finished_unix_ns'] > data['started_unix_ns'], '采集生命周期倒退')
     require([run['mode'] for run in data['runs']] == ['native', 'faster', 'slower'], '模式矩阵不完整')
     results = []
+    native_frequencies = set()
     for run in data['runs']:
         config = json.loads(run['stdout'].splitlines()[1])
+        native_frequencies.add(config['native_khz'])
         require({config['vcpu_host_cpu'], config['observer_host_cpu']} <= set(host['allowed_cpus']), 'CPU 不在许可集内')
         require(0 < run['elapsed_ns'] < 15000000000, '运行期限不符')
         results.append(inspect_run(run, guest_hex))
+    require(len(native_frequencies) == 1, '同一节点三次运行的原生频率不一致')
     return results
 
 
@@ -151,8 +154,83 @@ def read_artifact(directory, record):
     return unpacked
 
 
+def inspect_node(directory, node, build, guest_hex):
+    capture = json.loads(read_artifact(directory, node['capture']))
+    analysis = inspect_capture(capture, build, guest_hex)
+    require(analysis == node['analysis'], '保存的分析与重算结果不符')
+    require(node['runner_exit'] == 0, '采集器失败')
+    require(re.fullmatch(r'\[\s*\d+\.\d+\] kvm: user requested TSC rate below hardware speed\n',
+                         node['kernel_log_delta']) is not None, '内核日志与本轮降频拒绝不符')
+    return capture, analysis
+
+
+def check_candidate(path, manifest):
+    # 新候选引用已冻结的双节点基线，历史失败、源码和两端记录仍完整重放。
+    reference = manifest['baseline']
+    baseline_path = path.parent / reference['file']
+    raw = baseline_path.read_bytes()
+    require(sha(raw) == reference['sha256'], '基线清单哈希不符')
+    baseline = json.loads(raw)
+    require(baseline['schema'] == 1, '候选必须引用原始双节点基线')
+    check(baseline_path)
+    original = next(node for node in baseline['nodes'] if node['label'] == reference['node'])
+    original_capture = json.loads(read_artifact(path.parent, original['capture']))
+    capture, analysis = inspect_node(path.parent, manifest['candidate'], baseline['build'], baseline['guest_hex'])
+    originals = {node['label'] for node in baseline['nodes']}
+    require(manifest['candidate']['label'] not in originals, '候选标签与原节点混淆')
+
+    audits = manifest['identity_audits']
+    before, after = audits['before_reboot'], audits['after_reboot']
+    stable = ('machine', 'dbus_machine', 'dmi', 'ssh_host_key', 'hostname')
+    require(re.fullmatch('[0-9a-f]{64}', audits['old_machine_sha256']), '旧身份摘要无效')
+    for row in (before, after):
+        require(all(re.fullmatch('[0-9a-f]{64}', row[key]) for key in (*stable, 'boot', 'private_raw_sha256')),
+                '身份审计摘要无效')
+        require(row['machine'] == row['dbus_machine'] != audits['old_machine_sha256'], '克隆身份未更新')
+    require(all(before[key] == after[key] for key in stable), '重启后身份未持久化')
+    require(before['boot'] != after['boot'], '缺少独立重启观测')
+    identity = capture['before']['identity_sha256']
+    require(all(after[key] == identity[key] for key in ('machine', 'dmi', 'boot')), '身份审计与采集不对应')
+    require(manifest['cleanup']['snapshot'] == capture['after'] and
+            manifest['cleanup']['before_after_equal'] is True, '清理后的节点状态不一致')
+    require(manifest['cleanup']['temporary_directory_removed'] is True, '临时目录未清理')
+
+    run = manifest['preflight']
+    report = run['report']
+    require(run['exit'] == 2 and run['stderr'] == '', '预检没有按预期拒绝')
+    require(report['schema'] == 1 and report['scope'] == 'native-tsc-preflight-only', '预检范围不符')
+    require(len(report['peers']) == 2, '预检缺少节点')
+    captures = (original_capture, capture)
+    labels = (reference['node'], manifest['candidate']['label'])
+    frequencies, identities = set(), set()
+    for peer, measured, label in zip(report['peers'], captures, labels):
+        probe = peer['probe']
+        require(peer['ssh'] == label and peer['error'] is None, '预检节点或错误不符')
+        machine = measured['before']['identity_sha256']['machine']
+        require(probe['machine_id_sha256'] == machine and machine not in identities, '预检与实测身份不对应或重复')
+        identities.add(machine)
+        native = json.loads(measured['runs'][0]['stdout'].splitlines()[1])['native_khz']
+        require([cpu['index'] for cpu in probe['vcpus']] == [0, 1] and
+                all(cpu['tsc_khz'] == native and cpu['offset_supported'] is True for cpu in probe['vcpus']),
+                '预检频率与实测原生频率不符')
+        require(probe['api_version'] == 12 and probe['get_tsc_khz'] == 1 and probe['tsc_control'] == 0 and
+                probe['tsc_adjust'] is True and probe['adjust_clock'] & 14 == 14 and
+                probe['closed_fds'] == 4 and probe['errors'] == [], '预检接口或清理不符')
+        frequencies.add(native)
+    require(len(frequencies) == 2, '跨物理候选未保留不同原生频率')
+    expected = f'原生 TSC 频率不一致或缺失: {sorted(frequencies)} kHz；当前运行时只支持偏移校准，不支持频率转换'
+    require(report['blockers'] == [expected], '不同频率拒绝原因不符')
+    for key in ('native_tsc_precheck_passed', 'physical_topology_verified', 'running_clock_verified', 'full_ssi_accepted'):
+        require(report[key] is False, '空 VM 预检被提升为运行时验收')
+    require(manifest['full_ssi_accepted'] is False and manifest['cross_physical_verified'] is False,
+            '独立节点测量不证明跨物理执行或完整 SSI')
+    return {manifest['candidate']['label']: analysis}
+
+
 def check(path):
     manifest = json.loads(path.read_text())
+    if manifest['schema'] == 2:
+        return check_candidate(path, manifest)
     require(manifest['schema'] == 1, '未知清单协议')
     directory = path.parent
     sources = json.loads(read_artifact(directory, manifest['sources']))
@@ -167,15 +245,10 @@ def check(path):
     require(len(manifest['nodes']) == 2, '双节点记录不完整')
     identities, results = set(), {}
     for node in manifest['nodes']:
-        capture = json.loads(read_artifact(directory, node['capture']))
+        capture, analysis = inspect_node(directory, node, build, manifest['guest_hex'])
         identity = capture['before']['identity_sha256']['machine']
         require(identity not in identities, '节点身份重复')
         identities.add(identity)
-        analysis = inspect_capture(capture, build, manifest['guest_hex'])
-        require(analysis == node['analysis'], '保存的分析与重算结果不符')
-        require(node['runner_exit'] == 0, '采集器失败')
-        require(re.fullmatch(r'\[\s*\d+\.\d+\] kvm: user requested TSC rate below hardware speed\n',
-                             node['kernel_log_delta']) is not None, '内核日志与本轮降频拒绝不符')
         results[node['label']] = analysis
     for item in manifest['diagnostics']:
         # 早期诊断只有原始输出，没有完整前后状态，不能升级为正式验收。

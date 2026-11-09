@@ -1,0 +1,299 @@
+{
+  "schema": 2,
+  "scope": "新 ESXi 的独立实验 VM：单节点频率测量与跨宿主预检拒绝，不运行跨物理同一客体",
+  "baseline": {
+    "file": "ssi-tsc-frequency-20261109.json",
+    "sha256": "f46daff25db430a1f11114d14329a4dc28f86df209dec43abb6c5900acf3398b",
+    "node": "node0"
+  },
+  "candidate": {
+    "label": "candidate",
+    "capture": {
+      "file": "ssi-tsc-frequency-candidate-20261109.json.gz",
+      "bytes": 3950,
+      "sha256": "176716881dd8e5fa9b48c48dc0ec0c986d2698b907f0c81f523d6a3efadd9399",
+      "raw_sha256": "db3bc5d4ec3089baf78140f4458f37703105e3c22e6b32c932c9a53eef01ccf5"
+    },
+    "runner_exit": 0,
+    "runner_private_raw_sha256": "13b9c2acad87b04e403d851ddbf8fd149b30fbb0c86566366b6528c946165cfe",
+    "kernel_log_delta": "[  186.388510] kvm: user requested TSC rate below hardware speed\n",
+    "analysis": [
+      {
+        "mode": "native",
+        "requested_khz": 2095148,
+        "reported_khz_after_run": 2095148,
+        "sample_pair": [
+          1,
+          11
+        ],
+        "tsc_khz_bounds": [
+          2095146.994645726,
+          2095148.7991467519
+        ],
+        "pvclock_rate_bounds": [
+          0.9999995194040889,
+          1.000000380680249
+        ],
+        "requested_rate_observed": true,
+        "max_bracket_ns": 4570
+      },
+      {
+        "mode": "faster",
+        "requested_khz": 2514177,
+        "reported_khz_after_run": 2514177,
+        "sample_pair": [
+          1,
+          11
+        ],
+        "tsc_khz_bounds": [
+          2095147.0514071262,
+          2095148.8454037549
+        ],
+        "pvclock_rate_bounds": [
+          0.9999995463908863,
+          1.0000004026533686
+        ],
+        "requested_rate_observed": false,
+        "max_bracket_ns": 504
+      },
+      {
+        "mode": "slower",
+        "requested_khz": 1676118,
+        "rejected_before_run": true
+      }
+    ]
+  },
+  "identity_audits": {
+    "before_reboot": {
+      "machine": "5cce7847ed8646635ca9611c1a6bf3f7ea6105248b02e4a73bead45009340879",
+      "dbus_machine": "5cce7847ed8646635ca9611c1a6bf3f7ea6105248b02e4a73bead45009340879",
+      "dmi": "60428ba1cdaec574bc954fd0e387a5d7efb309e24dfcf0a0660e1d2009c04fef",
+      "boot": "0de47190671b9b7c7aa7a58d4831b778ce4079b881a09336fda1398c1cbf785d",
+      "ssh_host_key": "af6a35f18f697b54b3d60d0e2db410b379abd2826eb19fc854847f2c38be69f1",
+      "hostname": "c37e37f2020836729479559886d22d243ee19d880f5aa1206726486f8b199251",
+      "private_raw_sha256": "252f6d4f932c05bb14c616fea70f0e8278adacf0ad197cd84104466943cc61bf"
+    },
+    "after_reboot": {
+      "machine": "5cce7847ed8646635ca9611c1a6bf3f7ea6105248b02e4a73bead45009340879",
+      "dbus_machine": "5cce7847ed8646635ca9611c1a6bf3f7ea6105248b02e4a73bead45009340879",
+      "dmi": "60428ba1cdaec574bc954fd0e387a5d7efb309e24dfcf0a0660e1d2009c04fef",
+      "boot": "68d132abec9c7c2fcf9448c9acf2dea662d57ee8a227f39d68440e068b91cd8b",
+      "ssh_host_key": "af6a35f18f697b54b3d60d0e2db410b379abd2826eb19fc854847f2c38be69f1",
+      "hostname": "c37e37f2020836729479559886d22d243ee19d880f5aa1206726486f8b199251",
+      "private_raw_sha256": "2ca27dac3139b9db7c5b8f5b83f3d462a4a6b8069c5a1723c2ae7fe368611048"
+    },
+    "old_machine_sha256": "ef1bc3eb2e781d2beb5a290e66540a9cf60048ce29e0bfa95c7bdd466e72f8e1",
+    "network_note": "首次隔离启动后按新 MAC 修正 Netplan 与 DHCP 身份，重启后才连接实验网；配置修正不伪装成前后一致",
+    "snapshot_private_raw_sha256": "694d6348b2b09fa2b4cae763988300923d85331735e5a31a2bf37adf7609757f"
+  },
+  "preflight": {
+    "exit": 2,
+    "stderr": "",
+    "report": {
+      "schema": 1,
+      "scope": "native-tsc-preflight-only",
+      "peers": [
+        {
+          "ssh": "node0",
+          "probe": {
+            "schema": 1,
+            "collected_unix_ns": 1794190132347893941,
+            "system": "Linux",
+            "arch": "x86_64",
+            "kernel": "6.8.0-147-generic",
+            "machine_id_sha256": "ef1bc3eb2e781d2beb5a290e66540a9cf60048ce29e0bfa95c7bdd466e72f8e1",
+            "logical_cpus": 2,
+            "memory_bytes": 1007833088,
+            "api_version": 12,
+            "get_tsc_khz": 1,
+            "tsc_control": 0,
+            "adjust_clock": 14,
+            "tsc_adjust": true,
+            "vcpus": [
+              {
+                "index": 0,
+                "tsc_khz": 2394374,
+                "offset_supported": true,
+                "clock": 767161,
+                "clock_flags": 0,
+                "realtime": 0,
+                "host_tsc": 0
+              },
+              {
+                "index": 1,
+                "tsc_khz": 2394374,
+                "offset_supported": true,
+                "clock": 859899,
+                "clock_flags": 0,
+                "realtime": 0,
+                "host_tsc": 0
+              }
+            ],
+            "closed_fds": 4,
+            "errors": []
+          },
+          "error": null
+        },
+        {
+          "ssh": "candidate",
+          "probe": {
+            "schema": 1,
+            "collected_unix_ns": 1794190131863970114,
+            "system": "Linux",
+            "arch": "x86_64",
+            "kernel": "6.8.0-147-generic",
+            "machine_id_sha256": "5cce7847ed8646635ca9611c1a6bf3f7ea6105248b02e4a73bead45009340879",
+            "logical_cpus": 2,
+            "memory_bytes": 1007833088,
+            "api_version": 12,
+            "get_tsc_khz": 1,
+            "tsc_control": 0,
+            "adjust_clock": 14,
+            "tsc_adjust": true,
+            "vcpus": [
+              {
+                "index": 0,
+                "tsc_khz": 2095148,
+                "offset_supported": true,
+                "clock": 1843717,
+                "clock_flags": 0,
+                "realtime": 0,
+                "host_tsc": 0
+              },
+              {
+                "index": 1,
+                "tsc_khz": 2095148,
+                "offset_supported": true,
+                "clock": 2170039,
+                "clock_flags": 0,
+                "realtime": 0,
+                "host_tsc": 0
+              }
+            ],
+            "closed_fds": 4,
+            "errors": []
+          },
+          "error": null
+        }
+      ],
+      "native_tsc_precheck_passed": false,
+      "blockers": [
+        "原生 TSC 频率不一致或缺失: [2095148, 2394374] kHz；当前运行时只支持偏移校准，不支持频率转换"
+      ],
+      "physical_topology_verified": false,
+      "running_clock_verified": false,
+      "full_ssi_accepted": false,
+      "remaining": [
+        "空 VM 未执行客体，快照 flags 不能替代运行时可靠时钟检查",
+        "专用实验 VM、宿主故障域与回退记录",
+        "精确研究内核/QEMU 哈希、完整 CPU 模型交集与网络访问控制",
+        "实际配对启动、长期时钟漂移和跨物理 CPU/内存执行证据",
+        "持久存储、Ceph、Docker、数据库恢复与故障接管"
+      ]
+    },
+    "private_raw_sha256": "3c6c65285a5db1173fb93f344df82fe19623aacc86ba844620267e606215c789"
+  },
+  "cleanup": {
+    "snapshot": {
+      "kernel": "6.8.0-147-generic",
+      "version": "#147-Ubuntu SMP PREEMPT_DYNAMIC Thu Sep 24 11:33:16 UTC 2026",
+      "architecture": "x86_64",
+      "identity_sha256": {
+        "machine": "5cce7847ed8646635ca9611c1a6bf3f7ea6105248b02e4a73bead45009340879",
+        "dmi": "60428ba1cdaec574bc954fd0e387a5d7efb309e24dfcf0a0660e1d2009c04fef",
+        "boot": "68d132abec9c7c2fcf9448c9acf2dea662d57ee8a227f39d68440e068b91cd8b"
+      },
+      "modules": {
+        "kvm": {
+          "sha256": "0d2a7a360751250b8ac2aff21bb91ec42a639a36efaa39d6f5795afac60431cf",
+          "srcversion": "34F7D785B546BAC2E7A463D",
+          "vermagic": "6.8.0-147-generic SMP preempt mod_unload modversions"
+        },
+        "kvm_intel": {
+          "sha256": "9a591aacfc0bbdd343dca129650a9e26c9506ff64b5fcdb861745b7e974ab44c",
+          "srcversion": "EDC04BBB6992F981C1D5386",
+          "vermagic": "6.8.0-147-generic SMP preempt mod_unload modversions"
+        }
+      },
+      "files_sha256": {
+        "/boot/config-6.8.0-147-generic": "cf8454bc2e67effab87a5bff3c39042f2d8d106b6a777c4302e52f50d23b7400",
+        "/boot/grub/grub.cfg": "d715fc6dcc1073a0e748c802a765dbee0aa33177148b65cd692e1d0db784f801",
+        "/boot/grub/grubenv": "f64122858064885ef0733e42c6a3d2d3fd642671f714db0d974b880c0f087430",
+        "/boot/vmlinuz-6.8.0-147-generic": "41ba36d860aa0b0cd995f4ca8856d80249b244577e704929b55be13fbd1ebd2f",
+        "/etc/default/grub": "6f9772386cacf83d917cca730a9970ee9e43034928ca8721bfe6c7117e31b58d",
+        "/etc/default/grub.d/50-cloudimg-settings.cfg": "8b08ed0735d3d22d4098b4e10420f5781e8d6d04aab111eec351d27dee4d4243",
+        "/etc/default/grub.d/99-ssi-lab.cfg": "8e65563131da2dbdd949aa8451bf124b3f664159178cbe13c49e2085a80fe0e0",
+        "/etc/fstab": "e96bfa6d0c08f685624799172653f08ad6dc3ef391e0d459f56bc9b356b96433",
+        "/etc/netplan/90-ssi-unique.yaml": "e365c833eae34807ef8bcd5c41aabcb917e23937ea55e153ea46b63c88c610ad",
+        "/etc/ssh/sshd_config": "64325541513d33ea1d2ccd19c77750d458e67e7967fd2e7ef81d92f0aa2ffe21",
+        "/etc/ssh/sshd_config.d/50-cloud-init.conf": "474ef6932d6b998ec97b122a9d86af024b988d64c243f3caf01dd9e5ed41618e",
+        "/etc/ssh/sshd_config.d/60-cloudimg-settings.conf": "474ef6932d6b998ec97b122a9d86af024b988d64c243f3caf01dd9e5ed41618e",
+        "/proc/cmdline": "5ba1e9e3b583cead95d69e6a55a5e98528072fb6aab52797ffc389fc2bc95e44",
+        "/proc/sys/net/ipv4/ip_local_port_range": "457d5f0bdd8fd8302e2fcd01bcaf909005537cdc8208a2209f0e723fc4d96b40",
+        "/sys/module/kvm/parameters/eager_page_split": "d08c5f95ebb8581ee4e5c0a2ee534d5a10d3c8e7f3a18d961adf902602bbd8a3",
+        "/sys/module/kvm/parameters/enable_pmu": "d08c5f95ebb8581ee4e5c0a2ee534d5a10d3c8e7f3a18d961adf902602bbd8a3",
+        "/sys/module/kvm/parameters/enable_vmware_backdoor": "28312e346b76a3f91e8283519baab5f103d79547dedff5fb7ccc0dc3c5119bbe",
+        "/sys/module/kvm/parameters/flush_on_reuse": "28312e346b76a3f91e8283519baab5f103d79547dedff5fb7ccc0dc3c5119bbe",
+        "/sys/module/kvm/parameters/force_emulation_prefix": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+        "/sys/module/kvm/parameters/halt_poll_ns": "d43574be921c54215a1e05bb2fc0c1a4b63dd2aea4bbfd5b9ebc11a2685943e2",
+        "/sys/module/kvm/parameters/halt_poll_ns_grow": "53c234e5e8472b6ac51c1ae1cab3fe06fad053beb8ebfd8977b010655bfdd3c3",
+        "/sys/module/kvm/parameters/halt_poll_ns_grow_start": "876e13f4e07bb39705302c01f445ffd2d2c3b180a207e4d959d6b671c67da09b",
+        "/sys/module/kvm/parameters/halt_poll_ns_shrink": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+        "/sys/module/kvm/parameters/ignore_msrs": "28312e346b76a3f91e8283519baab5f103d79547dedff5fb7ccc0dc3c5119bbe",
+        "/sys/module/kvm/parameters/kvmclock_periodic_sync": "d08c5f95ebb8581ee4e5c0a2ee534d5a10d3c8e7f3a18d961adf902602bbd8a3",
+        "/sys/module/kvm/parameters/lapic_timer_advance_ns": "ee3aa64bb94a50845d5024cd4bd20202a4567aed5cd5328c0d97e9920775fc28",
+        "/sys/module/kvm/parameters/min_timer_period_us": "c11e3f4837efde2441e23a7b9da02131f53bf59fddeb7147c4ab81afe400460f",
+        "/sys/module/kvm/parameters/mitigate_smt_rsb": "28312e346b76a3f91e8283519baab5f103d79547dedff5fb7ccc0dc3c5119bbe",
+        "/sys/module/kvm/parameters/mmio_caching": "d08c5f95ebb8581ee4e5c0a2ee534d5a10d3c8e7f3a18d961adf902602bbd8a3",
+        "/sys/module/kvm/parameters/nx_huge_pages": "d08c5f95ebb8581ee4e5c0a2ee534d5a10d3c8e7f3a18d961adf902602bbd8a3",
+        "/sys/module/kvm/parameters/nx_huge_pages_recovery_period_ms": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+        "/sys/module/kvm/parameters/nx_huge_pages_recovery_ratio": "95cf32708a31caa478a0e9141103ac567d85e5186e697e7e0c81f75589999e31",
+        "/sys/module/kvm/parameters/pi_inject_timer": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+        "/sys/module/kvm/parameters/report_ignored_msrs": "d08c5f95ebb8581ee4e5c0a2ee534d5a10d3c8e7f3a18d961adf902602bbd8a3",
+        "/sys/module/kvm/parameters/tdp_mmu": "d08c5f95ebb8581ee4e5c0a2ee534d5a10d3c8e7f3a18d961adf902602bbd8a3",
+        "/sys/module/kvm/parameters/tsc_tolerance_ppm": "e4355a05c3a4b156700c4a1a32867d8f7a25a0dd24c6146c2deb2a1c96a6c93c",
+        "/sys/module/kvm/parameters/vector_hashing": "d08c5f95ebb8581ee4e5c0a2ee534d5a10d3c8e7f3a18d961adf902602bbd8a3",
+        "/sys/module/kvm_intel/parameters/allow_smaller_maxphyaddr": "28312e346b76a3f91e8283519baab5f103d79547dedff5fb7ccc0dc3c5119bbe",
+        "/sys/module/kvm_intel/parameters/dump_invalid_vmcs": "28312e346b76a3f91e8283519baab5f103d79547dedff5fb7ccc0dc3c5119bbe",
+        "/sys/module/kvm_intel/parameters/emulate_invalid_guest_state": "d08c5f95ebb8581ee4e5c0a2ee534d5a10d3c8e7f3a18d961adf902602bbd8a3",
+        "/sys/module/kvm_intel/parameters/enable_apicv": "28312e346b76a3f91e8283519baab5f103d79547dedff5fb7ccc0dc3c5119bbe",
+        "/sys/module/kvm_intel/parameters/enable_ipiv": "28312e346b76a3f91e8283519baab5f103d79547dedff5fb7ccc0dc3c5119bbe",
+        "/sys/module/kvm_intel/parameters/enable_shadow_vmcs": "28312e346b76a3f91e8283519baab5f103d79547dedff5fb7ccc0dc3c5119bbe",
+        "/sys/module/kvm_intel/parameters/enlightened_vmcs": "28312e346b76a3f91e8283519baab5f103d79547dedff5fb7ccc0dc3c5119bbe",
+        "/sys/module/kvm_intel/parameters/ept": "d08c5f95ebb8581ee4e5c0a2ee534d5a10d3c8e7f3a18d961adf902602bbd8a3",
+        "/sys/module/kvm_intel/parameters/eptad": "28312e346b76a3f91e8283519baab5f103d79547dedff5fb7ccc0dc3c5119bbe",
+        "/sys/module/kvm_intel/parameters/error_on_inconsistent_vmcs_config": "d08c5f95ebb8581ee4e5c0a2ee534d5a10d3c8e7f3a18d961adf902602bbd8a3",
+        "/sys/module/kvm_intel/parameters/fasteoi": "d08c5f95ebb8581ee4e5c0a2ee534d5a10d3c8e7f3a18d961adf902602bbd8a3",
+        "/sys/module/kvm_intel/parameters/flexpriority": "28312e346b76a3f91e8283519baab5f103d79547dedff5fb7ccc0dc3c5119bbe",
+        "/sys/module/kvm_intel/parameters/nested": "d08c5f95ebb8581ee4e5c0a2ee534d5a10d3c8e7f3a18d961adf902602bbd8a3",
+        "/sys/module/kvm_intel/parameters/nested_early_check": "28312e346b76a3f91e8283519baab5f103d79547dedff5fb7ccc0dc3c5119bbe",
+        "/sys/module/kvm_intel/parameters/ple_gap": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+        "/sys/module/kvm_intel/parameters/ple_window": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+        "/sys/module/kvm_intel/parameters/ple_window_grow": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+        "/sys/module/kvm_intel/parameters/ple_window_max": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+        "/sys/module/kvm_intel/parameters/ple_window_shrink": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+        "/sys/module/kvm_intel/parameters/pml": "28312e346b76a3f91e8283519baab5f103d79547dedff5fb7ccc0dc3c5119bbe",
+        "/sys/module/kvm_intel/parameters/preemption_timer": "28312e346b76a3f91e8283519baab5f103d79547dedff5fb7ccc0dc3c5119bbe",
+        "/sys/module/kvm_intel/parameters/sgx": "28312e346b76a3f91e8283519baab5f103d79547dedff5fb7ccc0dc3c5119bbe",
+        "/sys/module/kvm_intel/parameters/unrestricted_guest": "d08c5f95ebb8581ee4e5c0a2ee534d5a10d3c8e7f3a18d961adf902602bbd8a3",
+        "/sys/module/kvm_intel/parameters/vmentry_l1d_flush": "5b528465c627c01909fc60eb18e200dc5e6c9f9a8dca05e209f0e746ac6cc41d",
+        "/sys/module/kvm_intel/parameters/vnmi": "d08c5f95ebb8581ee4e5c0a2ee534d5a10d3c8e7f3a18d961adf902602bbd8a3",
+        "/sys/module/kvm_intel/parameters/vpid": "d08c5f95ebb8581ee4e5c0a2ee534d5a10d3c8e7f3a18d961adf902602bbd8a3"
+      },
+      "firewall_sha256": "0bfbd4644cf9efcddcdd8026c52f1cec049d99bb05ae5b47df4bc73544a4cd22",
+      "clocksource": "tsc",
+      "allowed_cpus": [
+        0,
+        1
+      ],
+      "processes": [],
+      "kvm_fds": []
+    },
+    "temporary_directory_removed": true,
+    "before_after_equal": true,
+    "private_raw_sha256": "c4a5c7e1e742411a9ff1d98ef039237b3de7ffa1b5327b6b7df9f7c59eb24e59"
+  },
+  "privacy": "SSH 别名归一化；machine-id、DMI、boot、SSH 主机公钥和主机名仅保留 SHA256；原始审计留在私有工作区",
+  "full_ssi_accepted": false,
+  "cross_physical_verified": false
+}

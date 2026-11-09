@@ -1,6 +1,17 @@
 Feature: SSI 客体计时信息保持跨节点一致
   TSC、KVM 纳秒时钟和客体共享的 pvclock 页面必须分别验证。
 
+  # evidence: docs/evidence/ssi-tsc-frequency-candidate-20261109.json
+  @verified @p0
+  Scenario: 重装后独立候选的身份与实测频率必须对应预检拒绝
+    Given 新 ESXi 的实验副本隔离重建身份并在重启后保持独立身份
+    When 同一探针采集三种频率请求并与原实验节点运行真实 CLI 预检
+    Then 两端原生频率分别为 2394374 与 2095148 kHz
+    And 候选升频设置读回成功但实测仍为原生速率且降频失败后不执行
+    And 检查器关联身份频率及重启记录并拒绝旧候选数据与未清理状态
+    And Rust 重放完整预检报告并保留不同频率的退出码二
+    And 空 VM 预检与独立单节点运行不升级为跨物理同一客体或完整 SSI 验收
+
   # evidence: docs/evidence/ssi-tsc-frequency-20261109.json
   @verified @p0
   Scenario: 频率设置和读回不能替代客体实际计时

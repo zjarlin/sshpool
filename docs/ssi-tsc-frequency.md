@@ -37,6 +37,25 @@ pvclock_ns = system_time + (((guest_tsc − pvclock_tsc) 按有符号 shift 移�
 
 首次正式采集在启动可执行文件时因权限位缺失失败，尚未创建 KVM。修正实验文件权限后用新文件保存运行，原始失败保留。检查器和测试要求失败记录没有运行、节点状态一致，不能将其删除或算成测量通过。
 
+## 新 ESXi 候选与不同频率拒绝
+
+2026-11-09，重装为 ESXi 的独立物理机上，一台专用副本在断网启动后重建了 machine-id、D-Bus 身份和 SSH 主机密钥，并按新 MAC 修正 Netplan 与 DHCP 身份。重启后身份持久化、boot-id 改变，随后才连接实验网。身份审计与以下采集通过摘要对应；另一台预存副本保持关机。
+
+同一 v3 探针、二进制和原版内核在候选上得到：
+
+| 请求 | 实测 TSC 包络（kHz，向外取整至 0.001） | pvclock 速率包络 |
+| --- | --- | --- |
+| 原生 2,095,148 kHz | [2,095,146.994, 2,095,148.800] | [0.999999519, 1.000000381] |
+| 升频 2,514,177 kHz | [2,095,147.051, 2,095,148.846] | [0.999999546, 1.000000403] |
+
+升频 SET 和运行后 GET 均成功，实际 RDTSC 仍为原生速率。降频至 1,676,118 kHz 返回 `EINVAL`，GET 已报告该请求值；临时客体未执行，三个 fd 全部关闭。前后身份、启动配置、模块、防火墙一致；归档后删除本轮临时目录，再次核对无实验进程或 KVM fd。候选 VM 保留原版内核并继续开机，供后续隔离实验使用。
+
+真实 Rust CLI 预检把原节点 **2,394,374 kHz** 与候选 **2,095,148 kHz** 组合，退出码为 **2**，唯一 blocker 为原生频率不一致；双方均无 `KVM_CAP_TSC_CONTROL`。检查器把每端两个 vCPU 的预检频率与该节点实际采集的原生频率、machine-id 摘要关联，Rust 测试重新执行 `ssi::assess` 并逐字段比较报告。三种请求模式也必须具有相同原生频率，不能为不同模式拼接不同机器的样本。
+
+新[候选清单](evidence/ssi-tsc-frequency-candidate-20261109.json)通过 SHA256 引用已冻结的双节点基线，重放时仍校验历史失败与源码。公开记录只保留身份摘要与归一化节点名；重启前后的网络配置确实经过修正，不声称整个准备阶段配置未变。空 VM 预检仍报告 `physical_topology_verified=false`、`running_clock_verified=false`、`full_ssi_accepted=false`。分别在两个物理宿主测量不等于同一客体已跨物理运行。
+
+接入阻塞在频率比例，而非一个固定起点偏移。当前运行时只加减 TSC offset；即使某一时刻对齐，两个原生速率仍不同。后续需要证明 L0/L1 实际暴露且执行了硬件缩放，或在独立候选中实现完整时间虚拟化，并一并验证 RDTSC/RDTSCP、pvclock、定时器及暂停恢复。仅重写 CPUID 频率、周期性补 offset、放宽容差或成功调用 SET 都不能满足准入。
+
 ## 原版内核解释及边界
 
 归档源码来自 Ubuntu `Ubuntu-6.8.0-147.147` 的 `arch/x86/kvm/x86.c`，与所运行内核版本对应，而非 PF30 的 7.1 研究内核：
@@ -46,7 +65,7 @@ pvclock_ns = system_time + (((guest_tsc − pvclock_tsc) 按有符号 shift 移�
 - GET 直接返回 `virtual_tsc_khz`，不测量客体实际执行的 RDTSC。
 - pvclock 更新使用的实际频率及 masterclock 缓存与 catch-up 路径有关。源码可以解释为何 ioctl 成功不足以证明缩放；本轮没有动态跟踪这些分支，不能声称已经定位此单 vCPU 观测结果的全部原因。
 
-有限的一秒左右窗口不能证明多 vCPU、任意负载、暂停恢复、跨物理长期漂移或定时器行为。下一步仍需独立物理候选的身份隔离和实际运行验证，再评估硬件缩放暴露或经过验收的时间虚拟化方案；不能删除频率相等检查来绕过它。
+有限的一秒左右窗口不能证明多 vCPU、任意负载、暂停恢复、跨物理长期漂移或定时器行为。独立候选已完成身份隔离和单 vCPU 实测；下一步仍需评估硬件缩放暴露或经过验收的时间虚拟化方案，不能删除频率相等检查来绕过它。
 
 ## 重放与复现
 
@@ -54,7 +73,9 @@ pvclock_ns = system_time + (((guest_tsc − pvclock_tsc) 按有符号 shift 移�
 
 ```sh
 python3 scripts/ssi-lab/check-tsc-frequency.py docs/evidence/ssi-tsc-frequency-20261109.json
+python3 scripts/ssi-lab/check-tsc-frequency.py docs/evidence/ssi-tsc-frequency-candidate-20261109.json
 python3 -m unittest discover -s scripts/ssi-lab -p 'test_tsc_frequency.py'
+cargo test --locked --test ssi_preflight
 ```
 
 在已隔离且至少有两个许可 CPU 的原版 x86 Linux VM 上，先编译、核对产物哈希与文件执行权限，再运行采集器；输出必须是新文件：

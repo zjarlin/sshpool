@@ -240,3 +240,5 @@ timeout --kill-after=5 45 python3 scripts/ssi-lab/probe-dsm-device.py \
 ## 原版 KVM 频率设置
 
 `probe-tsc-frequency.c REQUIRED_KERNEL native|faster|slower` 在标准 KVM 中采样 RDTSC/pvclock，使用两个独立宿主 CPU 和一次 KVM_RUN，不依赖 DSM。`capture-tsc-frequency.py` 验证指定内核及二进制哈希，独占创建结果文件并核对前后身份、启动配置、模块、防火墙与 KVM fd。`check-tsc-frequency.py docs/evidence/ssi-tsc-frequency-20261109.json` 和 `test_tsc_frequency.py` 重放真实包络与失败记录。使用步骤与 SET/GET 不能证明缩放的原因见[频率实验](../../docs/ssi-tsc-frequency.md)，不同频率仍不允许配对。
+
+新 ESXi 候选用 `check-tsc-frequency.py docs/evidence/ssi-tsc-frequency-candidate-20261109.json` 重放；它按哈希引用原双节点清单，并把重启身份、实际采集、预检频率及清理状态关联。`cargo test --locked --test ssi_preflight` 重新计算真实拒绝报告；旧物理 Linux 的记录不替代重装后的候选。

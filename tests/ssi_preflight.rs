@@ -56,6 +56,28 @@ fn scaling_capability_is_not_a_frequency_conversion_implementation() -> Result<(
 }
 
 #[test]
+fn reinstalled_esxi_candidate_retains_actual_frequency_rejection() -> Result<()> {
+    let evidence: Value = serde_json::from_str(include_str!(
+        "../docs/evidence/ssi-tsc-frequency-candidate-20261109.json"
+    ))?;
+    let run = &evidence["preflight"];
+    let report = ssi::assess(serde_json::from_value(run["report"]["peers"].clone())?);
+    assert_eq!(serde_json::to_value(&report)?, run["report"]);
+    assert_eq!(run["exit"], 2);
+    assert!(!report.native_tsc_precheck_passed);
+    assert_eq!(report.blockers.len(), 1);
+    assert!(report.blockers[0].contains("[2095148, 2394374]"));
+    let candidate = report.peers[1].probe.as_ref().context("candidate probe")?;
+    assert_eq!(
+        candidate.machine_id_sha256,
+        evidence["identity_audits"]["after_reboot"]["machine"]
+            .as_str()
+            .context("candidate identity")?
+    );
+    Ok(())
+}
+
+#[test]
 fn inconsistent_local_vcpu_frequencies_also_fail() -> Result<()> {
     let mut data = peers("esxi-control-final")?;
     data[0].probe.as_mut().context("probe")?.vcpus[1].tsc_khz += 1;

@@ -10,6 +10,7 @@ import unittest
 
 HERE = Path(__file__).resolve().parent
 EVIDENCE = HERE.parents[1] / 'docs/evidence/ssi-tsc-frequency-20261109.json'
+CANDIDATE = EVIDENCE.with_name('ssi-tsc-frequency-candidate-20261109.json')
 spec = importlib.util.spec_from_file_location('tsc', HERE / 'check-tsc-frequency.py')
 tsc = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(tsc)
@@ -131,6 +132,66 @@ class TscFrequencyTests(unittest.TestCase):
                 capture_output=True, text=True)
             self.assertEqual(result.returncode, 2)
             self.assertFalse(output.exists())
+
+
+class CandidateFrequencyTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.manifest = json.loads(CANDIDATE.read_text())
+
+    def reject(self, change, message):
+        data = copy.deepcopy(self.manifest)
+        change(data)
+        with self.assertRaisesRegex(ValueError, message):
+            tsc.check_candidate(CANDIDATE, data)
+
+    def test_new_candidate_capture_and_preflight_replay(self):
+        runs = tsc.check(CANDIDATE)['candidate']
+        self.assertEqual(runs[0]['requested_khz'], 2095148)
+        self.assertEqual(runs[1]['reported_khz_after_run'], 2514177)
+        self.assertFalse(runs[1]['requested_rate_observed'])
+        self.assertTrue(runs[2]['rejected_before_run'])
+
+    def test_preflight_cannot_substitute_another_identity_or_rate(self):
+        def clone(data):
+            peers = data['preflight']['report']['peers']
+            peers[1]['probe']['machine_id_sha256'] = peers[0]['probe']['machine_id_sha256']
+        self.reject(clone, '身份不对应或重复')
+        self.reject(lambda data: data['preflight']['report']['peers'][1]['probe']['vcpus'][0].update(
+            tsc_khz=2095147), '预检频率与实测')
+        self.reject(lambda data: data['preflight']['report']['peers'].reverse(), '预检节点')
+
+    def test_reboot_must_preserve_new_identity_and_change_boot(self):
+        self.reject(lambda data: data['identity_audits']['after_reboot'].update(machine='0' * 64), '克隆身份')
+        self.reject(lambda data: data['identity_audits']['after_reboot'].update(ssh_host_key='0' * 64), '未持久化')
+        self.reject(lambda data: data['identity_audits']['after_reboot'].update(
+            boot=data['identity_audits']['before_reboot']['boot']), '独立重启')
+        self.reject(lambda data: data['identity_audits'].update(
+            old_machine_sha256=data['identity_audits']['after_reboot']['machine']), '克隆身份')
+
+    def test_preflight_rejection_cannot_be_promoted_to_acceptance(self):
+        for field in ('native_tsc_precheck_passed', 'physical_topology_verified',
+                      'running_clock_verified', 'full_ssi_accepted'):
+            with self.subTest(field=field):
+                self.reject(lambda data: data['preflight']['report'].update({field: True}), '运行时验收')
+        self.reject(lambda data: data['preflight'].update(exit=0), '按预期拒绝')
+        self.reject(lambda data: data['preflight']['report'].update(blockers=[]), '拒绝原因')
+        self.reject(lambda data: data.update(cross_physical_verified=True), '不证明跨物理')
+
+    def test_cleanup_and_baseline_are_bound_to_capture(self):
+        self.reject(lambda data: data['cleanup'].update(temporary_directory_removed=False), '临时目录')
+        self.reject(lambda data: data['cleanup']['snapshot']['kvm_fds'].append({'pid': 123}), '清理后的节点')
+        self.reject(lambda data: data['baseline'].update(sha256='0' * 64), '基线清单哈希')
+
+    def test_three_modes_cannot_use_different_native_rates(self):
+        baseline = json.loads(EVIDENCE.read_text())
+        data = json.loads(tsc.read_artifact(CANDIDATE.parent, self.manifest['candidate']['capture']))
+        slower = data['runs'][2]
+        rows = [json.loads(line) for line in slower['stdout'].splitlines()]
+        rows[1].update(native_khz=2394374, requested_khz=1915499, reported_khz=1915499)
+        slower['stdout'] = ''.join(json.dumps(row) + '\n' for row in rows)
+        with self.assertRaisesRegex(ValueError, '原生频率不一致'):
+            tsc.inspect_capture(data, baseline['build'], baseline['guest_hex'])
 
 
 if __name__ == '__main__':

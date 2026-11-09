@@ -18,7 +18,7 @@
 
 **启动准入 CLI：** `sshpool ssi-launch` 已在两台 PF24 实验 VM 完成四种混版本拒绝，双方首次 KVM_RUN 前均失败，原生跟踪中没有 QEMU 执行。实际 QEMU 的封存路径替换、半许可、断连、租约和锁冲突回收已验证；工作区仍有 RTC 与 DSM 关闭失败，完整 SSI 未通过。见 [启动准入与实机证据](docs/ssi-launch.md)。
 
-**跨物理机预检与真实卸载：** `sshpool ssi-preflight <SSH目标一> <SSH目标二>` 通过已有 SSH 查询真实 KVM 频率和接口，不安装软件或运行客体。独立物理候选与 ESXi 实验 VM 的原生 TSC 分别为 2,095,147 与 2,394,374 kHz，双方无硬件缩放；当前 SSI 运行时明确拒绝配对。该独立 x86 物理机已作为真实 Docker/Cargo Worker 接入，并从 ARM64 工作台完成一次离线编译、产物执行和清理；**这仍是任务调度，不是跨物理 SSI**。实测及无 RAID 存储边界见 [物理接入记录](docs/ssi-physical-storage.md) 和 [验证记录](docs/validation.md#physical-host-and-build-proof)。
+**跨物理机预检与真实卸载：** `sshpool ssi-preflight <SSH目标一> <SSH目标二>` 通过已有 SSH 查询真实 KVM 频率和接口，不安装软件或运行客体。独立物理机现已重装为 ESXi，其中一台实验副本完成身份隔离与重启核对；新候选和原节点实测原生 TSC 分别为 **2,095,148 与 2,394,374 kHz**，双方无硬件缩放，预检退出码 **2**。候选升频 SET/GET 成功也未改变实际 RDTSC 速率。重装前的 Docker/Cargo 卸载仅是历史任务调度证据，不能当作当前 Worker 能力或跨物理 SSI。实测及无 RAID 存储边界见 [物理接入记录](docs/ssi-physical-storage.md) 和 [频率实验](docs/ssi-tsc-frequency.md)。
 
 **暂停恢复进展：** 为两端已分别暂停的实验客体增加代际检查、重新校时和两阶段恢复确认，并修复超时线程陷入 QEMU 退出回调锁的问题。有限七轮恢复与拒绝路径见 [时钟恢复、失败记录和范围](docs/ssi-clock-resume.md)。**单条全局暂停、重置后恢复、跨物理稳定性和完整 SSI 仍未完成**；反向 watchdog 与设备排空后的失败记录继续保留。
 
