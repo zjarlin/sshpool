@@ -107,6 +107,8 @@ cp guest-proof guest-root/init
   > guest-initramfs.cpio.gz
 ```
 
+保护区间覆盖客户端临时端口时，还必须允许限定对端、限定监听源端口的返回包。仅放行四个目标端口会随机丢弃 SYN-ACK。`python3 scripts/ssi-lab/lab-firewall.py <对端IPv4> <sshpool-标签>` 统一生成请求与返回两条规则，命令本身不修改宿主；运行器须保存原规则、应用临时例外、按本次句柄删除并验证恢复。双向固定源端口、拒绝边界及原生 DSM 回归见 [TCP 返回规则与证据](../../docs/ssi-tcp-reply.md)。
+
 每个实验节点的 `~/ssi/` 放置 `qemu-system-x86_64`、`pc-bios/`、`guest-vmlinuz`、`guest-initramfs.cpio.gz` 和 `run-node.sh`。通过防火墙仅允许另一个实验节点访问 TCP `37710–37711` 和 `40000–40001`；这些上游实验协议没有本项目实现的认证与加密。例中地址是文档保留地址，实际地址只放私有配置：
 
 ```sh

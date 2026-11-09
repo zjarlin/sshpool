@@ -1,0 +1,1029 @@
+{
+  "schema_version": 1,
+  "date": "2026-11-09",
+  "physical_hosts": 1,
+  "dedicated_lab_vms": [
+    51,
+    52
+  ],
+  "historical_atomic_failure_cause_proven": false,
+  "full_ssi_accepted": false,
+  "runs": [
+    {
+      "label": "fixed-n0-37742-b",
+      "archive": {
+        "file": "ssi-tcp-reply-20261109-fixed-n0-37742-b.json.gz",
+        "sha256": "78e4d10a6d6d576d95ccd84403f4d8fd32f07c1fd77093323082f69eeefd990c",
+        "raw_sha256": "41a6382b1db8e669d0e123bdedbcc3d62c62623fc3e43dd7b41c6b0200115b9b",
+        "bytes": 3905
+      },
+      "runner": "run.py",
+      "collector": "collector.py",
+      "analysis": {
+        "success": true,
+        "negative_control": false,
+        "captures": {
+          "0": {
+            "packets": 9,
+            "syn": 1,
+            "synack": 1,
+            "critical_verdict": "accept",
+            "timestamp_backsteps": 0
+          },
+          "1": {
+            "packets": 9,
+            "syn": 1,
+            "synack": 1,
+            "critical_verdict": "accept",
+            "timestamp_backsteps": 0
+          }
+        },
+        "historical_atomic_failure_cause_proven": false,
+        "full_ssi_accepted": false
+      }
+    },
+    {
+      "label": "fixed-n0-40042-b",
+      "archive": {
+        "file": "ssi-tcp-reply-20261109-fixed-n0-40042-b.json.gz",
+        "sha256": "0d9a046eba38d0d9e13b958ea4b007ca576221a180a14d5e6c52c464b6d97b09",
+        "raw_sha256": "bf532600574d65ee24864926f29dee99370885bb4ba1e65e22341f0d316b3802",
+        "bytes": 3898
+      },
+      "runner": "run.py",
+      "collector": "collector.py",
+      "analysis": {
+        "success": true,
+        "negative_control": false,
+        "captures": {
+          "0": {
+            "packets": 9,
+            "syn": 1,
+            "synack": 1,
+            "critical_verdict": "accept",
+            "timestamp_backsteps": 0
+          },
+          "1": {
+            "packets": 9,
+            "syn": 1,
+            "synack": 1,
+            "critical_verdict": "accept",
+            "timestamp_backsteps": 0
+          }
+        },
+        "historical_atomic_failure_cause_proven": false,
+        "full_ssi_accepted": false
+      }
+    },
+    {
+      "label": "fixed-n0-foreign-local",
+      "archive": {
+        "file": "ssi-tcp-reply-20261109-fixed-n0-foreign-local.json.gz",
+        "sha256": "0aa5a9752548ba5bef6383f78b047b2b0115be8d519ed4fcf3d00bb1671904bf",
+        "raw_sha256": "3406eb5417c7d450f11703412e707fdbd58ec5eba166940f572f1836698cd64c",
+        "bytes": 2337
+      },
+      "runner": "run.py",
+      "collector": "collector-buffered.py",
+      "analysis": {
+        "success": false,
+        "negative_control": true,
+        "captures": {
+          "0": {
+            "packets": 2,
+            "syn": 2,
+            "synack": 0,
+            "critical_verdict": "drop",
+            "timestamp_backsteps": 0
+          }
+        },
+        "historical_atomic_failure_cause_proven": false,
+        "full_ssi_accepted": false
+      }
+    },
+    {
+      "label": "fixed-n0-unselected-port",
+      "archive": {
+        "file": "ssi-tcp-reply-20261109-fixed-n0-unselected-port.json.gz",
+        "sha256": "a478f7379716d27363ae23c40be4ca4b878d942a5fd58288d7853932a232967f",
+        "raw_sha256": "f2e052642697f942ad1d98271018aa1ae2190f848154cf3844cbd3df24cfae4c",
+        "bytes": 2592
+      },
+      "runner": "run.py",
+      "collector": "collector-buffered.py",
+      "analysis": {
+        "success": false,
+        "negative_control": true,
+        "captures": {
+          "0": {
+            "packets": 2,
+            "syn": 2,
+            "synack": 0,
+            "critical_verdict": "drop",
+            "timestamp_backsteps": 0
+          },
+          "1": {
+            "packets": 2,
+            "syn": 2,
+            "synack": 0,
+            "critical_verdict": null,
+            "timestamp_backsteps": 0
+          }
+        },
+        "historical_atomic_failure_cause_proven": false,
+        "full_ssi_accepted": false
+      }
+    },
+    {
+      "label": "fixed-n1-37742-b",
+      "archive": {
+        "file": "ssi-tcp-reply-20261109-fixed-n1-37742-b.json.gz",
+        "sha256": "7b606d737d2abd375d6bc53b80c8eb8fb2cc9299bd78cede1011d48b136094b6",
+        "raw_sha256": "6e6e50df67a4cc524e75e92b14fceb09a83b357cb070ee89fde22fb5ac2066b7",
+        "bytes": 3904
+      },
+      "runner": "run.py",
+      "collector": "collector.py",
+      "analysis": {
+        "success": true,
+        "negative_control": false,
+        "captures": {
+          "0": {
+            "packets": 9,
+            "syn": 1,
+            "synack": 1,
+            "critical_verdict": "accept",
+            "timestamp_backsteps": 0
+          },
+          "1": {
+            "packets": 9,
+            "syn": 1,
+            "synack": 1,
+            "critical_verdict": "accept",
+            "timestamp_backsteps": 0
+          }
+        },
+        "historical_atomic_failure_cause_proven": false,
+        "full_ssi_accepted": false
+      }
+    },
+    {
+      "label": "fixed-n1-40042-b",
+      "archive": {
+        "file": "ssi-tcp-reply-20261109-fixed-n1-40042-b.json.gz",
+        "sha256": "bb7be183f31069b7d0846e79cab46c353409fc54f88833219b1e9aa90f01abac",
+        "raw_sha256": "9f03aabb1c44e804db7e21fae37c7fdd0ba0803df261fc183ae9dcdce157741f",
+        "bytes": 3886
+      },
+      "runner": "run.py",
+      "collector": "collector.py",
+      "analysis": {
+        "success": true,
+        "negative_control": false,
+        "captures": {
+          "0": {
+            "packets": 9,
+            "syn": 1,
+            "synack": 1,
+            "critical_verdict": "accept",
+            "timestamp_backsteps": 0
+          },
+          "1": {
+            "packets": 9,
+            "syn": 1,
+            "synack": 1,
+            "critical_verdict": "accept",
+            "timestamp_backsteps": 0
+          }
+        },
+        "historical_atomic_failure_cause_proven": false,
+        "full_ssi_accepted": false
+      }
+    },
+    {
+      "label": "fixed-n1-foreign-local",
+      "archive": {
+        "file": "ssi-tcp-reply-20261109-fixed-n1-foreign-local.json.gz",
+        "sha256": "e82403767881a8c9e1d4d4221cb1aafd553b33078c20063e303192242abdab30",
+        "raw_sha256": "47ba9ddd358bce1788cfe76a747435fc6e4c3a472bd1acbbea76e88f6e6f4919",
+        "bytes": 2353
+      },
+      "runner": "run.py",
+      "collector": "collector-buffered.py",
+      "analysis": {
+        "success": false,
+        "negative_control": true,
+        "captures": {
+          "1": {
+            "packets": 2,
+            "syn": 2,
+            "synack": 0,
+            "critical_verdict": "drop",
+            "timestamp_backsteps": 0
+          }
+        },
+        "historical_atomic_failure_cause_proven": false,
+        "full_ssi_accepted": false
+      }
+    },
+    {
+      "label": "fixed-n1-unselected-port",
+      "archive": {
+        "file": "ssi-tcp-reply-20261109-fixed-n1-unselected-port.json.gz",
+        "sha256": "a0ea0be98342727706e54a13e98fa8510954d286c74b769050a421017c60da1c",
+        "raw_sha256": "2ed6e8dce3e9c9c387a60d1a8a31b647526f26a97119da52288c2b614f7394cc",
+        "bytes": 2593
+      },
+      "runner": "run.py",
+      "collector": "collector-buffered.py",
+      "analysis": {
+        "success": false,
+        "negative_control": true,
+        "captures": {
+          "0": {
+            "packets": 2,
+            "syn": 2,
+            "synack": 0,
+            "critical_verdict": null,
+            "timestamp_backsteps": 0
+          },
+          "1": {
+            "packets": 2,
+            "syn": 2,
+            "synack": 0,
+            "critical_verdict": "drop",
+            "timestamp_backsteps": 0
+          }
+        },
+        "historical_atomic_failure_cause_proven": false,
+        "full_ssi_accepted": false
+      }
+    },
+    {
+      "label": "legacy-n0-36042-b",
+      "archive": {
+        "file": "ssi-tcp-reply-20261109-legacy-n0-36042-b.json.gz",
+        "sha256": "1ab3c4c80ccd9792499f1c6e841c515a2b69e36c34d26b989ddfc229478bd380",
+        "raw_sha256": "fdb3d319e4154a2c706af9cdcc809773fd0cd7651b353afb9588253d65c7c080",
+        "bytes": 3793
+      },
+      "runner": "run.py",
+      "collector": "collector.py",
+      "analysis": {
+        "success": true,
+        "negative_control": false,
+        "captures": {
+          "0": {
+            "packets": 9,
+            "syn": 1,
+            "synack": 1,
+            "critical_verdict": "accept",
+            "timestamp_backsteps": 0
+          },
+          "1": {
+            "packets": 9,
+            "syn": 1,
+            "synack": 1,
+            "critical_verdict": "accept",
+            "timestamp_backsteps": 0
+          }
+        },
+        "historical_atomic_failure_cause_proven": false,
+        "full_ssi_accepted": false
+      }
+    },
+    {
+      "label": "legacy-n0-37742",
+      "archive": {
+        "file": "ssi-tcp-reply-20261109-legacy-n0-37742.json.gz",
+        "sha256": "11342991f71f177e28f908ab9a4af2eec66b7488f5757d178ce10398e475b5f2",
+        "raw_sha256": "9756129fb4f4c5e4e6f45b7ea5e65fcf49c74a6609243ea1f8dad6dda663a6ab",
+        "bytes": 2860
+      },
+      "runner": "run-initial.py",
+      "collector": "collector-buffered.py",
+      "analysis": {
+        "success": false,
+        "negative_control": false,
+        "captures": {
+          "0": {
+            "packets": 5,
+            "syn": 2,
+            "synack": 3,
+            "critical_verdict": "accept",
+            "timestamp_backsteps": 0
+          },
+          "1": {
+            "packets": 5,
+            "syn": 2,
+            "synack": 3,
+            "critical_verdict": "drop",
+            "timestamp_backsteps": 0
+          }
+        },
+        "historical_atomic_failure_cause_proven": false,
+        "full_ssi_accepted": false
+      }
+    },
+    {
+      "label": "legacy-n0-40042",
+      "archive": {
+        "file": "ssi-tcp-reply-20261109-legacy-n0-40042.json.gz",
+        "sha256": "1a06c6fbe5db9062917af2421b5dc431859da27155b98465deae1018f4330a42",
+        "raw_sha256": "8b4ca7e9f3aa42c3d876f69c9e1584852e60db982c7d513e9362c774e13a3bfd",
+        "bytes": 2885
+      },
+      "runner": "run.py",
+      "collector": "collector-buffered.py",
+      "analysis": {
+        "success": false,
+        "negative_control": false,
+        "captures": {
+          "0": {
+            "packets": 5,
+            "syn": 2,
+            "synack": 3,
+            "critical_verdict": "accept",
+            "timestamp_backsteps": 0
+          },
+          "1": {
+            "packets": 5,
+            "syn": 2,
+            "synack": 3,
+            "critical_verdict": "drop",
+            "timestamp_backsteps": 0
+          }
+        },
+        "historical_atomic_failure_cause_proven": false,
+        "full_ssi_accepted": false
+      }
+    },
+    {
+      "label": "legacy-n1-36042-b",
+      "archive": {
+        "file": "ssi-tcp-reply-20261109-legacy-n1-36042-b.json.gz",
+        "sha256": "0552c4096f541fd951e96e323361c213eb9ba05c966e8cad5c4b6ca7441d8277",
+        "raw_sha256": "7ef3b5ea124fc88a2cf594e4d7fa294b948bd45ac7be67cd377b18712ce35706",
+        "bytes": 3774
+      },
+      "runner": "run.py",
+      "collector": "collector.py",
+      "analysis": {
+        "success": true,
+        "negative_control": false,
+        "captures": {
+          "0": {
+            "packets": 9,
+            "syn": 1,
+            "synack": 1,
+            "critical_verdict": "accept",
+            "timestamp_backsteps": 0
+          },
+          "1": {
+            "packets": 9,
+            "syn": 1,
+            "synack": 1,
+            "critical_verdict": "accept",
+            "timestamp_backsteps": 0
+          }
+        },
+        "historical_atomic_failure_cause_proven": false,
+        "full_ssi_accepted": false
+      }
+    },
+    {
+      "label": "legacy-n1-37742",
+      "archive": {
+        "file": "ssi-tcp-reply-20261109-legacy-n1-37742.json.gz",
+        "sha256": "e8cbe20c5c5d11c1930debae560f2c7fadf8008dd53f958f5516336eb866df5e",
+        "raw_sha256": "4cee0164e67ced4a7ba4dd9b359c2a1490b2d2b95b63aa272b4d5e69e8d83d0f",
+        "bytes": 2888
+      },
+      "runner": "run.py",
+      "collector": "collector-buffered.py",
+      "analysis": {
+        "success": false,
+        "negative_control": false,
+        "captures": {
+          "0": {
+            "packets": 5,
+            "syn": 2,
+            "synack": 3,
+            "critical_verdict": "drop",
+            "timestamp_backsteps": 0
+          },
+          "1": {
+            "packets": 5,
+            "syn": 2,
+            "synack": 3,
+            "critical_verdict": "accept",
+            "timestamp_backsteps": 0
+          }
+        },
+        "historical_atomic_failure_cause_proven": false,
+        "full_ssi_accepted": false
+      }
+    },
+    {
+      "label": "legacy-n1-40042",
+      "archive": {
+        "file": "ssi-tcp-reply-20261109-legacy-n1-40042.json.gz",
+        "sha256": "bc7cdbefc7a56b04b2212c4eecc5b71b454d73cf040edd4033e3f842a9f709f3",
+        "raw_sha256": "9ff5b722255cdced77a93dd58d19e54ce24cf43668a3bd6e2e9675a870db3005",
+        "bytes": 2893
+      },
+      "runner": "run.py",
+      "collector": "collector-buffered.py",
+      "analysis": {
+        "success": false,
+        "negative_control": false,
+        "captures": {
+          "0": {
+            "packets": 5,
+            "syn": 2,
+            "synack": 3,
+            "critical_verdict": "drop",
+            "timestamp_backsteps": 0
+          },
+          "1": {
+            "packets": 5,
+            "syn": 2,
+            "synack": 3,
+            "critical_verdict": "accept",
+            "timestamp_backsteps": 0
+          }
+        },
+        "historical_atomic_failure_cause_proven": false,
+        "full_ssi_accepted": false
+      }
+    }
+  ],
+  "rejected_captures": [
+    {
+      "label": "fixed-n0-37742",
+      "archive": {
+        "file": "ssi-tcp-reply-20261109-fixed-n0-37742.json.gz",
+        "sha256": "3584f8d635b8b33f9b97dfebf55dc59d70426a1fdc2e10d1b647e27ce3b7f811",
+        "raw_sha256": "35be2f905785bef784b82ed10f00e1ac28e5366d06d81dd5907bd24d19e0cf8f",
+        "bytes": 2570
+      },
+      "runner": "run.py",
+      "collector": "collector-buffered.py",
+      "accepted": false,
+      "rejection": "抓包为空"
+    },
+    {
+      "label": "fixed-n0-40042",
+      "archive": {
+        "file": "ssi-tcp-reply-20261109-fixed-n0-40042.json.gz",
+        "sha256": "17154bd260d6c325ee2f6e6993a1ebabf61fbbd450011278197e667af34d6e04",
+        "raw_sha256": "97583c5407e93873bd913ecd8a0129a17cd2a693a7a31e33b3af1fca10777517",
+        "bytes": 2579
+      },
+      "runner": "run.py",
+      "collector": "collector-buffered.py",
+      "accepted": false,
+      "rejection": "抓包为空"
+    },
+    {
+      "label": "fixed-n1-37742",
+      "archive": {
+        "file": "ssi-tcp-reply-20261109-fixed-n1-37742.json.gz",
+        "sha256": "5ed5b9c9a2068109a7dc2e5309a7c296b093bdebcba65c18eae5ff4b2440f908",
+        "raw_sha256": "5be8f02c02e84f4c26eebaea22b675d48081453f51c50d039799c5054c66b093",
+        "bytes": 2589
+      },
+      "runner": "run.py",
+      "collector": "collector-buffered.py",
+      "accepted": false,
+      "rejection": "抓包为空"
+    },
+    {
+      "label": "fixed-n1-40042",
+      "archive": {
+        "file": "ssi-tcp-reply-20261109-fixed-n1-40042.json.gz",
+        "sha256": "e7378f20c19d5a9aa63027d3fda995c98ea2b445de8d740c4853c71a7190c51b",
+        "raw_sha256": "3a66ba38a8e8b3ed8f5789bdcfce84a64fcee302ec295d1665b755aa371d3814",
+        "bytes": 2596
+      },
+      "runner": "run.py",
+      "collector": "collector-buffered.py",
+      "accepted": false,
+      "rejection": "抓包为空"
+    },
+    {
+      "label": "legacy-n0-36042",
+      "archive": {
+        "file": "ssi-tcp-reply-20261109-legacy-n0-36042.json.gz",
+        "sha256": "65a0fcbfe10eeca5ba3ad2f0cb4118162cab836ca39a76093d51d2ad58302609",
+        "raw_sha256": "740d9c2400472bc6d298267ad9d819d407e6d052e1cddf4b16bfe4a0c3a462d2",
+        "bytes": 2451
+      },
+      "runner": "run.py",
+      "collector": "collector-buffered.py",
+      "accepted": false,
+      "rejection": "抓包为空"
+    },
+    {
+      "label": "legacy-n1-36042",
+      "archive": {
+        "file": "ssi-tcp-reply-20261109-legacy-n1-36042.json.gz",
+        "sha256": "031b99d32fd6b248b2ea6cd0167f41ec7c190bb8b063073c4d06a7c490ff660e",
+        "raw_sha256": "4363c44005571dea54dfdafe5d9158fb96f22c7ef775ddfd916c8b0276769024",
+        "bytes": 2460
+      },
+      "runner": "run.py",
+      "collector": "collector-buffered.py",
+      "accepted": false,
+      "rejection": "抓包为空"
+    }
+  ],
+  "native": {
+    "archive": {
+      "file": "ssi-tcp-reply-20261109-native-fixed.json.gz",
+      "sha256": "359fe23a535602ada03c49bee736fb72a81c7a9d7d5f2b3a0c140bb74c032741",
+      "raw_sha256": "e971bf200ec719d4916ac281dc2bad30976f5c5ca20fe5e16dc40e503953294d",
+      "bytes": 209552
+    },
+    "analysis": {
+      "nodes": {
+        "0": {
+          "operations": 4096,
+          "first_ticket": 369,
+          "last_ticket": 8191,
+          "max_peer_operations_between_successes": 71,
+          "max_run_ns": 8470901,
+          "store_faults": 74,
+          "repeated_operations": 0,
+          "max_faults_per_operation": 1,
+          "longest_fault_sequences": [
+            {
+              "value": 1,
+              "begin": {
+                "index": 0,
+                "cpu": 0,
+                "ns": 187382770000,
+                "name": "tracing_mark_write",
+                "detail": "grant_begin value=1"
+              },
+              "faults": [
+                {
+                  "index": 2,
+                  "cpu": 0,
+                  "ns": 187383570000,
+                  "name": "kvm_page_fault",
+                  "detail": "vcpu 0 rip 0x1000 address 0x0000000000002000 error_code 0x783"
+                }
+              ],
+              "end": {
+                "index": 3,
+                "cpu": 0,
+                "ns": 187391259000,
+                "name": "tracing_mark_write",
+                "detail": "grant_end value=1"
+              },
+              "span_ns": 8489000
+            },
+            {
+              "value": 36,
+              "begin": {
+                "index": 72,
+                "cpu": 0,
+                "ns": 187392229000,
+                "name": "tracing_mark_write",
+                "detail": "grant_begin value=36"
+              },
+              "faults": [
+                {
+                  "index": 73,
+                  "cpu": 0,
+                  "ns": 187392256000,
+                  "name": "kvm_page_fault",
+                  "detail": "vcpu 0 rip 0x1000 address 0x0000000000002000 error_code 0x783"
+                }
+              ],
+              "end": {
+                "index": 74,
+                "cpu": 0,
+                "ns": 187393479000,
+                "name": "tracing_mark_write",
+                "detail": "grant_end value=36"
+              },
+              "span_ns": 1250000
+            },
+            {
+              "value": 74,
+              "begin": {
+                "index": 149,
+                "cpu": 0,
+                "ns": 187394470000,
+                "name": "tracing_mark_write",
+                "detail": "grant_begin value=74"
+              },
+              "faults": [
+                {
+                  "index": 150,
+                  "cpu": 0,
+                  "ns": 187394510000,
+                  "name": "kvm_page_fault",
+                  "detail": "vcpu 0 rip 0x1000 address 0x0000000000002000 error_code 0x783"
+                }
+              ],
+              "end": {
+                "index": 151,
+                "cpu": 0,
+                "ns": 187395717000,
+                "name": "tracing_mark_write",
+                "detail": "grant_end value=74"
+              },
+              "span_ns": 1247000
+            },
+            {
+              "value": 109,
+              "begin": {
+                "index": 220,
+                "cpu": 0,
+                "ns": 187396726000,
+                "name": "tracing_mark_write",
+                "detail": "grant_begin value=109"
+              },
+              "faults": [
+                {
+                  "index": 221,
+                  "cpu": 0,
+                  "ns": 187396749000,
+                  "name": "kvm_page_fault",
+                  "detail": "vcpu 0 rip 0x1000 address 0x0000000000002000 error_code 0x783"
+                }
+              ],
+              "end": {
+                "index": 222,
+                "cpu": 0,
+                "ns": 187398023000,
+                "name": "tracing_mark_write",
+                "detail": "grant_end value=109"
+              },
+              "span_ns": 1297000
+            },
+            {
+              "value": 144,
+              "begin": {
+                "index": 291,
+                "cpu": 0,
+                "ns": 187399028000,
+                "name": "tracing_mark_write",
+                "detail": "grant_begin value=144"
+              },
+              "faults": [
+                {
+                  "index": 292,
+                  "cpu": 0,
+                  "ns": 187399050000,
+                  "name": "kvm_page_fault",
+                  "detail": "vcpu 0 rip 0x1000 address 0x0000000000002000 error_code 0x783"
+                }
+              ],
+              "end": {
+                "index": 293,
+                "cpu": 0,
+                "ns": 187400333000,
+                "name": "tracing_mark_write",
+                "detail": "grant_end value=144"
+              },
+              "span_ns": 1305000
+            }
+          ]
+        },
+        "1": {
+          "operations": 4096,
+          "first_ticket": 0,
+          "last_ticket": 7449,
+          "max_peer_operations_between_successes": 58,
+          "max_run_ns": 1369610,
+          "store_faults": 74,
+          "repeated_operations": 0,
+          "max_faults_per_operation": 1,
+          "longest_fault_sequences": [
+            {
+              "value": 1,
+              "begin": {
+                "index": 0,
+                "cpu": 0,
+                "ns": 124957671000,
+                "name": "tracing_mark_write",
+                "detail": "grant_begin value=1"
+              },
+              "faults": [
+                {
+                  "index": 2,
+                  "cpu": 0,
+                  "ns": 124958435000,
+                  "name": "kvm_page_fault",
+                  "detail": "vcpu 1 rip 0x1000 address 0x0000000000002000 error_code 0x783"
+                }
+              ],
+              "end": {
+                "index": 3,
+                "cpu": 0,
+                "ns": 124958651000,
+                "name": "tracing_mark_write",
+                "detail": "grant_end value=1"
+              },
+              "span_ns": 980000
+            },
+            {
+              "value": 370,
+              "begin": {
+                "index": 740,
+                "cpu": 0,
+                "ns": 124966042000,
+                "name": "tracing_mark_write",
+                "detail": "grant_begin value=370"
+              },
+              "faults": [
+                {
+                  "index": 741,
+                  "cpu": 0,
+                  "ns": 124966063000,
+                  "name": "kvm_page_fault",
+                  "detail": "vcpu 1 rip 0x1000 address 0x0000000000002000 error_code 0x783"
+                }
+              ],
+              "end": {
+                "index": 742,
+                "cpu": 0,
+                "ns": 124967323000,
+                "name": "tracing_mark_write",
+                "detail": "grant_end value=370"
+              },
+              "span_ns": 1281000
+            },
+            {
+              "value": 420,
+              "begin": {
+                "index": 841,
+                "cpu": 0,
+                "ns": 124968285000,
+                "name": "tracing_mark_write",
+                "detail": "grant_begin value=420"
+              },
+              "faults": [
+                {
+                  "index": 842,
+                  "cpu": 0,
+                  "ns": 124968314000,
+                  "name": "kvm_page_fault",
+                  "detail": "vcpu 1 rip 0x1000 address 0x0000000000002000 error_code 0x783"
+                }
+              ],
+              "end": {
+                "index": 843,
+                "cpu": 0,
+                "ns": 124969550000,
+                "name": "tracing_mark_write",
+                "detail": "grant_end value=420"
+              },
+              "span_ns": 1265000
+            },
+            {
+              "value": 471,
+              "begin": {
+                "index": 944,
+                "cpu": 0,
+                "ns": 124970521000,
+                "name": "tracing_mark_write",
+                "detail": "grant_begin value=471"
+              },
+              "faults": [
+                {
+                  "index": 945,
+                  "cpu": 0,
+                  "ns": 124970547000,
+                  "name": "kvm_page_fault",
+                  "detail": "vcpu 1 rip 0x1000 address 0x0000000000002000 error_code 0x783"
+                }
+              ],
+              "end": {
+                "index": 946,
+                "cpu": 0,
+                "ns": 124971862000,
+                "name": "tracing_mark_write",
+                "detail": "grant_end value=471"
+              },
+              "span_ns": 1341000
+            },
+            {
+              "value": 522,
+              "begin": {
+                "index": 1047,
+                "cpu": 0,
+                "ns": 124972850000,
+                "name": "tracing_mark_write",
+                "detail": "grant_begin value=522"
+              },
+              "faults": [
+                {
+                  "index": 1048,
+                  "cpu": 0,
+                  "ns": 124972865000,
+                  "name": "kvm_page_fault",
+                  "detail": "vcpu 1 rip 0x1000 address 0x0000000000002000 error_code 0x783"
+                }
+              ],
+              "end": {
+                "index": 1049,
+                "cpu": 0,
+                "ns": 124974167000,
+                "name": "tracing_mark_write",
+                "detail": "grant_end value=522"
+              },
+              "span_ns": 1317000
+            }
+          ]
+        }
+      },
+      "total_operations": 8192,
+      "ticket_owner_switches": 147,
+      "max_consecutive_tickets": 742,
+      "overlap_ticket_range": [
+        369,
+        7449
+      ],
+      "max_consecutive_tickets_in_overlap": 71,
+      "longest_ticket_runs": [
+        {
+          "node": 0,
+          "count": 742,
+          "first_ticket": 7450,
+          "last_ticket": 8191
+        },
+        {
+          "node": 1,
+          "count": 369,
+          "first_ticket": 0,
+          "last_ticket": 368
+        },
+        {
+          "node": 1,
+          "count": 71,
+          "first_ticket": 4017,
+          "last_ticket": 4087
+        },
+        {
+          "node": 1,
+          "count": 59,
+          "first_ticket": 7190,
+          "last_ticket": 7248
+        },
+        {
+          "node": 0,
+          "count": 58,
+          "first_ticket": 3632,
+          "last_ticket": 3689
+        },
+        {
+          "node": 0,
+          "count": 58,
+          "first_ticket": 3959,
+          "last_ticket": 4016
+        },
+        {
+          "node": 0,
+          "count": 58,
+          "first_ticket": 6905,
+          "last_ticket": 6962
+        },
+        {
+          "node": 0,
+          "count": 57,
+          "first_ticket": 3742,
+          "last_ticket": 3798
+        },
+        {
+          "node": 0,
+          "count": 57,
+          "first_ticket": 3850,
+          "last_ticket": 3906
+        },
+        {
+          "node": 0,
+          "count": 57,
+          "first_ticket": 6166,
+          "last_ticket": 6222
+        }
+      ],
+      "all_tickets_unique_and_contiguous": true,
+      "general_fairness_proven": false,
+      "cross_host_clock_alignment_established": false,
+      "full_ssi_accepted": false
+    },
+    "port_range_control": {
+      "label": "pf30-tcp-reply-pair-fixed-a",
+      "before": [
+        "32768\t60999\n",
+        "32768\t60999\n"
+      ],
+      "forced": [
+        37742,
+        37773
+      ],
+      "active": [
+        "37742\t37773\n",
+        "37742\t37773\n"
+      ],
+      "runner_exit": 0,
+      "after": [
+        "32768\t60999\n",
+        "32768\t60999\n"
+      ]
+    },
+    "probe_build": {
+      "source_sha256": "9c2e01f767c33983a38b663e293417a361c5f83bb481f3ebfeab3353cafb26f1",
+      "binary_sha256": "19379170276a834e53eeb7e934e8e67f03112d2659f8cccf9c3a41543d561864",
+      "bytes": 1070808
+    },
+    "host_logs": {
+      "0": "Nov 09 00:15:38 sshpool-ssi-01 kernel: kvm_intel: kvm-dsm: PAUSE interception enabled without PLE\nNov 09 00:15:38 sshpool-ssi-01 kernel: kvm-dsm: node-0 established connection with node-1 [192.168.31.226:37711]\nNov 09 00:15:45 sshpool-ssi-01 kernel: kvm-dsm: node-0 established connection with node-1 [192.168.31.226:37711]\nNov 09 00:15:45 sshpool-ssi-01 kernel: DSM_CLOSE_RECEIVED node=0 peer=1 phase=5 generation=39703635458 result=0\nNov 09 00:15:45 sshpool-ssi-01 kernel: DSM_CLOSE_ACK node=0 peer=1 phase=5 generation=39703635458 result=0\nNov 09 00:15:45 sshpool-ssi-01 kernel: DSM_CLOSE_FROZEN node=0 accepted=2\nNov 09 00:15:45 sshpool-ssi-01 kernel: DSM_CLOSE_ACK node=0 peer=1 phase=4 generation=39703635458 result=0\nNov 09 00:15:45 sshpool-ssi-01 kernel: DSM_CLOSE_RECEIVED node=0 peer=1 phase=4 generation=39703635458 result=0\nNov 09 00:15:45 sshpool-ssi-01 kernel: DSM_CLOSE_ACK node=0 peer=1 phase=6 generation=39703635458 result=0\nNov 09 00:15:45 sshpool-ssi-01 kernel: DSM_CLOSE_RECEIVED node=0 peer=1 phase=6 generation=39703635458 result=0\nNov 09 00:15:45 sshpool-ssi-01 kernel: DSM_CLOSE_ACK node=0 peer=1 phase=7 generation=39703635458 result=0\nNov 09 00:15:45 sshpool-ssi-01 kernel: DSM_CLOSE_RECEIVED node=0 peer=1 phase=7 generation=39703635458 result=0\nNov 09 00:15:45 sshpool-ssi-01 kernel: DSM_CLOSE_RESULT node=0 generation=39703635458 accepted=2 closed=1 eof=2 result=0\n",
+      "1": "Nov 09 00:15:37 sshpool-ssi-02 kernel: kvm-dsm: node-1 established connection with node-0 [192.168.31.135:37710]\nNov 09 00:15:38 sshpool-ssi-02 kernel: kvm_intel: kvm-dsm: PAUSE interception enabled without PLE\nNov 09 00:15:45 sshpool-ssi-02 kernel: kvm-dsm: node-1 established connection with node-0 [192.168.31.135:37710]\nNov 09 00:15:45 sshpool-ssi-02 kernel: DSM_CLOSE_ACK node=1 peer=0 phase=5 generation=39703635458 result=0\nNov 09 00:15:45 sshpool-ssi-02 kernel: DSM_CLOSE_RECEIVED node=1 peer=0 phase=5 generation=39703635458 result=0\nNov 09 00:15:45 sshpool-ssi-02 kernel: DSM_CLOSE_FROZEN node=1 accepted=2\nNov 09 00:15:45 sshpool-ssi-02 kernel: DSM_CLOSE_ACK node=1 peer=0 phase=4 generation=39703635458 result=0\nNov 09 00:15:45 sshpool-ssi-02 kernel: DSM_CLOSE_RECEIVED node=1 peer=0 phase=4 generation=39703635458 result=0\nNov 09 00:15:45 sshpool-ssi-02 kernel: DSM_CLOSE_ACK node=1 peer=0 phase=6 generation=39703635458 result=0\nNov 09 00:15:45 sshpool-ssi-02 kernel: DSM_CLOSE_RECEIVED node=1 peer=0 phase=6 generation=39703635458 result=0\nNov 09 00:15:45 sshpool-ssi-02 kernel: DSM_CLOSE_ACK node=1 peer=0 phase=7 generation=39703635458 result=0\nNov 09 00:15:45 sshpool-ssi-02 kernel: DSM_CLOSE_RECEIVED node=1 peer=0 phase=7 generation=39703635458 result=0\nNov 09 00:15:45 sshpool-ssi-02 kernel: DSM_CLOSE_RESULT node=1 generation=39703635458 accepted=2 closed=1 eof=2 result=0\n"
+    }
+  },
+  "restoration": {
+    "nodes": [
+      {
+        "node": 0,
+        "kernel": "6.8.0-147-generic",
+        "identity_matches": true,
+        "old_boot_files_unchanged": true,
+        "boot_hash_manifest_sha256": "e2d1533697fec9a5c3fb92ea1410b84c9517c492eedf754d6df51e3a441a3664",
+        "grub_config_unchanged": true,
+        "firewall_matches_original": true,
+        "lib_target": "usr/lib",
+        "grub_environment": "",
+        "remaining_processes": [],
+        "remaining_trace_instances": [],
+        "remaining_experiment_tcp": [],
+        "stock_grub_default": true,
+        "pf30_grub_entry_removed": true,
+        "write_grace_reset_before_reboot": true,
+        "ephemeral_range": [
+          32768,
+          60999
+        ],
+        "reserved_ports": "",
+        "tcp_collectors_absent": true
+      },
+      {
+        "node": 1,
+        "kernel": "6.8.0-147-generic",
+        "identity_matches": true,
+        "old_boot_files_unchanged": true,
+        "boot_hash_manifest_sha256": "377c33e907e47a8c9b047352e413c16197f7c0996e5e6f1d1cfcdca029bb40fe",
+        "grub_config_unchanged": true,
+        "firewall_matches_original": true,
+        "lib_target": "usr/lib",
+        "grub_environment": "",
+        "remaining_processes": [],
+        "remaining_trace_instances": [],
+        "remaining_experiment_tcp": [],
+        "stock_grub_default": true,
+        "pf30_grub_entry_removed": true,
+        "write_grace_reset_before_reboot": true,
+        "ephemeral_range": [
+          32768,
+          60999
+        ],
+        "reserved_ports": "",
+        "tcp_collectors_absent": true
+      }
+    ]
+  },
+  "sources": {
+    "file": "ssi-tcp-reply-20261109-sources.tar.gz",
+    "sha256": "3655d04012dda95446f8bf9a2ec1c4ddff0e1fc5e294e07bc10b02451a1eb2f4",
+    "members": {
+      "boot.json": "9763fa2076620ba1470ec380a33c8c5668ee067658536c4a29041f0c4a4f32b7",
+      "boot_pf30.py": "bae20136bf60357c27f83728ae33be30a074b100f1cc82a6bd5f39c59e2ccd70",
+      "check-tcp-reply.py": "6dca7aee3a42248e1a5ec9061eb5a2fc74c7fcca56b1a1a1b83e9a00cd69f564",
+      "collector-buffered.py": "cdbdf78323f234925da3a4d1077cffefe9c25c837bab847e9332db906f95ddad",
+      "collector.py": "a1bf53b023e30a56f5cc1d74d6e803e29e6ffa4eac84251583f596192b7ce531",
+      "lab-firewall.py": "fe82b3525ff30e97ea6f6a3439f6326a0ed296df5b58b5443b4b738b6a8c40c2",
+      "node0-before-boot.sha256": "e2d1533697fec9a5c3fb92ea1410b84c9517c492eedf754d6df51e3a441a3664",
+      "node0-before-firewall.json": "e453894a6a90f916cf1839d93db29ae1d9b5462423f5f6de3d9dd7a83ae717cf",
+      "node0-before-grub.cfg": "bfb0d1dacc66d8ef45b972ac8b23f83f8d137198a530266113357e509be5146d",
+      "node1-before-boot.sha256": "377c33e907e47a8c9b047352e413c16197f7c0996e5e6f1d1cfcdca029bb40fe",
+      "node1-before-firewall.json": "e453894a6a90f916cf1839d93db29ae1d9b5462423f5f6de3d9dd7a83ae717cf",
+      "node1-before-grub.cfg": "438f37e19e172befa9f00e00319c4c17b715bb31c84f75eb177a24a5b7800f99",
+      "nodes.json": "9763fa2076620ba1470ec380a33c8c5668ee067658536c4a29041f0c4a4f32b7",
+      "probe-build.json": "e176bed36a7b56dc202ff3e77e23303726d22483cbac8f9f8db6546f3010f617",
+      "probe-tcp-reply.py": "1c3df8683aa27d5b1eab49719a8af6081c1976824191a69131f05814b39fb97d",
+      "probe-write-grant.c": "9c2e01f767c33983a38b663e293417a361c5f83bb481f3ebfeab3353cafb26f1",
+      "restore_lab.py": "db14fe115080545f5dc66211cb6aaee422ee7e4ba6a4427c06298f41979c9736",
+      "run-initial.py": "81b56716f5e27f467c7e20897d73aefe0892fc1363a17ad28e24fe6f82387503",
+      "run.py": "5eba25c2d868e9359ee4c765ac099ec745222cd62f02e8905b1f1b2bc4c9de97",
+      "run_atomic-before-reply-fix.py": "34f35f831792d17b6604942c4ecbecd9752c5c29039d2a9adfe2d8cf6e82467b",
+      "run_atomic.py": "3cc49e08697dbb0b0fe357818b13ce5d0c09aa193b942b84d17dfc90cdd40046",
+      "run_native.py": "a009e18d31e1481fb2ee8d849d2f6206ba75cdb5f27263f4256dbf8db306d934",
+      "trace_minimal_pf30.py": "d95a6d6b9a860fe9e30e760c3b2cabc57ac4ecaf937f0ea0e7ef4bed700ba7d0"
+    }
+  }
+}

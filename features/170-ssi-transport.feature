@@ -1,6 +1,17 @@
 Feature: SSI 传输等待与启动资源生命周期
   先在真实 KVM 监听器和独占实验 VM 中验证，不将同一 ESXi 的结果当作跨物理机性能。
 
+  # evidence: docs/ssi-tcp-reply.md
+  @verified @p0
+  Scenario: 双节点实验的临时端口落入保护区间时仍能接收 TCP 返回包
+    Given 两台独占实验 VM 的保护区间与自动源端口范围重叠
+    When 固定源端口双向比较旧规则与限定对端的请求及返回规则
+    Then 原始抓包与 nft 跟踪证明旧规则丢弃 SYN-ACK 而新规则完成双向回显
+    And 未授权来源与未选用端口仍被原规则拒绝
+    And 强制自动源端口落入保护区间的真实 DSM 原子批次完成并正常关闭
+    And 空抓包即使回显成功也不能计入完整验证
+    And 原端口范围防火墙内核与启动文件恢复且历史缺失四元组的失败不被反向定因
+
   # evidence: docs/evidence/ssi-shutdown-flush-20261106.json
   @verified @p0
   Scenario: 最终块层刷盘失败不能被 QEMU 关闭吞掉
